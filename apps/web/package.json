@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@ablework/shared-constants": "workspace:*",
-    "@ablework/shared-types": "workspace:*",
     "@ablework/shared-schemas": "workspace:*",
+    "@ablework/shared-types": "workspace:*",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
@@ -30,15 +30,17 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.56.4",
-    "zustand": "^5.0.5",
-    "zod": "^3.25.56"
+    "zod": "^3.25.56",
+    "zustand": "^5.0.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22.15.21",
     "@types/react": "^19.1.4",
     "@types/react-dom": "^19.1.4",
     "eslint": "^9.28.0",
     "eslint-config-next": "^15.3.2",
+    "playwright": "^1.60.0",
     "typescript": "^5.8.3"
   }
 }

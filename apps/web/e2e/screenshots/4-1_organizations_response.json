@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"success\":true,\"data\":[{\"id\":\"seed-org-dev\",\"companyId\":\"seed-company-001\",\"parentId\":null,\"name\":\"개발팀\",\"depth\":0,\"sortOrder\":1,\"approverId\":null,\"isActive\":true,\"createdAt\":\"2026-06-11T22:33:24.543Z\",\"updatedAt\":\"2026-06-11T22:33:24.543Z\",\"children\":[]}]}"
+}

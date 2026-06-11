@@ -1,5 +1,4 @@
 'use client'
-import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Drawer from '@mui/material/Drawer'
 import List from '@mui/material/List'
@@ -10,6 +9,8 @@ import ListItemText from '@mui/material/ListItemText'
 import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
+import Tooltip from '@mui/material/Tooltip'
+import IconButton from '@mui/material/IconButton'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import PeopleIcon from '@mui/icons-material/People'
 import AccessTimeIcon from '@mui/icons-material/AccessTime'
@@ -21,6 +22,8 @@ import MessageIcon from '@mui/icons-material/Message'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import SettingsIcon from '@mui/icons-material/Settings'
 import CorporateFareIcon from '@mui/icons-material/CorporateFare'
+import LogoutIcon from '@mui/icons-material/Logout'
+import { useAuthStore } from '@/stores/auth.store'
 
 const DRAWER_WIDTH = 240
 
@@ -39,9 +42,17 @@ const NAV_ITEMS = [
   { label: '설정', icon: <SettingsIcon />, path: '/admin/settings/company' },
 ]
 
+function logout(router: ReturnType<typeof useRouter>, clearUser: () => void) {
+  document.cookie = 'accessToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT'
+  document.cookie = 'refreshToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT'
+  clearUser()
+  router.push('/login')
+}
+
 export default function AdminSidebar() {
   const router = useRouter()
   const pathname = usePathname()
+  const clearUser = useAuthStore((s) => s.clearUser)
 
   return (
     <Drawer
@@ -57,13 +68,16 @@ export default function AdminSidebar() {
         },
       }}
     >
-      <Box sx={{ p: 2, pt: 3 }}>
-        <Typography variant="h6" fontWeight={700} color="primary">
-          AbleWork
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          관리자
-        </Typography>
+      <Box sx={{ p: 2, pt: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Box>
+          <Typography variant="h6" fontWeight={700} color="primary">AbleWork</Typography>
+          <Typography variant="caption" color="text.secondary">관리자</Typography>
+        </Box>
+        <Tooltip title="로그아웃">
+          <IconButton size="small" onClick={() => logout(router, clearUser)} aria-label="로그아웃">
+            <LogoutIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </Box>
       <Divider />
       <List dense>

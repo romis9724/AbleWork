@@ -1,0 +1,122 @@
+[
+  {
+    "label": "대시보드",
+    "path": "/admin/dashboard",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/dashboard",
+    "pageTitle": "대시보드",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/01_dashboard.png",
+    "notes": ""
+  },
+  {
+    "label": "조직/직원",
+    "path": "/admin/employees",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/employees",
+    "pageTitle": "직원 관리",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/02_employees.png",
+    "notes": ""
+  },
+  {
+    "label": "직무",
+    "path": "/admin/positions",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/positions",
+    "pageTitle": "직무 관리",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/03_positions.png",
+    "notes": ""
+  },
+  {
+    "label": "근무일정",
+    "path": "/admin/shifts",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/shifts",
+    "pageTitle": "근무일정 관리",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/04_shifts.png",
+    "notes": ""
+  },
+  {
+    "label": "출퇴근",
+    "path": "/admin/attendances",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/attendances",
+    "pageTitle": "출퇴근 기록 (오늘)",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/05_attendances.png",
+    "notes": ""
+  },
+  {
+    "label": "휴가",
+    "path": "/admin/leave/types",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/leave/types",
+    "pageTitle": "휴가 유형 관리",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/06_leave_types.png",
+    "notes": ""
+  },
+  {
+    "label": "요청",
+    "path": "/admin/requests",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/requests",
+    "pageTitle": "요청 관리",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/07_requests.png",
+    "notes": ""
+  },
+  {
+    "label": "전자결재",
+    "path": "/admin/approval/forms",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/approval/forms",
+    "pageTitle": "기안양식 관리",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/08_approval_forms.png",
+    "notes": ""
+  },
+  {
+    "label": "리포트",
+    "path": "/admin/reports",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/reports",
+    "pageTitle": "근태 리포트",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/09_reports.png",
+    "notes": ""
+  },
+  {
+    "label": "메시지",
+    "path": "/admin/messages",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/messages",
+    "pageTitle": "메시지 관리",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/10_messages.png",
+    "notes": ""
+  },
+  {
+    "label": "알림설정",
+    "path": "/admin/settings/notifications",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/settings/notifications",
+    "pageTitle": "Discord 알림 설정",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/11_settings_notifications.png",
+    "notes": ""
+  },
+  {
+    "label": "회사설정",
+    "path": "/admin/settings/company",
+    "status": "PASS",
+    "finalUrl": "http://localhost:3000/admin/settings/company",
+    "pageTitle": "회사 설정",
+    "hasSidebar": true,
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/sidebar_final/12_settings_company.png",
+    "notes": ""
+  }
+]
