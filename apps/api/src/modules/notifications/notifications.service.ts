@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
+import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import {
   CreateNotificationRuleDto,
@@ -39,12 +40,11 @@ export class NotificationsService {
     return this.prisma.notificationRule.create({
       data: {
         companyId,
-        name: dto.name,
         eventType: dto.eventType,
         channelType: dto.channelType,
         webhookUrl: dto.webhookUrl,
-        triggerCondition: dto.triggerCondition ?? {},
-        embedTemplate: dto.embedTemplate ?? {},
+        triggerCondition: (dto.triggerCondition ?? undefined) as Prisma.InputJsonValue | undefined,
+        embedTemplate: (dto.embedTemplate ?? undefined) as Prisma.InputJsonValue | undefined,
         messageTemplateId: dto.messageTemplateId,
         cronExpression: dto.cronExpression,
         isActive: dto.isActive,
@@ -64,12 +64,15 @@ export class NotificationsService {
     return this.prisma.notificationRule.update({
       where: { id },
       data: {
-        ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.eventType !== undefined && { eventType: dto.eventType }),
         ...(dto.channelType !== undefined && { channelType: dto.channelType }),
         ...(dto.webhookUrl !== undefined && { webhookUrl: dto.webhookUrl }),
-        ...(dto.triggerCondition !== undefined && { triggerCondition: dto.triggerCondition }),
-        ...(dto.embedTemplate !== undefined && { embedTemplate: dto.embedTemplate }),
+        ...(dto.triggerCondition !== undefined && {
+          triggerCondition: dto.triggerCondition as Prisma.InputJsonValue,
+        }),
+        ...(dto.embedTemplate !== undefined && {
+          embedTemplate: dto.embedTemplate as Prisma.InputJsonValue,
+        }),
         ...(dto.messageTemplateId !== undefined && { messageTemplateId: dto.messageTemplateId }),
         ...(dto.cronExpression !== undefined && { cronExpression: dto.cronExpression }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
@@ -106,7 +109,6 @@ export class NotificationsService {
           retryCount: true,
           errorMessage: true,
           sentAt: true,
-          createdAt: true,
         },
         skip,
         take: limit,

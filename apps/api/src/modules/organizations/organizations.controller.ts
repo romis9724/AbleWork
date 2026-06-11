@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { OrganizationsService } from './organizations.service'
+import { OrganizationNode } from './organizations.types'
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { RolesGuard } from '../../common/guards/roles.guard'
@@ -30,7 +31,7 @@ export class OrganizationsController {
 
   @Get()
   @ApiOperation({ summary: '조직 트리 조회' })
-  findTree(@CompanyId() companyId: string) {
+  findTree(@CompanyId() companyId: string): Promise<OrganizationNode[]> {
     return this.organizationsService.findTree(companyId)
   }
 

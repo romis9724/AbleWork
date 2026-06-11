@@ -108,7 +108,7 @@ export class MessagesService {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { id: 'desc' },
         include: {
           message: {
             select: {
@@ -119,7 +119,7 @@ export class MessagesService {
               content: true,
               senderId: true,
               automationId: true,
-              createdAt: true,
+              sentAt: true,
             },
           },
         },
@@ -128,7 +128,7 @@ export class MessagesService {
     ])
 
     return {
-      items: items.map(({ readAt, message }: { readAt: Date | null; message: Record<string, unknown> }) => ({
+      items: items.map(({ readAt, message }) => ({
         ...message,
         readAt,
       })),
@@ -189,7 +189,7 @@ export class MessagesService {
       data: {
         companyId,
         ...dto,
-        startsAt: dto.startsAt ? new Date(dto.startsAt) : null,
+        startsAt: new Date(dto.startsAt as string),
       },
     })
   }

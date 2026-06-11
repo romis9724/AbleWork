@@ -18,6 +18,12 @@ interface AuthState {
   clearUser: () => void
 }
 
+const noopStorage = {
+  getItem: (_name: string) => null,
+  setItem: (_name: string, _value: string) => {},
+  removeItem: (_name: string) => {},
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
@@ -28,9 +34,17 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'ablework-auth',
-      storage: createJSONStorage(() =>
-        typeof window !== 'undefined' ? localStorage : { getItem: () => null, setItem: () => {}, removeItem: () => {} },
-      ),
+      storage: createJSONStorage(() => {
+        try {
+          if (typeof window === 'undefined') return noopStorage
+          if (typeof localStorage?.getItem !== 'function') return noopStorage
+          localStorage.getItem('__test__')
+          return localStorage
+        } catch {
+          return noopStorage
+        }
+      }),
+      skipHydration: true,
     },
   ),
 )

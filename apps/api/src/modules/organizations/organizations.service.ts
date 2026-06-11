@@ -6,20 +6,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service'
 import { CreateOrganizationDto } from './dto/create-organization.dto'
 import { UpdateOrganizationDto } from './dto/update-organization.dto'
-
-interface OrganizationNode {
-  id: string
-  companyId: string
-  parentId: string | null
-  name: string
-  depth: number
-  sortOrder: number
-  approverId: string | null
-  isActive: boolean
-  createdAt: Date
-  updatedAt: Date
-  children: OrganizationNode[]
-}
+import { OrganizationNode } from './organizations.types'
 
 @Injectable()
 export class OrganizationsService {
