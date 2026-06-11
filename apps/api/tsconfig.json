@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "paths": {
+      "@ablework/shared-types": ["../../packages/shared-types/src/index.ts"],
+      "@ablework/shared-schemas": ["../../packages/shared-schemas/src/index.ts"],
+      "@ablework/shared-constants": ["../../packages/shared-constants/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "prisma/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

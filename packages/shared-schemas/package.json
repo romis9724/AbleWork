@@ -1,0 +1,20 @@
+{
+  "name": "@ablework/shared-schemas",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ablework/shared-constants": "workspace:*",
+    "@ablework/shared-types": "workspace:*",
+    "zod": "^3.25.56"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

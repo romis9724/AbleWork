@@ -1,0 +1,1055 @@
+// AbleWork ERP — Prisma Schema
+// 버전: 1.0.0 (ERD v2.2.0 기반, 52개 테이블)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ════════════════════════════════════════════════
+// 1. 회사 / 조직
+// ════════════════════════════════════════════════
+
+model Company {
+  id             String   @id @default(uuid())
+  name           String   @db.VarChar(100)
+  businessNumber String?  @db.VarChar(20) @map("business_number")
+  foundedAt      DateTime? @db.Date @map("founded_at")
+  timezone       String   @default("Asia/Seoul")
+  locale         String   @default("ko")
+  countryCode    String   @default("KR") @map("country_code") @db.VarChar(2)
+  logoUrl        String?  @map("logo_url")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organizations        Organization[]
+  holidays             CompanyHoliday[]
+  settings             CompanySetting[]
+  employees            Employee[]
+  positions            Position[]
+  shiftTypes           ShiftType[]
+  shiftTemplates       ShiftTemplate[]
+  schedulePatterns     SchedulePattern[]
+  leaveGroups          LeaveGroup[]
+  leaveAccrualRules    LeaveAccrualRule[]
+  customRequestTypes   CustomRequestType[]
+  approvalRules        ApprovalRule[]
+  documentForms        DocumentForm[]
+  documentNumberRules  DocumentNumberRule[]
+  documents            Document[]
+  sharedApprovalLines  SharedApprovalLine[]
+  standardizationRules StandardizationRule[]
+  snapshotTemplates    ReportSnapshotTemplate[]
+  reportSnapshots      ReportSnapshot[]
+  customReportColumns  CustomReportColumn[]
+  messageTemplates     MessageTemplate[]
+  messageAutomations   MessageAutomation[]
+  messages             Message[]
+  notificationRules    NotificationRule[]
+  employeeCustomFields EmployeeCustomField[]
+
+  @@map("companies")
+}
+
+model Organization {
+  id         String   @id @default(uuid())
+  companyId  String   @map("company_id")
+  parentId   String?  @map("parent_id")
+  name       String   @db.VarChar(100)
+  depth      Int      @default(0)
+  sortOrder  Int      @default(0) @map("sort_order")
+  approverId String?  @map("approver_id")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  company          Company                @relation(fields: [companyId], references: [id])
+  parent           Organization?          @relation("OrgHierarchy", fields: [parentId], references: [id])
+  children         Organization[]         @relation("OrgHierarchy")
+  approver         Employee?              @relation("OrgApprover", fields: [approverId], references: [id])
+  employeeOrgs     EmployeeOrganization[]
+  timeclockAreas   TimeclockArea[]
+  shifts           Shift[]
+
+  @@index([companyId, isActive])
+  @@map("organizations")
+}
+
+model CompanyHoliday {
+  id            String   @id @default(uuid())
+  companyId     String   @map("company_id")
+  holidayDate   DateTime @db.Date @map("holiday_date")
+  name          String   @db.VarChar(100)
+  isAnnualRepeat Boolean @default(false) @map("is_annual_repeat")
+  type          String   @default("custom") @db.VarChar(20)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, holidayDate])
+  @@map("company_holidays")
+}
+
+model CompanySetting {
+  id        String @id @default(uuid())
+  companyId String @map("company_id")
+  section   String @db.VarChar(50)
+  key       String @db.VarChar(100)
+  value     Json
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, section, key])
+  @@index([companyId, section, key])
+  @@map("company_settings")
+}
+
+// ════════════════════════════════════════════════
+// 2. 계정 / 직원
+// ════════════════════════════════════════════════
+
+model User {
+  id               String   @id @default(uuid())
+  email            String   @unique @db.VarChar(255)
+  passwordHash     String   @map("password_hash")
+  name             String   @db.VarChar(50)
+  phone            String?  @db.VarChar(20)
+  timezone         String   @default("Asia/Seoul")
+  twoFactorEnabled Boolean  @default(false) @map("two_factor_enabled")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  employee Employee?
+
+  @@map("users")
+}
+
+model Employee {
+  id             String    @id @default(uuid())
+  companyId      String    @map("company_id")
+  userId         String?   @unique @map("user_id")
+  employeeNumber String?   @map("employee_number") @db.VarChar(50)
+  name           String    @db.VarChar(50)
+  phone          String?   @db.VarChar(20)
+  joinedAt       DateTime  @db.Date @map("joined_at")
+  resignedAt     DateTime? @db.Date @map("resigned_at")
+  employmentType String    @map("employment_type") @db.VarChar(20)
+  accessLevel    String    @map("access_level") @db.VarChar(20)
+  deviceId       String?   @map("device_id") @db.VarChar(255)
+  deviceBoundAt  DateTime? @map("device_bound_at")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  company               Company                    @relation(fields: [companyId], references: [id])
+  user                  User?                      @relation(fields: [userId], references: [id])
+  organizations         EmployeeOrganization[]
+  positions             EmployeePosition[]
+  wageInfos             WageInfo[]
+  customFieldValues     EmployeeCustomFieldValue[]
+  shifts                Shift[]
+  attendances           Attendance[]
+  leaveBalances         LeaveBalance[]
+  leaves                Leave[]
+  requests              Request[]
+  draftedDocuments      Document[]                 @relation("DocumentDrafter")
+  approvalSteps         ApprovalStep[]             @relation("StepAssignee")
+  proxySteps            ApprovalStep[]             @relation("StepProxy")
+  principalProxySettings ProxySettings[]           @relation("ProxPrincipal")
+  proxyProxySettings    ProxySettings[]            @relation("ProxyAgent")
+  approvalHistories     ApprovalHistory[]
+  managedOrgs           Organization[]             @relation("OrgApprover")
+  confirmedShifts       Shift[]                    @relation("ShiftConfirmer")
+  createdShifts         Shift[]                    @relation("ShiftCreator")
+  confirmedAttendances  Attendance[]               @relation("AttendanceConfirmer")
+  lockedSnapshots       ReportSnapshot[]
+  sentMessages          Message[]
+
+  @@index([companyId, isActive])
+  @@index([companyId, accessLevel])
+  @@map("employees")
+}
+
+model EmployeeOrganization {
+  employeeId     String  @map("employee_id")
+  organizationId String  @map("organization_id")
+  isPrimary      Boolean @default(false) @map("is_primary")
+
+  employee     Employee     @relation(fields: [employeeId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@id([employeeId, organizationId])
+  @@map("employee_organizations")
+}
+
+model Position {
+  id        String @id @default(uuid())
+  companyId String @map("company_id")
+  name      String @db.VarChar(100)
+  color     String? @db.VarChar(20)
+  sortOrder Int    @default(0) @map("sort_order")
+  isActive  Boolean @default(true) @map("is_active")
+
+  company   Company           @relation(fields: [companyId], references: [id])
+  employees EmployeePosition[]
+  approvalRuleDetails ApprovalRuleDetail[]
+  standardizationRules StandardizationRule[]
+
+  @@map("positions")
+}
+
+model EmployeePosition {
+  employeeId String @map("employee_id")
+  positionId String @map("position_id")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+  position Position @relation(fields: [positionId], references: [id])
+
+  @@id([employeeId, positionId])
+  @@map("employee_positions")
+}
+
+model EmployeeCustomField {
+  id        String  @id @default(uuid())
+  companyId String  @map("company_id")
+  fieldName String  @map("field_name") @db.VarChar(100)
+  fieldType String  @map("field_type") @db.VarChar(30)
+  sortOrder Int     @default(0) @map("sort_order")
+  isActive  Boolean @default(true) @map("is_active")
+
+  company Company                    @relation(fields: [companyId], references: [id])
+  values  EmployeeCustomFieldValue[]
+
+  @@map("employee_custom_fields")
+}
+
+model EmployeeCustomFieldValue {
+  id         String @id @default(uuid())
+  employeeId String @map("employee_id")
+  fieldId    String @map("field_id")
+  value      String? @db.Text
+
+  employee Employee            @relation(fields: [employeeId], references: [id])
+  field    EmployeeCustomField @relation(fields: [fieldId], references: [id])
+
+  @@unique([employeeId, fieldId])
+  @@map("employee_custom_field_values")
+}
+
+// ════════════════════════════════════════════════
+// 3. 근로정보
+// ════════════════════════════════════════════════
+
+model WageInfo {
+  id                      String   @id @default(uuid())
+  employeeId              String   @map("employee_id")
+  hourlyWage              Int      @default(0) @map("hourly_wage")
+  contractedWorkDays      String   @map("contracted_work_days") @db.VarChar(50)
+  contractedHoursPerWeek  Decimal  @map("contracted_hours_per_week") @db.Decimal(5, 2)
+  weeklyPaidHolidayDay    String?  @map("weekly_paid_holiday_day") @db.VarChar(10)
+  maxHoursPerWeek         Decimal  @default(52) @map("max_hours_per_week") @db.Decimal(5, 2)
+  effectiveFrom           DateTime @db.Date @map("effective_from")
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, effectiveFrom(sort: Desc)])
+  @@map("wage_infos")
+}
+
+// ════════════════════════════════════════════════
+// 4. 출퇴근 장소
+// ════════════════════════════════════════════════
+
+model TimeclockArea {
+  id                    String   @id @default(uuid())
+  organizationId        String   @map("organization_id")
+  name                  String   @db.VarChar(100)
+  authMethod            String   @map("auth_method") @db.VarChar(20)
+  locationLat           Decimal? @map("location_lat") @db.Decimal(10, 7)
+  locationLng           Decimal? @map("location_lng") @db.Decimal(10, 7)
+  locationRadiusMeters  Int?     @map("location_radius_meters")
+  wifiSsid              String?  @map("wifi_ssid") @db.VarChar(255)
+  isActive              Boolean  @default(true) @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  attendances  Attendance[]
+
+  @@map("timeclock_areas")
+}
+
+// ════════════════════════════════════════════════
+// 5. 근무일정
+// ════════════════════════════════════════════════
+
+model ShiftType {
+  id                 String  @id @default(uuid())
+  companyId          String  @map("company_id")
+  name               String  @db.VarChar(100)
+  category           String  @db.VarChar(30)
+  color              String? @db.VarChar(20)
+  isOvertime         Boolean @default(false) @map("is_overtime")
+  isNight            Boolean @default(false) @map("is_night")
+  isHoliday          Boolean @default(false) @map("is_holiday")
+  isDeemedWork       Boolean @default(false) @map("is_deemed_work")
+  deemedWorkHours    Int?    @map("deemed_work_hours")
+  noClockInRequired  Boolean @default(false) @map("no_clock_in_required")
+  confirmedAlert     String? @map("confirmed_alert") @db.Text
+  noteTemplates      Json?   @map("note_templates")
+  orgScopeIds        Json?   @map("org_scope_ids")
+  positionScopeIds   Json?   @map("position_scope_ids")
+  isActive           Boolean @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  company             Company              @relation(fields: [companyId], references: [id])
+  templates           ShiftTemplate[]
+  shifts              Shift[]
+  customReportColumns CustomReportColumn[]
+
+  @@index([companyId, isActive])
+  @@map("shift_types")
+}
+
+model ShiftTemplate {
+  id          String   @id @default(uuid())
+  companyId   String   @map("company_id")
+  shiftTypeId String   @map("shift_type_id")
+  name        String   @db.VarChar(100)
+  code        String?  @db.VarChar(20)
+  startTime   DateTime @map("start_time") @db.Time
+  endTime     DateTime @map("end_time") @db.Time
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company   Company   @relation(fields: [companyId], references: [id])
+  shiftType ShiftType @relation(fields: [shiftTypeId], references: [id])
+  shifts    Shift[]
+
+  @@map("shift_templates")
+}
+
+model SchedulePattern {
+  id               String  @id @default(uuid())
+  companyId        String  @map("company_id")
+  name             String  @db.VarChar(100)
+  description      String? @db.Text
+  repeatCycleDays  Int     @map("repeat_cycle_days")
+  patternDefinition Json   @map("pattern_definition")
+  holidayHandling  String  @map("holiday_handling") @db.VarChar(30)
+  isActive         Boolean @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@map("schedule_patterns")
+}
+
+model Shift {
+  id             String   @id @default(uuid())
+  employeeId     String   @map("employee_id")
+  organizationId String   @map("organization_id")
+  shiftTypeId    String   @map("shift_type_id")
+  templateId     String?  @map("template_id")
+  startAt        DateTime @map("start_at")
+  endAt          DateTime @map("end_at")
+  isOffsite      Boolean  @default(false) @map("is_offsite")
+  offsiteAddress String?  @map("offsite_address") @db.Text
+  offsiteLat     Decimal? @map("offsite_lat") @db.Decimal(10, 7)
+  offsiteLng     Decimal? @map("offsite_lng") @db.Decimal(10, 7)
+  status         String   @default("draft") @db.VarChar(20)
+  confirmedBy    String?  @map("confirmed_by")
+  confirmedAt    DateTime? @map("confirmed_at")
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  employee     Employee       @relation(fields: [employeeId], references: [id])
+  organization Organization   @relation(fields: [organizationId], references: [id])
+  shiftType    ShiftType      @relation(fields: [shiftTypeId], references: [id])
+  template     ShiftTemplate? @relation(fields: [templateId], references: [id])
+  confirmer    Employee?      @relation("ShiftConfirmer", fields: [confirmedBy], references: [id])
+  creator      Employee       @relation("ShiftCreator", fields: [createdBy], references: [id])
+  breakTimes   ShiftBreakTime[]
+  attendance   Attendance?
+
+  @@index([employeeId, startAt, endAt])
+  @@index([organizationId, startAt, endAt])
+  @@map("shifts")
+}
+
+model ShiftBreakTime {
+  id              String   @id @default(uuid())
+  shiftId         String   @map("shift_id")
+  breakType       String   @map("break_type") @db.VarChar(20)
+  startTime       DateTime @map("start_time") @db.Time
+  endTime         DateTime @map("end_time") @db.Time
+  durationMinutes Int      @map("duration_minutes")
+  isAuto          Boolean  @default(true) @map("is_auto")
+
+  shift Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@map("shift_break_times")
+}
+
+// ════════════════════════════════════════════════
+// 6. 출퇴근 기록
+// ════════════════════════════════════════════════
+
+model Attendance {
+  id              String    @id @default(uuid())
+  employeeId      String    @map("employee_id")
+  shiftId         String?   @unique @map("shift_id")
+  timeclockAreaId String?   @map("timeclock_area_id")
+  clockInAt       DateTime  @map("clock_in_at")
+  clockOutAt      DateTime? @map("clock_out_at")
+  clockInLat      Decimal?  @map("clock_in_lat") @db.Decimal(10, 7)
+  clockInLng      Decimal?  @map("clock_in_lng") @db.Decimal(10, 7)
+  clockOutLat     Decimal?  @map("clock_out_lat") @db.Decimal(10, 7)
+  clockOutLng     Decimal?  @map("clock_out_lng") @db.Decimal(10, 7)
+  clockInMethod   String?   @map("clock_in_method") @db.VarChar(20)
+  clockOutMethod  String?   @map("clock_out_method") @db.VarChar(20)
+  status          String    @default("normal") @db.VarChar(20)
+  isOncall        Boolean   @default(false) @map("is_oncall")
+  note            String?   @db.Text
+  isConfirmed     Boolean   @default(false) @map("is_confirmed")
+  confirmedBy     String?   @map("confirmed_by")
+  confirmedAt     DateTime? @map("confirmed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  employee      Employee       @relation(fields: [employeeId], references: [id])
+  shift         Shift?         @relation(fields: [shiftId], references: [id])
+  timeclockArea TimeclockArea? @relation(fields: [timeclockAreaId], references: [id])
+  confirmer     Employee?      @relation("AttendanceConfirmer", fields: [confirmedBy], references: [id])
+  breaks        AttendanceBreak[]
+
+  @@index([employeeId, clockInAt])
+  @@index([employeeId, status])
+  @@map("attendances")
+}
+
+model AttendanceBreak {
+  id           String    @id @default(uuid())
+  attendanceId String    @map("attendance_id")
+  breakType    String    @map("break_type") @db.VarChar(20)
+  startAt      DateTime  @map("start_at")
+  endAt        DateTime? @map("end_at")
+  isManual     Boolean   @default(false) @map("is_manual")
+
+  attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+
+  @@map("attendance_breaks")
+}
+
+// ════════════════════════════════════════════════
+// 7. 휴가
+// ════════════════════════════════════════════════
+
+model LeaveGroup {
+  id              String @id @default(uuid())
+  companyId       String @map("company_id")
+  name            String @db.VarChar(100)
+  code            String? @db.VarChar(20)
+  overageLimitDays Int   @default(0) @map("overage_limit_days")
+  isActive        Boolean @default(true) @map("is_active")
+
+  company       Company           @relation(fields: [companyId], references: [id])
+  leaveTypes    LeaveType[]
+  accrualRules  LeaveAccrualRule[]
+
+  @@map("leave_groups")
+}
+
+model LeaveType {
+  id                          String  @id @default(uuid())
+  groupId                     String  @map("group_id")
+  name                        String  @db.VarChar(100)
+  displayName                 String? @map("display_name") @db.VarChar(100)
+  code                        String? @db.VarChar(20)
+  timeOption                  String  @default("full_day") @map("time_option") @db.VarChar(20)
+  paidHours                   Int?    @map("paid_hours")
+  deductionDays               Decimal @default(1) @map("deduction_days") @db.Decimal(5, 2)
+  specialOption               String? @map("special_option") @db.VarChar(30)
+  minConsecutiveDays          Int?    @map("min_consecutive_days")
+  maxConsecutiveDays          Int?    @map("max_consecutive_days")
+  includeHolidaysInConsecutive Boolean @default(false) @map("include_holidays_in_consecutive")
+  allowArbitraryTime          Boolean @default(false) @map("allow_arbitrary_time")
+  timeFixedType               String? @map("time_fixed_type") @db.VarChar(30)
+  baseHours                   Decimal? @map("base_hours") @db.Decimal(5, 2)
+  confirmBeforeClockin        String? @map("confirm_before_clockin") @db.Text
+  reasonDisplay               Boolean @default(false) @map("reason_display")
+  deleteEnclosedShifts        Boolean @default(false) @map("delete_enclosed_shifts")
+  orgScopeIds                 Json?   @map("org_scope_ids")
+  positionScopeIds            Json?   @map("position_scope_ids")
+  isActive                    Boolean @default(true) @map("is_active")
+
+  group    LeaveGroup     @relation(fields: [groupId], references: [id])
+  balances LeaveBalance[]
+  leaves   Leave[]
+  messageAutomations MessageAutomation[]
+  customReportColumns CustomReportColumn[]
+
+  @@map("leave_types")
+}
+
+model LeaveAccrualRule {
+  id          String  @id @default(uuid())
+  companyId   String  @map("company_id")
+  leaveGroupId String @map("leave_group_id")
+  name        String  @db.VarChar(100)
+  memo        String? @db.Text
+  isActive    Boolean @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company    Company              @relation(fields: [companyId], references: [id])
+  leaveGroup LeaveGroup           @relation(fields: [leaveGroupId], references: [id])
+  items      LeaveAccrualRuleItem[]
+
+  @@map("leave_accrual_rules")
+}
+
+model LeaveAccrualRuleItem {
+  id             String  @id @default(uuid())
+  ruleId         String  @map("rule_id")
+  accrualBasis   String  @map("accrual_basis") @db.VarChar(10)
+  tenureMonths   Int?    @map("tenure_months")
+  tenureYears    Int?    @map("tenure_years")
+  accrualDays    Decimal @map("accrual_days") @db.Decimal(5, 2)
+  validMonths    Int?    @map("valid_months")
+  periodStartMd  String? @map("period_start_md") @db.VarChar(5)
+  periodEndMd    String? @map("period_end_md") @db.VarChar(5)
+  sortOrder      Int     @map("sort_order")
+
+  rule LeaveAccrualRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@map("leave_accrual_rule_items")
+}
+
+model LeaveBalance {
+  id            String   @id @default(uuid())
+  employeeId    String   @map("employee_id")
+  leaveTypeId   String   @map("leave_type_id")
+  year          Int
+  accruedDays   Decimal  @default(0) @map("accrued_days") @db.Decimal(7, 2)
+  usedDays      Decimal  @default(0) @map("used_days") @db.Decimal(7, 2)
+  remainingDays Decimal  @default(0) @map("remaining_days") @db.Decimal(7, 2)
+  expiresAt     DateTime? @db.Date @map("expires_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@index([employeeId])
+  @@map("leave_balances")
+}
+
+model Leave {
+  id          String   @id @default(uuid())
+  employeeId  String   @map("employee_id")
+  leaveTypeId String   @map("leave_type_id")
+  startDate   DateTime @db.Date @map("start_date")
+  endDate     DateTime @db.Date @map("end_date")
+  startTime   DateTime? @db.Time @map("start_time")
+  endTime     DateTime? @db.Time @map("end_time")
+  daysUsed    Decimal  @default(1) @map("days_used") @db.Decimal(5, 2)
+  status      String   @default("APPROVED") @db.VarChar(20)
+  reason      String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@index([employeeId, startDate, endDate])
+  @@map("leaves")
+}
+
+// ════════════════════════════════════════════════
+// 8. 요청
+// ════════════════════════════════════════════════
+
+model CustomRequestType {
+  id               String  @id @default(uuid())
+  companyId        String  @map("company_id")
+  name             String  @db.VarChar(100)
+  isActive         Boolean @default(true) @map("is_active")
+  enablePdf        Boolean @default(false) @map("enable_pdf")
+  allowEmployeePdf Boolean @default(false) @map("allow_employee_pdf")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  company       Company                    @relation(fields: [companyId], references: [id])
+  fields        CustomRequestTypeField[]
+  approvalRules ApprovalRule[]
+
+  @@map("custom_request_types")
+}
+
+model CustomRequestTypeField {
+  id           String  @id @default(uuid())
+  customTypeId String  @map("custom_type_id")
+  fieldName    String  @map("field_name") @db.VarChar(100)
+  fieldType    String  @map("field_type") @db.VarChar(30)
+  isRequired   Boolean @default(false) @map("is_required")
+  options      Json?
+  description  String? @db.Text
+  imageUrl     String? @map("image_url") @db.Text
+  sortOrder    Int     @map("sort_order")
+
+  customType CustomRequestType @relation(fields: [customTypeId], references: [id], onDelete: Cascade)
+
+  @@map("custom_request_type_fields")
+}
+
+model Request {
+  id          String   @id @default(uuid())
+  companyId   String   @map("company_id")
+  requesterId String   @map("requester_id")
+  type        String   @db.VarChar(30)
+  payload     Json
+  status      String   @default("PENDING") @db.VarChar(20)
+  documentId  String?  @unique @map("document_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  requester  Employee         @relation(fields: [requesterId], references: [id])
+  document   Document?        @relation(fields: [documentId], references: [id])
+  approvals  RequestApproval[]
+
+  @@index([requesterId, status])
+  @@index([companyId, status])
+  @@map("requests")
+}
+
+model ApprovalRule {
+  id               String  @id @default(uuid())
+  companyId        String  @map("company_id")
+  name             String  @db.VarChar(100)
+  requestType      String  @map("request_type") @db.VarChar(30)
+  customTypeId     String? @map("custom_type_id")
+  priority         Int     @default(0)
+  scopeOrgIds      Json?   @map("scope_org_ids")
+  scopePositionIds Json?   @map("scope_position_ids")
+  maxApprovalRounds Int    @default(1) @map("max_approval_rounds")
+  isAutoApprove    Boolean @default(false) @map("is_auto_approve")
+  advancedSettings Json?   @map("advanced_settings")
+  isActive         Boolean @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  company    Company             @relation(fields: [companyId], references: [id])
+  customType CustomRequestType?  @relation(fields: [customTypeId], references: [id])
+  details    ApprovalRuleDetail[]
+
+  @@map("approval_rules")
+}
+
+model ApprovalRuleDetail {
+  id                String  @id @default(uuid())
+  ruleId            String  @map("rule_id")
+  tag               String? @db.VarChar(30)
+  round             Int     @default(1)
+  requiredCount     Int     @default(1) @map("required_count")
+  approverPositionId String? @map("approver_position_id")
+  isForbidden       Boolean @default(false) @map("is_forbidden")
+  sortOrder         Int     @map("sort_order")
+
+  rule             ApprovalRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  approverPosition Position?    @relation(fields: [approverPositionId], references: [id])
+
+  @@map("approval_rule_details")
+}
+
+model RequestApproval {
+  id         String    @id @default(uuid())
+  requestId  String    @map("request_id")
+  round      Int       @default(1)
+  approverId String    @map("approver_id")
+  status     String    @db.VarChar(20)
+  comment    String?   @db.Text
+  actedAt    DateTime? @map("acted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  request Request @relation(fields: [requestId], references: [id])
+
+  @@map("request_approvals")
+}
+
+// ════════════════════════════════════════════════
+// 9. 전자결재
+// ════════════════════════════════════════════════
+
+model DocumentForm {
+  id              String  @id @default(uuid())
+  companyId       String  @map("company_id")
+  formOwnerId     String? @map("form_owner_id")
+  name            String  @db.VarChar(200)
+  category        String? @db.VarChar(100)
+  fieldsSchema    Json    @map("fields_schema")
+  sortOrder       Int     @default(0) @map("sort_order")
+  allowReDraft    Boolean @default(false) @map("allow_re_draft")
+  allowPreApproval Boolean @default(false) @map("allow_pre_approval")
+  allowZipUpload  Boolean @default(false) @map("allow_zip_upload")
+  isActive        Boolean @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  company         Company              @relation(fields: [companyId], references: [id])
+  accessRules     FormAccessRule[]
+  numberRules     DocumentNumberRule[]
+  documents       Document[]
+
+  @@index([companyId, isActive])
+  @@map("document_forms")
+}
+
+model FormAccessRule {
+  id        String @id @default(uuid())
+  formId    String @map("form_id")
+  scopeType String @map("scope_type") @db.VarChar(20)
+  scopeId   String @map("scope_id")
+
+  form DocumentForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@map("form_access_rules")
+}
+
+model DocumentNumberRule {
+  id          String  @id @default(uuid())
+  companyId   String  @map("company_id")
+  formId      String  @map("form_id")
+  pattern     String  @db.VarChar(200)
+  currentSeq  Int     @default(0) @map("current_seq")
+  resetYearly Boolean @default(true) @map("reset_yearly")
+
+  company Company      @relation(fields: [companyId], references: [id])
+  form    DocumentForm @relation(fields: [formId], references: [id])
+
+  @@map("document_number_rules")
+}
+
+model Document {
+  id              String    @id @default(uuid())
+  companyId       String    @map("company_id")
+  formId          String    @map("form_id")
+  requestId       String?   @unique @map("request_id")
+  docNumber       String?   @unique @map("doc_number") @db.VarChar(100)
+  title           String    @db.VarChar(200)
+  content         Json
+  drafterId       String    @map("drafter_id")
+  status          String    @default("DRAFT") @db.VarChar(20)
+  visibilityScope String    @default("PRIVATE") @map("visibility_scope") @db.VarChar(20)
+  submittedAt     DateTime? @map("submitted_at")
+  completedAt     DateTime? @map("completed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  company       Company          @relation(fields: [companyId], references: [id])
+  form          DocumentForm     @relation(fields: [formId], references: [id])
+  request       Request?
+  drafter       Employee         @relation("DocumentDrafter", fields: [drafterId], references: [id])
+  approvalLines ApprovalLine[]
+  history       ApprovalHistory[]
+
+  @@index([companyId, status])
+  @@index([drafterId, status])
+  @@map("documents")
+}
+
+model ApprovalLine {
+  id              String  @id @default(uuid())
+  documentId      String  @map("document_id")
+  name            String? @db.VarChar(100)
+  isShared        Boolean @default(false) @map("is_shared")
+  sharedLineRefId String? @map("shared_line_ref_id")
+
+  document        Document          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sharedLineRef   SharedApprovalLine? @relation(fields: [sharedLineRefId], references: [id])
+  steps           ApprovalStep[]
+
+  @@map("approval_lines")
+}
+
+model ApprovalStep {
+  id          String    @id @default(uuid())
+  lineId      String    @map("line_id")
+  role        String    @db.VarChar(30)
+  assigneeId  String    @map("assignee_id")
+  stepOrder   Int       @map("step_order")
+  isParallel  Boolean   @default(false) @map("is_parallel")
+  status      String    @default("PENDING") @db.VarChar(20)
+  comment     String?   @db.Text
+  isProxy     Boolean   @default(false) @map("is_proxy")
+  proxyId     String?   @map("proxy_id")
+  proxyReason String?   @map("proxy_reason") @db.Text
+  actedAt     DateTime? @map("acted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  line     ApprovalLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  assignee Employee     @relation("StepAssignee", fields: [assigneeId], references: [id])
+  proxy    Employee?    @relation("StepProxy", fields: [proxyId], references: [id])
+
+  @@index([assigneeId, status])
+  @@map("approval_steps")
+}
+
+model ApprovalHistory {
+  id         String   @id @default(uuid())
+  documentId String   @map("document_id")
+  stepId     String?  @map("step_id")
+  actorId    String   @map("actor_id")
+  action     String   @db.VarChar(50)
+  comment    String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id])
+  actor    Employee @relation(fields: [actorId], references: [id])
+
+  @@index([documentId, createdAt(sort: Desc)])
+  @@map("approval_history")
+}
+
+model ProxySettings {
+  id          String   @id @default(uuid())
+  principalId String   @map("principal_id")
+  proxyId     String   @map("proxy_id")
+  startDate   DateTime @db.Date @map("start_date")
+  endDate     DateTime @db.Date @map("end_date")
+  reason      String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  principal Employee @relation("ProxPrincipal", fields: [principalId], references: [id])
+  proxy     Employee @relation("ProxyAgent", fields: [proxyId], references: [id])
+
+  @@map("proxy_settings")
+}
+
+model SharedApprovalLine {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String   @db.VarChar(100)
+  steps     Json
+  version   Int      @default(1)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  approvalLines ApprovalLine[]
+
+  @@map("shared_approval_lines")
+}
+
+// ════════════════════════════════════════════════
+// 10. 표준화 규칙 / 리포트
+// ════════════════════════════════════════════════
+
+model StandardizationRule {
+  id                   String  @id @default(uuid())
+  companyId            String  @map("company_id")
+  positionId           String? @map("position_id")
+  name                 String  @db.VarChar(100)
+  calculationBasis     String  @map("calculation_basis") @db.VarChar(20)
+  startTimeRule        String  @map("start_time_rule") @db.VarChar(20)
+  endTimeRule          String  @map("end_time_rule") @db.VarChar(20)
+  excludeNoCheckin     Boolean @default(false) @map("exclude_no_checkin")
+  includeManualBreak   Boolean @default(true) @map("include_manual_break")
+  isDefault            Boolean @default(false) @map("is_default")
+  isActive             Boolean @default(true) @map("is_active")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  company  Company   @relation(fields: [companyId], references: [id])
+  position Position? @relation(fields: [positionId], references: [id])
+
+  @@map("standardization_rules")
+}
+
+model ReportSnapshotTemplate {
+  id                String  @id @default(uuid())
+  companyId         String  @map("company_id")
+  name              String  @db.VarChar(100)
+  columnConfig      Json    @map("column_config")
+  includeLeaveStats Boolean @default(true) @map("include_leave_stats")
+  isActive          Boolean @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  company   Company          @relation(fields: [companyId], references: [id])
+  snapshots ReportSnapshot[]
+
+  @@map("report_snapshot_templates")
+}
+
+model ReportSnapshot {
+  id           String    @id @default(uuid())
+  companyId    String    @map("company_id")
+  templateId   String?   @map("template_id")
+  periodStart  DateTime  @db.Date @map("period_start")
+  periodEnd    DateTime  @db.Date @map("period_end")
+  columnConfig Json      @map("column_config")
+  isLocked     Boolean   @default(false) @map("is_locked")
+  lockedBy     String?   @map("locked_by")
+  lockedAt     DateTime? @map("locked_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  company  Company                 @relation(fields: [companyId], references: [id])
+  template ReportSnapshotTemplate? @relation(fields: [templateId], references: [id])
+  locker   Employee?               @relation(fields: [lockedBy], references: [id])
+  rows     ReportSnapshotRow[]
+
+  @@index([companyId, periodStart, periodEnd])
+  @@map("report_snapshots")
+}
+
+model ReportSnapshotRow {
+  id               String @id @default(uuid())
+  snapshotId       String @map("snapshot_id")
+  employeeId       String @map("employee_id")
+  values           Json
+  calculationBasis Json   @map("calculation_basis")
+
+  snapshot ReportSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@map("report_snapshot_rows")
+}
+
+model CustomReportColumn {
+  id                String  @id @default(uuid())
+  companyId         String  @map("company_id")
+  name              String  @db.VarChar(100)
+  formula           String  @db.Text
+  filterLeaveTypeId String? @map("filter_leave_type_id")
+  filterShiftTypeId String? @map("filter_shift_type_id")
+  dateSpecified     String? @map("date_specified") @db.VarChar(10)
+  positionIds       Json?   @map("position_ids")
+  sortOrder         Int     @map("sort_order")
+  isActive          Boolean @default(true) @map("is_active")
+
+  company         Company    @relation(fields: [companyId], references: [id])
+  filterLeaveType LeaveType? @relation(fields: [filterLeaveTypeId], references: [id])
+  filterShiftType ShiftType? @relation(fields: [filterShiftTypeId], references: [id])
+
+  @@map("custom_report_columns")
+}
+
+// ════════════════════════════════════════════════
+// 11. 메시지 / 자동화
+// ════════════════════════════════════════════════
+
+model MessageTemplate {
+  id           String   @id @default(uuid())
+  companyId    String   @map("company_id")
+  name         String   @db.VarChar(100)
+  content      String   @db.Text
+  hasVariables Boolean  @default(false) @map("has_variables")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  company    Company             @relation(fields: [companyId], references: [id])
+  automations MessageAutomation[]
+  notificationRules NotificationRule[]
+
+  @@map("message_templates")
+}
+
+model MessageAutomation {
+  id            String   @id @default(uuid())
+  companyId     String   @map("company_id")
+  name          String   @db.VarChar(100)
+  automationType String  @map("automation_type") @db.VarChar(30)
+  leaveTypeId   String?  @map("leave_type_id")
+  triggerBasis  String   @map("trigger_basis") @db.VarChar(20)
+  offsetDays    Int      @map("offset_days")
+  sendTime      DateTime @map("send_time") @db.Time
+  timezone      String   @default("Asia/Seoul")
+  templateId    String   @map("template_id")
+  sendEmail     Boolean  @default(false) @map("send_email")
+  isActive      Boolean  @default(true) @map("is_active")
+  startsAt      DateTime @db.Date @map("starts_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  company   Company         @relation(fields: [companyId], references: [id])
+  leaveType LeaveType?      @relation(fields: [leaveTypeId], references: [id])
+  template  MessageTemplate @relation(fields: [templateId], references: [id])
+
+  @@map("message_automations")
+}
+
+model Message {
+  id           String   @id @default(uuid())
+  companyId    String   @map("company_id")
+  senderId     String?  @map("sender_id")
+  automationId String?  @map("automation_id")
+  type         String   @db.VarChar(20)
+  title        String?  @db.VarChar(200)
+  content      String   @db.Text
+  sentAt       DateTime @default(now()) @map("sent_at")
+
+  company    Company            @relation(fields: [companyId], references: [id])
+  sender     Employee?          @relation(fields: [senderId], references: [id])
+  recipients MessageRecipient[]
+
+  @@index([companyId, sentAt(sort: Desc)])
+  @@map("messages")
+}
+
+model MessageRecipient {
+  id          String    @id @default(uuid())
+  messageId   String    @map("message_id")
+  recipientId String    @map("recipient_id")
+  readAt      DateTime? @map("read_at")
+  note        String?   @db.Text
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, readAt])
+  @@map("message_recipients")
+}
+
+// ════════════════════════════════════════════════
+// 12. 알림
+// ════════════════════════════════════════════════
+
+model NotificationRule {
+  id                String  @id @default(uuid())
+  companyId         String  @map("company_id")
+  eventType         String  @map("event_type") @db.VarChar(50)
+  channelType       String  @map("channel_type") @db.VarChar(20)
+  webhookUrl        String? @map("webhook_url") @db.Text
+  triggerCondition  Json?   @map("trigger_condition")
+  embedTemplate     Json?   @map("embed_template")
+  messageTemplateId String? @map("message_template_id")
+  isActive          Boolean @default(true) @map("is_active")
+  cronExpression    String? @map("cron_expression") @db.VarChar(100)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  company         Company          @relation(fields: [companyId], references: [id])
+  messageTemplate MessageTemplate? @relation(fields: [messageTemplateId], references: [id])
+  logs            NotificationLog[]
+
+  @@index([companyId, eventType, isActive])
+  @@map("notification_rules")
+}
+
+model NotificationLog {
+  id           String    @id @default(uuid())
+  ruleId       String?   @map("rule_id")
+  eventType    String    @map("event_type") @db.VarChar(50)
+  payload      Json?
+  status       String    @db.VarChar(20)
+  retryCount   Int       @default(0) @map("retry_count")
+  errorMessage String?   @map("error_message") @db.Text
+  sentAt       DateTime  @default(now()) @map("sent_at")
+
+  rule NotificationRule? @relation(fields: [ruleId], references: [id])
+
+  @@index([ruleId, sentAt(sort: Desc)])
+  @@map("notification_logs")
+}

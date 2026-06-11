@@ -1,0 +1,117 @@
+import { Test, TestingModule } from '@nestjs/testing'
+import { NotFoundException } from '@nestjs/common'
+import { PositionsService } from './positions.service'
+import { PrismaService } from '../../prisma/prisma.service'
+
+const COMPANY_ID = 'company-1'
+const POSITION_ID = 'pos-1'
+
+const basePosition = {
+  id: POSITION_ID,
+  companyId: COMPANY_ID,
+  name: '매니저',
+  color: '#FF5733',
+  sortOrder: 0,
+  isActive: true,
+}
+
+const mockPrisma = {
+  position: {
+    findMany: jest.fn(),
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
+  },
+}
+
+describe('PositionsService', () => {
+  let service: PositionsService
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        PositionsService,
+        { provide: PrismaService, useValue: mockPrisma },
+      ],
+    }).compile()
+
+    service = module.get<PositionsService>(PositionsService)
+    jest.clearAllMocks()
+  })
+
+  // ── findAll ──────────────────────────────────────────────────────────────────
+
+  describe('findAll', () => {
+    it('해당 회사의 활성 직무 목록을 반환한다', async () => {
+      mockPrisma.position.findMany.mockResolvedValue([basePosition])
+      const result = await service.findAll(COMPANY_ID)
+      expect(result).toEqual([basePosition])
+      expect(mockPrisma.position.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { companyId: COMPANY_ID, isActive: true },
+        }),
+      )
+    })
+  })
+
+  // ── create ───────────────────────────────────────────────────────────────────
+
+  describe('create', () => {
+    it('직무를 생성하고 반환한다', async () => {
+      const dto = { name: '파트타이머', color: '#3498DB', sortOrder: 1 }
+      mockPrisma.position.create.mockResolvedValue({ ...basePosition, ...dto })
+
+      const result = await service.create(COMPANY_ID, dto)
+      expect(result.name).toBe('파트타이머')
+      expect(mockPrisma.position.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ companyId: COMPANY_ID, name: '파트타이머' }),
+        }),
+      )
+    })
+  })
+
+  // ── update ───────────────────────────────────────────────────────────────────
+
+  describe('update', () => {
+    it('존재하는 직무를 수정한다', async () => {
+      mockPrisma.position.findFirst.mockResolvedValue(basePosition)
+      mockPrisma.position.update.mockResolvedValue({ ...basePosition, name: '시니어 매니저' })
+
+      const result = await service.update(COMPANY_ID, POSITION_ID, { name: '시니어 매니저' })
+      expect(result.name).toBe('시니어 매니저')
+    })
+
+    it('존재하지 않으면 NotFoundException(POSITION_NOT_FOUND)을 던진다', async () => {
+      mockPrisma.position.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.update(COMPANY_ID, 'nonexistent', { name: '변경' }),
+      ).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  // ── remove ───────────────────────────────────────────────────────────────────
+
+  describe('remove', () => {
+    it('직무를 소프트 삭제한다 (isActive=false)', async () => {
+      mockPrisma.position.findFirst.mockResolvedValue(basePosition)
+      mockPrisma.position.update.mockResolvedValue({ ...basePosition, isActive: false })
+
+      const result = await service.remove(COMPANY_ID, POSITION_ID)
+      expect(result.isActive).toBe(false)
+      expect(mockPrisma.position.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: POSITION_ID },
+          data: { isActive: false },
+        }),
+      )
+    })
+
+    it('존재하지 않으면 NotFoundException을 던진다', async () => {
+      mockPrisma.position.findFirst.mockResolvedValue(null)
+
+      await expect(service.remove(COMPANY_ID, 'nonexistent')).rejects.toThrow(NotFoundException)
+    })
+  })
+})
