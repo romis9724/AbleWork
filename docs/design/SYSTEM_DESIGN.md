@@ -1,0 +1,1257 @@
+# AbleWork ERP 시스템 설계 문서
+
+> 버전: 2.2.0  
+> 작성일: 2026-06-11  
+> 최종 점검: 2026-06-12 (5라운드 순환 점검 완료)  
+> 대상: 중소규모 기업 (50~300인)
+
+---
+
+## 목차
+
+1. [프로젝트 개요](#1-프로젝트-개요)
+2. [시스템 아키텍처](#2-시스템-아키텍처)
+3. [모듈 구조](#3-모듈-구조)
+4. [도메인 모델 (ERD)](#4-도메인-모델-erd)
+5. [모듈별 기능 상세](#5-모듈별-기능-상세)
+   - [5.1 인사/조직 관리](#51-인사조직-관리)
+   - [5.2 근태 관리](#52-근태-관리)
+   - [5.3 전자결재](#53-전자결재)
+   - [5.4 리포트 / 표준화 규칙](#54-리포트--표준화-규칙)
+   - [5.5 메시지](#55-메시지)
+   - [5.6 Discord 알림 연동](#56-discord-알림-연동)
+6. [권한 체계](#6-권한-체계)
+7. [API 설계](#7-api-설계)
+8. [모듈 간 연동 흐름](#8-모듈-간-연동-흐름)
+9. [알림 설계](#9-알림-설계)
+10. [구현 로드맵](#10-구현-로드맵)
+
+---
+
+## 1. 프로젝트 개요
+
+### 1.1 목표
+
+HR 근태 관리와 전자결재를 **단일 통합 ERP 플랫폼**으로 구축한다. 중소규모 기업이 하나의 시스템에서 인사, 근태, 전자결재를 처리할 수 있도록 한다.
+
+### 1.2 핵심 원칙
+
+- **단일 사용자 계정**: 로그인 한 번으로 모든 모듈 접근
+- **결재 통합**: HR 요청(휴가, 근무일정 변경 등)이 전자결재 워크플로우로 처리됨
+- **실시간 알림**: Discord 웹훅으로 근태 이벤트 즉시 알림
+- **한국 노동법 준수**: 주 52시간 초과 경고, 연차 자동 발생 (근로기준법 기준)
+
+### 1.3 설계 반영 범위
+
+| 모듈 | 반영 범위 |
+|---|---|
+| HR 근태 | 근태, 휴가, 요청, 조직 관리, 메시지 |
+| 전자결재 | 기안 양식, 결재선, 승인/반려/협조/공람 |
+
+### 1.4 구현 범위 외 항목
+
+원본 소스에 존재하지만 이 ERP에서 **의도적으로 제외**한 항목:
+
+| 항목 | 제외 이유 |
+|---|---|
+| 급여 정산 | 요구사항에서 선택되지 않음. 향후 별도 착수 가능 |
+| 전자계약 | 글로싸인/모두싸인 등 외부 서비스 연동 필요. 별도 서비스로 분리 |
+| 급여명세서 메시지 (`messageUseCasePaySlip`) | 급여 정산 모듈 부재로 제외 |
+| Enterprise 전용 기능 | 생체인증, 2FA, IP 제어, 스케줄 게시, 비례 발생 등 — 소규모 ERP 범위 초과 |
+
+### 1.5 핵심 용어 정의
+
+| 용어 | 정의 | 구분 기준 |
+|---|---|---|
+| **요청 (Request)** | 직원이 HR 변경을 신청하는 행위 (근무일정 변경, 휴가 신청 등) | HR 모듈 개념 |
+| **기안 (Document)** | 전자결재 워크플로우로 처리되는 문서 | 전자결재 모듈 개념 |
+| **관계** | HR 요청이 접수되면 대응하는 기안 문서가 **자동 생성**됨. 기안 승인 완료 → HR 데이터 실제 반영 | 두 모듈의 연결 |
+| **알림 (Notification)** | Discord 웹훅 기반 이벤트 알림 | 실시간, 이벤트 트리거 |
+| **메시지 (Message)** | 앱 내 발송되는 텍스트 메시지 (수동/자동화) | 비실시간, 템플릿 기반 |
+
+---
+
+## 2. 시스템 아키텍처
+
+```
+┌────────────────────────────────────────────────────┐
+│                   Frontend (Web)                    │
+│      Next.js App Router + TypeScript + Tailwind     │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐   │
+│  │  HR/조직  │ │  근태관리  │ │     전자결재      │   │
+└──┴──────────┴─┴──────────┴─┴──────────────────┴───┘
+                     │ REST API / WebSocket
+┌────────────────────────────────────────────────────┐
+│                 Backend (API Server)                │
+│           Node.js (NestJS) + TypeScript             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐   │
+│  │ HR 서비스 │ │근태 서비스│ │    결재 서비스     │   │
+│  └────┬─────┘ └────┬─────┘ └────────┬─────────┘   │
+│       └────────────┴────────────────┘               │
+│             공통 인프라 레이어                          │
+│    (Auth, Permission, Event Bus, Notification)      │
+└────────────────────────────────────────────────────┘
+                     │
+┌──────────┬──────────┬──────────┬──────────────────┐
+│PostgreSQL│  Redis   │S3/Object │ Discord Webhook   │
+│ (메인 DB) │(캐시/세션) │(파일저장) │   (알림 연동)    │
+└──────────┴──────────┴──────────┴──────────────────┘
+```
+
+### 2.1 기술 스택 권장안
+
+| 레이어 | 기술 | 비고 |
+|---|---|---|
+| Frontend | Next.js 14+ (App Router) | SSR + CSR 혼합, TypeScript |
+| Backend | NestJS (Node.js) | 모듈형 아키텍처 |
+| Database | PostgreSQL 16 | 트랜잭션 보장 |
+| Cache | Redis | 세션, 실시간 알림 큐 |
+| Auth | JWT + Refresh Token | RBAC 권한 모델 |
+| File | S3 호환 스토리지 | 첨부파일, 계약서 |
+| Notification | Discord Webhook | 근태 알림 채널 |
+| 배포 | Docker + Compose | 단일 서버 배포 가능 |
+
+---
+
+## 3. 모듈 구조
+
+```
+ablework-erp/
+├── apps/
+│   ├── web/                        # Next.js 프론트엔드
+│   │   ├── app/
+│   │   │   ├── (auth)/             # 로그인/회원가입
+│   │   │   ├── (admin)/            # 관리자 화면
+│   │   │   │   ├── organization/   # 조직 관리
+│   │   │   │   ├── employees/      # 직원 관리
+│   │   │   │   ├── shifts/         # 근무일정 관리
+│   │   │   │   ├── attendance/     # 출퇴근 관리
+│   │   │   │   ├── leave/          # 휴가 관리
+│   │   │   │   ├── approval/       # 전자결재 관리
+│   │   │   │   ├── messages/       # 메시지/자동화
+│   │   │   │   └── reports/        # 리포트
+│   │   │   └── (employee)/         # 직원 셀프서비스
+│   │   │       ├── my-schedule/    # 내 근무일정
+│   │   │       ├── my-attendance/  # 내 출퇴근
+│   │   │       ├── my-leave/       # 내 휴가
+│   │   │       ├── requests/       # 요청 내역
+│   │   │       └── drafts/         # 기안함 (전자결재)
+│   └── api/                        # NestJS 백엔드
+│       ├── auth/
+│       ├── organizations/
+│       ├── employees/
+│       ├── shifts/
+│       ├── attendance/
+│       ├── leave/
+│       ├── requests/
+│       ├── approval/
+│       ├── messages/
+│       └── notifications/
+└── packages/
+    ├── shared-types/               # 공통 TypeScript 타입
+    └── shared-constants/           # 공통 상수
+```
+
+---
+
+## 4. 도메인 모델 (ERD)
+
+### 4.1 핵심 엔티티 관계
+
+```
+Company (회사)
+  ├── Organization (조직/부서) [계층형, self-referential]
+  │     └── Employee (직원) [N:M via EmployeeOrganization]
+  ├── Position (직무)
+  │     └── Employee [N:M via EmployeePosition]
+  ├── Holiday (법인 휴일)
+  └── CompanySettings (회사 설정)
+
+Employee (직원)
+  ├── WageInfo (근로정보) [이력 관리, 적용시점 기반]
+  ├── Shift (근무일정) [1:N]
+  ├── Attendance (출퇴근기록) [1:N]
+  ├── Leave (휴가 일정) [1:N]
+  ├── Request (요청) [1:N, 발신자]
+  └── Document (기안문서) [1:N, 기안자]
+
+Shift (근무일정)
+  ├── ShiftType (근무일정 유형: 일반/연장/야간/휴일/재택)
+  ├── ShiftTemplate (템플릿)
+  └── BreakTime (휴게시간)
+
+Attendance (출퇴근기록)
+  ├── Shift [연결, nullable - 무일정 근무 허용]
+  └── BreakTime (실제 휴게시간)
+
+LeaveGroup (휴가 그룹)
+  └── LeaveType (휴가 유형)
+        └── Leave (휴가 일정)
+              └── LeaveBalance (잔여 휴가)
+
+Request (요청) [HR 요청: 근무일정/출퇴근/휴가 변경]
+  ├── ApprovalRule (승인 규칙) [요청 종류별]
+  └── RequestApproval (승인 이력) [차수별]
+
+Document (기안문서) [전자결재]
+  ├── DocumentForm (기안양식)
+  ├── ApprovalLine (결재선)
+  │     └── ApprovalStep (결재단계) [결재자, 협조자, 공람자, 참조자, 수신자]
+  └── ApprovalHistory (결재 이력)
+
+NotificationRule (알림 규칙)
+  └── NotificationLog (알림 발송 이력)
+```
+
+### 4.2 주요 테이블 스키마
+
+#### companies
+```sql
+id              UUID PRIMARY KEY
+name            VARCHAR(100) NOT NULL
+business_number VARCHAR(20)
+founded_at      DATE
+timezone        VARCHAR(50) DEFAULT 'Asia/Seoul'
+created_at      TIMESTAMPTZ DEFAULT now()
+```
+
+#### organizations
+```sql
+id              UUID PRIMARY KEY
+company_id      UUID REFERENCES companies
+parent_id       UUID REFERENCES organizations  -- 계층 구조
+name            VARCHAR(100) NOT NULL
+approver_id     UUID REFERENCES employees      -- 결재권자
+depth           INT DEFAULT 0
+sort_order      INT DEFAULT 0
+is_active       BOOLEAN DEFAULT true
+```
+
+#### employees
+```sql
+id              UUID PRIMARY KEY
+company_id      UUID REFERENCES companies
+user_id         UUID REFERENCES users          -- 계정 연결
+employee_number VARCHAR(50)                    -- 사번
+name            VARCHAR(50) NOT NULL
+email           VARCHAR(255) UNIQUE
+joined_at       DATE NOT NULL
+resigned_at     DATE                           -- 퇴사 예정일
+employment_type VARCHAR(20)                    -- 정규직/계약직/파트타임
+access_level    VARCHAR(20) NOT NULL           -- 권한 레벨
+is_active       BOOLEAN DEFAULT true
+```
+
+#### shifts
+```sql
+id              UUID PRIMARY KEY
+employee_id     UUID REFERENCES employees
+organization_id UUID REFERENCES organizations
+shift_type_id   UUID REFERENCES shift_types
+start_at        TIMESTAMPTZ NOT NULL
+end_at          TIMESTAMPTZ NOT NULL
+is_offsite      BOOLEAN DEFAULT false          -- 재택/외근
+status          VARCHAR(20) DEFAULT 'draft'    -- draft/confirmed/cancelled
+created_by      UUID REFERENCES employees
+```
+
+#### attendances
+```sql
+id              UUID PRIMARY KEY
+employee_id     UUID REFERENCES employees
+shift_id        UUID REFERENCES shifts         -- nullable
+clock_in_at     TIMESTAMPTZ NOT NULL
+clock_out_at    TIMESTAMPTZ
+location_lat    DECIMAL(10,7)
+location_lng    DECIMAL(10,7)
+clock_in_method VARCHAR(20)                    -- gps/wifi/manual
+status          VARCHAR(20)                    -- normal/late/early_leave/absent
+note            TEXT
+```
+
+#### documents (전자결재 기안)
+```sql
+id              UUID PRIMARY KEY
+company_id      UUID REFERENCES companies
+form_id         UUID REFERENCES document_forms
+doc_number      VARCHAR(50) UNIQUE             -- 문서번호 채번
+title           VARCHAR(200) NOT NULL
+content         JSONB                          -- 양식 필드 값
+drafter_id      UUID REFERENCES employees
+status          VARCHAR(20)                    -- draft/pending/approved/rejected/cancelled
+submitted_at    TIMESTAMPTZ
+completed_at    TIMESTAMPTZ
+created_at      TIMESTAMPTZ DEFAULT now()
+```
+
+#### approval_steps (결재단계)
+```sql
+id              UUID PRIMARY KEY
+line_id         UUID REFERENCES approval_lines
+role            VARCHAR(20)                    -- approver/collaborator/viewer/cc/receiver/dept_collaborator/dept_receiver
+assignee_id     UUID REFERENCES employees
+step_order      INT NOT NULL
+status          VARCHAR(20)                    -- pending/approved/rejected/forwarded/skipped
+is_proxy        BOOLEAN DEFAULT false          -- 대결 여부
+proxy_id        UUID REFERENCES employees      -- 실제 대결한 사람
+proxy_reason    TEXT                           -- 위임 사유
+acted_at        TIMESTAMPTZ
+comment         TEXT
+```
+
+#### proxy_settings (대리결재자 설정)
+```sql
+id              UUID PRIMARY KEY
+principal_id    UUID REFERENCES employees      -- 위임자
+proxy_id        UUID REFERENCES employees      -- 대리인
+start_date      DATE NOT NULL
+end_date        DATE NOT NULL
+reason          TEXT
+is_active       BOOLEAN DEFAULT true
+created_at      TIMESTAMPTZ DEFAULT now()
+```
+
+#### leave_accrual_rules (휴가 자동 발생 규칙)
+```sql
+id              UUID PRIMARY KEY
+company_id      UUID REFERENCES companies
+leave_group_id  UUID REFERENCES leave_groups
+name            VARCHAR(100) NOT NULL
+memo            TEXT
+is_active       BOOLEAN DEFAULT true
+-- 규칙 상세는 leave_accrual_rule_items 테이블로 분리
+```
+
+#### leave_accrual_rule_items (발생 규칙 상세 - 월기준/연기준 행)
+```sql
+id              UUID PRIMARY KEY
+rule_id         UUID REFERENCES leave_accrual_rules
+accrual_basis   VARCHAR(10)                    -- monthly / yearly
+tenure_months   INT                            -- 근속 개월수 (월기준)
+tenure_years    INT                            -- 근속 연수 (연기준)
+accrual_days    DECIMAL(5,2) NOT NULL          -- 발생 일수
+valid_months    INT                            -- 유효 개월수 (null=무기한)
+period_start_md VARCHAR(5)                     -- 유효기간 시작 월일 (연기준, MM-DD)
+period_end_md   VARCHAR(5)                     -- 유효기간 종료 월일 (연기준, MM-DD)
+sort_order      INT NOT NULL
+```
+
+#### schedule_patterns (스케줄 패턴)
+```sql
+id              UUID PRIMARY KEY
+company_id      UUID REFERENCES companies
+name            VARCHAR(100) NOT NULL
+description     TEXT
+repeat_cycle_days INT NOT NULL                 -- 반복 주기 (일 단위, 예: 14 = 2주)
+pattern_definition JSONB NOT NULL              -- 각 날짜별 shift_template_id 매핑
+is_active       BOOLEAN DEFAULT true
+```
+
+#### message_templates (메시지 템플릿)
+```sql
+id              UUID PRIMARY KEY
+company_id      UUID REFERENCES companies
+name            VARCHAR(100) NOT NULL
+content         TEXT NOT NULL
+has_variables   BOOLEAN DEFAULT false
+created_at      TIMESTAMPTZ DEFAULT now()
+```
+
+#### message_automations (메시지 자동화 규칙)
+```sql
+id              UUID PRIMARY KEY
+company_id      UUID REFERENCES companies
+name            VARCHAR(100) NOT NULL
+automation_type VARCHAR(30)                    -- leave_reminder / request_notice / etc.
+leave_type_id   UUID REFERENCES leave_types    -- nullable
+trigger_basis   VARCHAR(20)                    -- leave_start / leave_end
+offset_days     INT NOT NULL                   -- -90 ~ 90
+send_time       TIME NOT NULL                  -- 발송 시각
+timezone        VARCHAR(50) DEFAULT 'Asia/Seoul'
+template_id     UUID REFERENCES message_templates
+send_email      BOOLEAN DEFAULT false
+is_active       BOOLEAN DEFAULT true
+starts_at       DATE NOT NULL
+```
+
+---
+
+## 5. 모듈별 기능 상세
+
+### 5.1 인사/조직 관리
+
+#### 5.1.1 조직 관리
+
+| 기능 | 설명 |
+|---|---|
+| 조직 계층 관리 | 부서/팀/지점 트리 구조, 무제한 depth |
+| 결재권자 지정 | 조직당 1인 결재권자 설정 (전자결재 연동) |
+| 법인 휴일 등록 | 국가 공휴일 + 법인 자체 휴일 관리, 매년 반복 옵션 |
+| 관리 단위 변경 | 회사 단위 ↔ 지점 단위 전환 |
+
+#### 5.1.2 직원 관리
+
+| 기능 | 설명 |
+|---|---|
+| 직원 등록 | 기본정보 + 조직/직무 배정 + 합류코드 발송 |
+| 직원 정보 수정 | 입사일, 퇴사일, 직급, 직군, 고용형태 |
+| 직원 비활성화 | 퇴사 처리 (퇴사일 입력 시 근무계획 자동 생성), 이력 보존 |
+| 권한 관리 | 최고관리자 / 총괄관리자 / 조직관리자 / 직원 |
+| 근로정보 관리 | 시급, 소정근로요일, 주휴요일, 적용시점 이력 |
+| 직무 관리 | 직무 코드 추가/수정/삭제, 승인 규칙 연동 |
+| 직원 커스텀 필드 | 회사 정의 추가 정보 필드 |
+| 엑셀 일괄 등록 | 직원 일괄 업로드 (xlsx) |
+| 입사일 일괄 등록 | 미등록 직원 엑셀 다운로드 → 입사일 입력 → 업로드 |
+| 결재권자 미설정 조직 배치 | 조직별 결재권자 일괄 지정 팝업 |
+| 모바일 기기 초기화 | 직원 1인 1기기 제한, 기기 변경 시 초기화 |
+
+#### 5.1.3 근로정보
+
+근로정보는 **소정근로규칙**과 **최대근로규칙** 두 개념으로 구분된다.
+
+> `hourly_wage` 필드는 초과근무 기준 계산(리포트)에 활용하며, 향후 급여 정산 모듈 추가 시 그대로 재사용 가능하도록 보존한다.
+
+| 구분 | 항목 | 용도 |
+|---|---|---|
+| 소정근로규칙 | 소정근로요일, 소정근로시간/주, 주휴요일 | 연차 발생 판단, 초과근무 기준 |
+| 최대근로규칙 | 최대근로시간/주 (기본 52시간) | 근무일정 생성 시 초과 경고 |
+
+```
+WageInfo {
+  employeeId
+  -- 소정근로규칙
+  contractedWorkDays      // 소정근로요일 (월~일 복수선택, JSON 배열)
+  contractedHoursPerWeek  // 소정근로시간/주 (초과근무 기준선)
+  weeklyPaidHolidayDay    // 주휴요일
+  -- 최대근로규칙
+  maxHoursPerWeek         // 최대근로시간/주 (법정 52시간, 커스텀 가능)
+  -- 이력 관리
+  effectiveFrom           // 적용시점
+}
+```
+
+---
+
+### 5.2 근태 관리
+
+#### 5.2.1 근무일정 관리
+
+| 기능 | 설명 |
+|---|---|
+| 근무일정 유형 | 일반/연장/야간/휴일/재택/외근 (커스텀 추가 가능) |
+| 근무일정 유형 속성 | 간주근로 시간, 출근 전 확인사항, 출퇴근 기록 불필요 설정 |
+| 템플릿 관리 | 자주 쓰는 패턴을 템플릿으로 저장 (코드 기능 포함) |
+| 일정 추가 | 개별/조직별/직무별/직원별 일괄 추가 |
+| 스케줄 패턴 | 주기적 반복 패턴 (2주 교대, 격주 근무 등) |
+| 근무일정 확정 | 초안 → 확정 단계로 Lock (확정 해제는 최고/총괄관리자만 가능) |
+| 엑셀 업로드/다운로드 | 대량 등록 및 현황 추출 |
+| 간주근로 | 재택/외근 유형에 간주근로 시간 고정/무제한 설정 |
+| 휴게시간 설정 | 근무일정별 자동/수동 휴게시간 구성 |
+| 최대근로 초과 검증 | 근무일정 생성 시 주 52시간 초과 경고 |
+
+**근무일정 상태 흐름:**
+```
+draft → confirmed → cancelled
+  └─ (직원 요청 시) → Request → approved → confirmed
+  확정 해제 권한: 최고관리자/총괄관리자만
+```
+
+#### 5.2.2 출퇴근 장소 관리
+
+출퇴근 장소는 **조직별**로 등록하며, 하나의 조직에 복수 장소를 설정할 수 있다.
+
+| 인증 방식 | 설명 |
+|---|---|
+| GPS 좌표 | 반경(미터) 설정, 위치정보 즉시 폐기 |
+| WiFi SSID | 특정 WiFi 연결 시 인증, 위치정보 미저장 |
+| GPS + WiFi | 두 조건 AND / OR 선택 가능 |
+| 무인증 | 인증 없이 출퇴근 기록 허용 |
+
+#### 5.2.3 출퇴근 기록
+
+| 기능 | 설명 |
+|---|---|
+| 출퇴근 기록 방식 | GPS / WiFi / 수동 입력 / PC 웹 |
+| 출퇴근 장소 설정 | 조직별 복수 장소 (5.2.2 참고) |
+| 무일정 근무 | 회사 설정에 따라 항상/조건부/불허 |
+| 상태 자동 판단 | 정상 / 지각 / 조퇴 / 결근 자동 분류 |
+| 휴게시간 기록 | 자동 집계 + 수동 기록 이원 관리 |
+| 출퇴근 확정 | 관리자가 기간 확정 처리 (Lock, 확정 후 수정 불가) |
+| 누락 알림 | 출퇴근 미기록 직원에게 알림 발송 |
+| 현재 근무현황 | 실시간 대시보드 (근무중/무일정/간주근로/휴가/지각 분류) |
+| 엑셀 업로드/다운로드 | 일괄 보정 및 데이터 추출 |
+| 근무노트 | 출퇴근 기록마다 메모 첨부 가능 |
+
+**출퇴근 상태 규칙:**
+```
+표준화 규칙(standardization_rules)에 따라 커스터마이징 가능:
+- 기본: 근무일정 시작시간 이후 출근 → 지각
+- 커스터마이징: `late_grace_minutes` 설정으로 0~120분 유예 가능
+- 근무일정 시작 전 `clockin_before_shift_minutes` 초과 시 → 무일정 근무로 처리
+```
+
+**출퇴근 핵심 비즈니스 규칙:**
+
+| 규칙 | 내용 |
+|---|---|
+| 지각 판정 | 근무일정 시작 + `late_grace_minutes` 초과 시 지각 상태 |
+| 조기 출근 | `clockin_before_shift_minutes` 이전 출근 시 무일정 근무로 분리 기록 |
+| 무일정 출근 | 승인 대기 중 근무일정이 있으면 해당 일정으로 미리 출근 가능 (승인 후 자동 연결) |
+| 휴가 잔액 검증 | 잔액 차감 시 `leave_balances.expires_at` 이내 발생 건에 대해서만 차감 |
+| 휴가 그룹 일치 검증 | 휴가 사용 시 `leave_types.group_id` ↔ `leave_balances.leave_type_id` 그룹 일치 확인 |
+
+#### 5.2.4 휴가 관리
+
+| 기능 | 설명 |
+|---|---|
+| 휴가 그룹 | 연차/병가/특별휴가 등 그룹 분류, 초과사용 제한 설정 |
+| 휴가 유형 | 하루 종일/시간 단위, 유급/무급, 장기/휴무/휴일 특별 옵션 |
+| 자동 발생 규칙 | 입사일/회계연도 기준 연차 자동 계산 (한국 근로기준법) |
+| 수동 발생 | 관리자가 임의 부여 |
+| 보상휴가 | 휴일근로 → 보상휴가 자동/수동 전환 |
+| 미사용 연차 엑셀 | 연차 자동 지정 엑셀 다운로드 |
+| 특정 조직/직무 제한 | 특정 조직이나 직무에만 허용되는 휴가 유형 |
+| 표시 이름 | 다른 직원에게 보이는 이름(display_name)과 관리 이름 분리 |
+| 사유 표시 설정 | 휴가 사유를 다른 직원에게 공개할지 여부 |
+| 연속 사용 제한 | 최소/최대 연속 가능 일수, 휴무/휴일 포함 여부 설정 |
+| 출근 전 확인사항 | 휴가일 출근 시 안내 팝업 메시지 설정 |
+| 근무일정 자동 삭제 | 휴가 생성 시 겹치는 근무일정 자동 삭제 옵션 |
+
+**휴가 자동 발생 규칙 구조:**
+
+| 구분 | 설명 |
+|---|---|
+| 월 기준 발생 | 근속 N개월 도달 시 M일 발생, 유효 개월수 설정 가능 |
+| 연 기준 발생 | 근속 N년 시 M일 발생, 유효기간 (시작 월일 ~ 종료 월일) 설정 |
+
+```
+예시: 한국 근로기준법 기준 연차 발생 규칙
+월 기준: 1개월→1일, 2개월→1일, ..., 11개월→1일 (유효 12개월)
+         12개월→15일
+연 기준: 2년→15일, 3년→16일, 4년→16일, 5년→17일, ... 최대 25일
+```
+
+#### 5.2.5 요청 (HR 결재 연동)
+
+HR 요청은 **전자결재 모듈의 기안**과 연동되어 처리된다.
+
+| 요청 유형 | 기안양식 연동 |
+|---|---|
+| 근무일정 생성/수정/삭제 요청 | 근무일정 변경 기안 |
+| 출퇴근기록 생성/수정/삭제 요청 | 출퇴근 정정 기안 |
+| 휴가 생성/수정/삭제 요청 | 휴가 신청 기안 |
+| 근무지 외 출퇴근 요청 | 재택/외근 신청 기안 |
+| **기기 변경 요청** | 모바일 기기 교체 승인 기안 |
+| **커스텀 요청** | 관리자가 정의한 자유 양식 요청 (비용처리, 증명서 등) |
+
+**커스텀 요청 유형 관리:**
+- 관리자가 필드 직접 설계 (텍스트/숫자/날짜/체크박스/드롭다운/자유양식)
+- 필드별 필수/선택 설정
+- PDF 추출 옵션 (직원 PDF 다운로드 허용 여부 포함)
+- 이미지 첨부 설명 가능
+
+**승인 규칙 advanced_settings 내용:**
+
+| 설정 키 | 설명 |
+|---|---|
+| `past_tag_grace_period` | 과거 태그 유예기간 (분/시간/일 단위) |
+| `overtime_tag_basis` | 연장근무 태그 산정기준 (유급시간/근로시간/커스텀) |
+| `max_work_tag_basis` | 최대근로 태그 산정기준 |
+| `core_time_start` | 코어타임 시작 시각 |
+| `core_time_end` | 코어타임 종료 시각 |
+
+**요청 상태값 전체:**
+- `PENDING` → 승인 대기
+- `APPROVED` / `FORCE_APPROVED` → 승인됨/강제승인
+- `REJECTED` / `FORCE_REJECTED` → 거절됨/강제거절
+- `CANCELLED` → 요청자 취소
+
+---
+
+### 5.3 전자결재
+
+#### 5.3.1 주체별 역할
+
+| 역할 | 설명 |
+|---|---|
+| 기안자 | 기안 작성, 상신, 회수, 삭제, 재기안 |
+| 결재자 | 승인 / 반려 / 전결 / 전단계반려 / 결재취소 / 대결 |
+| 협조자 | 협조 승인/반려 (결재 진행에 영향 없음, 단 부서협조는 영향) |
+| 공람자 | 결재 완료 후 열람만 가능 |
+| 참조자 | 상신 이후 모든 진행상태 열람 가능 |
+| 수신자 | 결재 완료 후 수신확인/반송 |
+| 문서담당자 | 부서협조/수신 접수 처리 담당 |
+
+#### 5.3.2 기안 양식 관리
+
+| 기능 | 설명 |
+|---|---|
+| 양식 CRUD | 양식 종류/분류/순서 관리 |
+| 양식 필드 | 텍스트/날짜/숫자/드롭다운/첨부파일 등 커스텀 필드 |
+| 기본 결재선 | 양식별 공용 결재선 설정 |
+| 재기안 허용 | 양식별 재기안 사용 여부 설정 |
+| 문서번호 채번 | 회사/부서/양식/연도/일련번호 조합 규칙 |
+
+#### 5.3.3 결재선 구성
+
+```
+결재선 (ApprovalLine)
+  │
+  ├── [결재] 단계 N (순차 또는 병렬)
+  │     └── 결재자 (개인 또는 직책/직무)
+  │
+  ├── [협조] 단계 (결재 진행 중 추가 가능)
+  │     └── 협조자 또는 부서협조
+  │
+  ├── [참조] (상신 전에만 지정)
+  │
+  ├── [공람] (상신 전 또는 완료 후 추가 가능)
+  │
+  └── [수신] (상신 시 지정, 완료 후 처리)
+```
+
+#### 5.3.4 기안 상태 흐름
+
+```
+[저장됨] ──상신──▶ [진행중] ──마지막 승인──▶ [완료]
+    ▲                  │                        │
+    │              반려/전단계반려               수신 처리
+    │                  │
+    └──────────▶ [반려됨] ──재상신──▶ [진행중]
+    
+[진행중] ──회수──▶ [회수됨] ──재상신──▶ [진행중]
+```
+
+#### 5.3.5 주요 기능
+
+| 기능 | 설명 |
+|---|---|
+| 기안 작성/상신 | 양식 선택 → 필드 입력 → 결재선 설정 → 상신 |
+| 임시저장 | 상신 전 임시저장, 이후 자유 수정 가능 |
+| 결재 승인/반려 | 결재 의견 입력 필수 또는 선택 |
+| 전결 | 최종 결재자 이전 단계에서 결재 완료 처리 |
+| 대결 | 결재자 부재시 대리인 설정 + 기간/사유 지정, 이력 보존 |
+| 전단계 반려 | 직전 결재자에게 결재권 반환 |
+| 결재 취소 | 다음 결재자가 처리 전 취소 가능 |
+| 협조 | 개인 협조 처리 (승인 흐름에 영향 없음) |
+| 부서협조 | 내부결재 후 처리, 내부결재 반려 시 부서협조도 반려 |
+| 부서수신 | 문서담당자가 [접수]/[수신확인]/[반송] 처리 |
+| 문서담당자 지정 | 부서별 담당자 지정 (팀장 기본, 추가 가능) |
+| 문서대장 | 완료 문서 조회, 권한별 가시성 다름 |
+| 공용 결재선 | 인사이동 시 일괄 변경 가능한 공유 결재선 |
+| 결재 현황 (관리자) | 진행중 결재 강제 삭제/상태 조회 |
+| 백업 | 결재 완료 문서 백업 기능 |
+| 압축파일 업로드 | 회사 설정에서 허용 여부 제어 |
+
+#### 5.3.6 상태별 권한 제약
+
+| 상태 | 제약 사항 |
+|---|---|
+| `PENDING` (진행중) | 이전 결재자 결재취소/결재의견 수정 불가 |
+| `PENDING` (부서협조 진행중) | 문서담당자 협조승인/반려 처리 불가, 전단계 결재취소 불가 |
+| `APPROVED` (결재완료) | 결재취소 불가 (최종결재자인 경우) |
+| 재상신 | 이전 상신 이력은 삭제되지 않고 보존됨 |
+
+#### 5.3.7 부서협조/부서수신 상세 흐름
+
+```
+부서협조 처리:
+  문서담당자 [접수] 클릭
+    → 내부결재 작성 → 상신 → 부서협조 [진행중]
+    → 내부결재 완료 → 부서협조 [승인]
+    → 내부결재 반려 → 부서협조 [반려]
+  ※ 진행중 상태에서는 전단계 결재 취소/수정 불가
+
+부서수신 처리:
+  문서담당자가 [접수] / [수신확인] / [반송] 선택
+  - [접수]: 내부결재 생성 → 완료 시 수신확인, 반려 시 반송
+  - [수신확인]: 일반 수신과 동일하게 처리
+  - [반송]: 기안자의 반송된 문서함으로 이동
+```
+
+#### 5.3.8 감사 추적 (Audit Trail)
+
+결재 관련 모든 행위는 `approval_history` 테이블에 기록하며, `proxy_settings` 테이블로 대리결재 설정 이력을 별도 보존한다.
+
+| 추적 항목 | 저장 위치 |
+|---|---|
+| 결재 승인/반려/전결 이력 | `approval_history` |
+| 결재 의견 수정 이력 | `approval_history` (action: comment_updated) |
+| 결재 취소 이력 | `approval_history` (action: approval_cancelled) |
+| 대리결재자 설정/해제 이력 | `proxy_settings` |
+| 공용 결재선 변경 이력 | `shared_approval_lines.updated_at` + version 컬럼 |
+
+---
+
+### 5.4 리포트 / 표준화 규칙
+
+#### 5.4.1 실시간 리포트
+
+| 항목 | 설명 |
+|---|---|
+| 조회 기준 | 기간 + 조직 + 직원 복합 필터 |
+| 집계 항목 | 정상근무일수, 지각횟수, 조퇴횟수, 결근횟수, 총근무시간, 초과근무시간 등 |
+| 엑셀 다운로드 | 선택한 기간/직원/항목으로 xlsx 추출 |
+
+#### 5.4.2 표준화 규칙
+
+근태 리포트 집계 시 **어떤 기준으로 시간을 계산할지** 직무별로 다르게 설정한다.
+
+| 설정 항목 | 옵션 | 설명 |
+|---|---|---|
+| 계산 기준 | attendance / shift | 출퇴근 기록 기준 vs 근무일정 기준 |
+| 시작시간 처리 | 7가지 올림/내림/혼합 옵션 | 예: "근무일정 시작시간으로 올림" |
+| 종료시간 처리 | 7가지 올림/내림/혼합 옵션 | 예: "실제 퇴근시간 그대로" |
+| 출근 미기록 처리 | 포함/제외 | 출근 기록 없는 날을 0으로 처리할지 여부 |
+| 수동 휴게시간 차감 | 포함/제외 | 직원이 수동 기록한 휴게시간 차감 여부 |
+
+#### 5.4.3 리포트 스냅샷
+
+특정 기간의 리포트를 저장(마감)하여 이후 데이터 변경에 영향받지 않도록 한다.
+
+- 스냅샷 템플릿으로 반복 생성 가능
+- 마감(Lock) 처리 후 수정 불가
+- 퇴사자 정산용 3개월 자동 생성 옵션
+
+#### 5.4.4 커스텀 리포트 항목
+
+관리자가 직접 수식(formula)을 작성하여 새로운 집계 항목을 정의한다.
+
+- 기존 리포트 항목 간 사칙연산 지원
+- 특정 근무일정 유형/휴가 유형 필터 설정 가능
+- 직무별 조회 권한 제어
+
+---
+
+### 5.5 메시지
+
+#### 5.5.1 수동 메시지 발송
+
+관리자가 직원 또는 조직을 선택하여 직접 메시지를 발송한다.
+
+- 메시지 템플릿 사전 등록 후 재사용
+- 변수 포함 템플릿 지원 (직원명, 조직명 등 동적 치환)
+- 이미지 첨부 가능
+- 발송 후 읽음 상태 추적 (`message_recipients.read_at`)
+
+#### 5.5.2 메시지 자동화 규칙
+
+Cron 기반으로 조건에 맞는 직원에게 자동으로 메시지를 발송한다.
+
+| 설정 항목 | 설명 |
+|---|---|
+| 자동화 유형 | 현재 "휴가 알림"만 지원 |
+| 트리거 기준 | 휴가 시작일 / 종료일 |
+| 알림 시점 | -90일 ~ +90일 |
+| 발송 시각 | 30분 단위, 시간대 선택 |
+| 템플릿 | 변수 없는 템플릿만 자동화에 사용 가능 |
+| 이메일 병행 | 선택 옵션 |
+
+---
+
+### 5.6 Discord 알림 연동
+
+#### 5.6.1 알림 채널 구성
+
+```
+Discord Server
+  ├── #근태-알림        출퇴근 기록, 지각/결근 알림
+  ├── #결재-알림        기안 상신, 승인/반려 알림
+  ├── #휴가-알림        휴가 신청/승인/거절 알림
+  └── #시스템-알림      에러, 시스템 이벤트 등 관리자 알림
+```
+
+#### 5.6.2 알림 이벤트 목록
+
+| 이벤트 | 채널 | 수신자 | 내용 |
+|---|---|---|---|
+| 출근 기록 | #근태-알림 | 관리자 | `[출근] {이름} {시간} {장소}` |
+| 퇴근 기록 | #근태-알림 | 관리자 | `[퇴근] {이름} {시간} {근무시간}` |
+| 지각 감지 | #근태-알림 | 관리자 + 본인 | `[지각] {이름} {근무일정} 미출근` |
+| 결근 확정 | #근태-알림 | 관리자 | `[결근] {이름} {날짜}` |
+| 기안 상신 | #결재-알림 | 결재자 | `[결재요청] {제목} {기안자}` |
+| 결재 승인 | #결재-알림 | 기안자 | `[승인] {제목} {결재자}` |
+| 결재 반려 | #결재-알림 | 기안자 | `[반려] {제목} {반려자} {사유}` |
+| 휴가 신청 | #휴가-알림 | 관리자 | `[휴가신청] {이름} {날짜} {유형}` |
+| 휴가 승인 | #휴가-알림 | 본인 | `[휴가승인] {이름} {날짜}` |
+
+#### 5.6.3 메시지 자동화 규칙 (Cron 기반)
+
+HR 모듈의 메시지 자동화는 Discord 알림과 별개로, **예약 발송(Cron)** 방식으로 동작한다.
+
+| 항목 | 내용 |
+|---|---|
+| 자동화 유형 | 휴가 알림 (시작일 기준 / 종료일 기준) |
+| 알림 시점 | -90일 ~ +90일 범위 설정 |
+| 발송 시각 | 30분 단위 선택, 시간대 설정 가능 |
+| 수신 채널 | 앱 내 메시지 + 이메일 (선택) |
+| 메시지 템플릿 | 사전 등록 템플릿 사용 (변수 미지원) |
+
+> 메시지 자동화 Cron Job은 Redis 큐 기반으로 실행하며, Discord 알림과 동일한 `notification_logs` 테이블로 이력을 관리한다.
+
+#### 5.6.4 Discord Webhook 설계
+
+```typescript
+interface DiscordMessage {
+  embeds: [{
+    title: string       // 알림 제목
+    description: string // 상세 내용
+    color: number       // 0x2ecc71 (성공), 0xe74c3c (경고)
+    fields: [{ name, value, inline }]
+    timestamp: string   // ISO 8601
+    footer: { text: string }
+  }]
+}
+
+// 채널별 Webhook URL → notification_rules 테이블에 channel_type: 'discord' 로 저장
+// 알림 발송 실패 시 3회 재시도 (exponential backoff), 실패 이력 notification_logs 기록
+// notification_rules.trigger_condition (JSONB): 세부 발송 조건 (예: 지각 10분 이상만)
+```
+
+**notification_rules 보완 스키마:**
+```sql
+notification_rules {
+  id              UUID PRIMARY KEY
+  company_id      UUID REFERENCES companies
+  event_type      VARCHAR(50)      -- attendance.clock_in / leave.approved / document.submitted
+  channel_type    VARCHAR(20)      -- discord / email / in_app
+  webhook_url     TEXT             -- Discord Webhook URL (discord 채널만)
+  trigger_condition JSONB          -- 조건: { "min_late_minutes": 10 } 등
+  message_template_id UUID         -- message_templates 참조 (in_app/email용)
+  embed_template  JSONB            -- Discord embed 템플릿
+  is_active       BOOLEAN DEFAULT true
+  cron_expression VARCHAR(50)      -- null이면 이벤트 기반, 값이 있으면 Cron 기반
+}
+
+---
+
+## 6. 권한 체계
+
+### 6.1 접근 레벨 (HR 모듈)
+
+| 레벨 | 코드 | 설명 |
+|---|---|---|
+| 최고관리자 | `SUPER_ADMIN` | 회사 설정 포함 모든 기능 (1인) |
+| 총괄관리자 | `GENERAL_ADMIN` | 회사 설정/승인 규칙/휴가유형 제외 전체 |
+| 조직관리자 | `ORG_ADMIN` | 배정된 조직에 대한 관리 권한 |
+| 직원 | `EMPLOYEE` | 본인 근태 기록/요청 만 가능 |
+
+### 6.2 전자결재 관리자 역할
+
+| 역할 | 설명 |
+|---|---|
+| 서비스 관리자 | 전자결재 전체 설정 (양식, 결재선, 정책) |
+| 양식 담당자 | 특정 기안양식 수정/관리 권한 |
+| 문서 담당자 | 부서협조/수신 접수 처리 권한 |
+
+### 6.3 기능별 권한 매트릭스
+
+| 기능 | 직원 | 조직관리자 | 총괄관리자 | 최고관리자 |
+|---|---|---|---|---|
+| 본인 출퇴근 기록 | ✓ | ✓ | ✓ | ✓ |
+| 타인 출퇴근 수정 | | ✓ (소속) | ✓ (전체) | ✓ |
+| 출퇴근 확정 | | ✓ (소속) | ✓ (전체) | ✓ |
+| 근무일정 확정 | | ✓ (소속) | ✓ (전체) | ✓ |
+| 근무일정 생성 | (요청) | ✓ | ✓ | ✓ |
+| 휴가 발생 | | ✓ | ✓ | ✓ |
+| 휴가 유형 관리 | | | ✓ | ✓ |
+| 승인 규칙 관리 | | | | ✓ |
+| 회사 설정 | | | | ✓ |
+| 기안 작성 | ✓ | ✓ | ✓ | ✓ |
+| 결재 처리 | (결재자일 때) | ✓ | ✓ | ✓ |
+| 스케줄 패턴 관리 | | ✓ | ✓ | ✓ |
+| 표준화 규칙 설정 | | | ✓ | ✓ |
+| 커스텀 요청 유형 관리 | | | | ✓ |
+| 기안양식 관리 | | (양식담당자) | (서비스관리자) | ✓ |
+| 공용 결재선 관리 | | | (서비스관리자) | ✓ |
+| 문서담당자 지정 | | ✓ (소속) | ✓ | ✓ |
+| 대결 설정 | ✓ (본인) | ✓ | ✓ | ✓ |
+| 메시지 자동화 설정 | | | ✓ | ✓ |
+| Discord/알림 설정 | | | | ✓ |
+| 조직관리자 권한 상세 설정 | | | | ✓ |
+
+---
+
+## 7. API 설계
+
+### 7.1 엔드포인트 구조
+
+```
+/api/v1/
+├── auth/
+│   ├── POST   /login
+│   ├── POST   /logout
+│   └── POST   /refresh
+│
+├── companies/
+│   ├── POST   /                      # 회사 생성 (최초 가입 시)
+│   ├── GET    /:id                   # 회사 정보 조회
+│   ├── PATCH  /:id                   # 회사 정보 수정
+│   ├── POST   /join                  # 합류코드로 회사 합류
+│   └── POST   /invite-code           # 합류코드 발급/재발급
+│
+├── organizations/
+│   ├── GET    /                      # 조직 트리 조회
+│   ├── POST   /                      # 조직 생성
+│   ├── PATCH  /:id                   # 조직 수정
+│   └── DELETE /:id                   # 조직 삭제
+│
+├── employees/
+│   ├── GET    /                      # 직원 목록 (필터/검색)
+│   ├── POST   /                      # 직원 등록
+│   ├── GET    /:id                   # 직원 상세
+│   ├── PATCH  /:id                   # 직원 정보 수정
+│   ├── POST   /:id/deactivate        # 직원 비활성화
+│   ├── POST   /:id/reset-device      # 모바일 기기 초기화
+│   ├── GET    /:id/wage-info         # 근로정보 이력
+│   ├── POST   /:id/wage-info         # 근로정보 등록
+│   ├── GET    /:id/custom-fields     # 커스텀 필드 값 조회
+│   └── PATCH  /:id/custom-fields     # 커스텀 필드 값 수정
+│
+├── timeclock-areas/
+│   ├── GET    /                      # 출퇴근 장소 목록 (조직 필터)
+│   ├── POST   /                      # 출퇴근 장소 등록
+│   ├── PATCH  /:id                   # 출퇴근 장소 수정
+│   └── DELETE /:id                   # 출퇴근 장소 삭제
+│
+├── shifts/
+│   ├── GET    /                      # 근무일정 조회 (기간/조직/직원 필터)
+│   ├── POST   /                      # 근무일정 생성
+│   ├── PATCH  /:id                   # 근무일정 수정
+│   ├── DELETE /:id                   # 근무일정 삭제
+│   ├── POST   /bulk                  # 일괄 생성 (템플릿 기반)
+│   ├── POST   /:id/confirm           # 근무일정 확정
+│   └── POST   /:id/unconfirm         # 근무일정 확정 해제 (최고/총괄만)
+│
+├── shift-templates/
+│   ├── GET    /                      # 템플릿 목록
+│   ├── POST   /                      # 템플릿 생성
+│   ├── PATCH  /:id                   # 템플릿 수정
+│   └── DELETE /:id                   # 템플릿 삭제
+│
+├── attendances/
+│   ├── GET    /                      # 출퇴근 목록 조회
+│   ├── POST   /clock-in              # 출근 기록
+│   ├── POST   /clock-out             # 퇴근 기록
+│   ├── POST   /break-start           # 휴게 시작
+│   ├── POST   /break-end             # 휴게 종료
+│   ├── PATCH  /:id                   # 출퇴근 수정 (관리자)
+│   ├── DELETE /:id                   # 출퇴근 삭제 (관리자)
+│   ├── GET    /now-at-work           # 현재 근무 현황 (실시간)
+│   └── POST   /confirm-period        # 기간 확정
+│
+├── leaves/
+│   ├── GET    /groups                # 휴가 그룹 목록
+│   ├── POST   /groups                # 휴가 그룹 생성
+│   ├── GET    /types                 # 휴가 유형 목록
+│   ├── POST   /types                 # 휴가 유형 생성
+│   ├── GET    /accrual-rules         # 발생 규칙 목록
+│   ├── POST   /accrual-rules         # 발생 규칙 생성
+│   ├── POST   /accrual-rules/:id/run # 규칙 기반 발생 실행
+│   ├── GET    /balance/:employeeId   # 직원 휴가 잔여
+│   ├── POST   /accrual               # 수동 발생
+│   └── GET    /                      # 휴가 일정 조회
+│
+├── leaves/ (continued)
+│   └── POST   /compensation          # 보상휴가 발생
+│
+├── requests/
+│   ├── GET    /                      # 요청 목록
+│   ├── POST   /                      # 요청 생성 → 기안 자동 생성
+│   ├── GET    /approval-rules        # 승인 규칙 목록
+│   ├── POST   /approval-rules        # 승인 규칙 생성/수정
+│   ├── POST   /:id/approve           # 요청 승인
+│   ├── POST   /:id/reject            # 요청 거절
+│   ├── POST   /:id/force-approve     # 강제 승인 (최고관리자)
+│   ├── POST   /:id/force-reject      # 강제 거절 (최고관리자)
+│   └── POST   /bulk-approve          # 요청 일괄 승인
+│
+├── schedule-patterns/
+│   ├── GET    /                      # 스케줄 패턴 목록
+│   ├── POST   /                      # 스케줄 패턴 생성
+│   ├── PATCH  /:id                   # 스케줄 패턴 수정
+│   └── POST   /:id/apply             # 패턴 적용 (직원/기간 지정)
+│
+├── documents/ (전자결재)
+│   ├── GET    /forms                 # 기안양식 목록
+│   ├── POST   /forms                 # 기안양식 생성
+│   ├── PATCH  /forms/:id             # 기안양식 수정
+│   ├── GET    /shared-lines          # 공용 결재선 목록
+│   ├── POST   /shared-lines          # 공용 결재선 생성
+│   ├── GET    /                      # 기안문서 목록
+│   ├── POST   /                      # 기안 작성 (임시저장)
+│   ├── GET    /:id                   # 기안 상세
+│   ├── POST   /:id/submit            # 기안 상신
+│   ├── POST   /:id/recall            # 기안 회수
+│   ├── POST   /:id/approve           # 결재 승인/반려/전결/전단계반려
+│   ├── POST   /:id/cancel-approval   # 결재 취소
+│   ├── POST   /:id/redraft           # 재기안
+│   ├── POST   /:id/dept-collab       # 부서협조 접수/처리
+│   ├── POST   /:id/dept-receive      # 부서수신 접수/수신확인/반송
+│   └── GET    /registry              # 문서대장
+│
+├── standardization-rules/
+│   ├── GET    /                      # 표준화 규칙 목록
+│   ├── POST   /                      # 표준화 규칙 생성
+│   ├── PATCH  /:id                   # 표준화 규칙 수정
+│   └── DELETE /:id                   # 표준화 규칙 삭제
+│
+├── reports/
+│   ├── GET    /realtime              # 실시간 리포트
+│   ├── GET    /snapshots             # 스냅샷 목록
+│   ├── POST   /snapshots             # 스냅샷 생성
+│   ├── POST   /snapshots/:id/lock    # 스냅샷 마감
+│   ├── GET    /custom-columns        # 커스텀 리포트 항목
+│   ├── POST   /custom-columns        # 커스텀 리포트 항목 생성
+│   └── GET    /export                # 리포트 엑셀 다운로드
+│
+├── messages/
+│   ├── GET    /templates             # 메시지 템플릿 목록
+│   ├── POST   /templates             # 메시지 템플릿 생성
+│   ├── POST   /send                  # 수동 메시지 발송
+│   ├── GET    /                      # 수신 메시지 목록
+│   ├── GET    /automations           # 자동화 규칙 목록
+│   └── POST   /automations           # 자동화 규칙 생성
+│
+├── proxy-settings/
+│   ├── GET    /                      # 대결 설정 목록 (본인)
+│   ├── POST   /                      # 대결 설정 생성
+│   └── DELETE /:id                   # 대결 설정 취소
+│
+└── notifications/
+    ├── GET    /rules                  # 알림 규칙 목록
+    ├── POST   /rules                  # 알림 규칙 생성
+    ├── PATCH  /rules/:id              # 알림 규칙 수정
+    └── GET    /logs                   # 발송 이력
+```
+
+### 7.2 공통 응답 포맷
+
+```typescript
+// 성공
+{
+  success: true,
+  data: T,
+  meta?: { total, page, limit }
+}
+
+// 실패
+{
+  success: false,
+  error: {
+    code: string,     // "EMPLOYEE_NOT_FOUND"
+    message: string,  // 한국어 사용자 메시지
+    details?: any
+  }
+}
+```
+
+---
+
+## 8. 모듈 간 연동 흐름
+
+### 8.1 휴가 신청 → 전자결재 연동
+
+```
+직원 (앱/웹)
+  │
+  ├─1. 휴가 생성 요청 (POST /requests)
+  │       { type: 'LEAVE_CREATE', payload: { leaveTypeId, startDate, endDate } }
+  │
+  │  [Server Side]
+  ├─2. 요청 레코드 생성 (requests 테이블)
+  ├─3. 해당 휴가유형의 승인 규칙 조회
+  ├─4. '휴가 신청' 기안양식으로 Document 자동 생성
+  ├─5. 승인 규칙에 따라 ApprovalLine 자동 구성
+  ├─6. Document 상신 (status: pending)
+  │
+  ├─7. 결재자에게 알림 발송 (Discord + 이메일)
+  │
+  ├─8. [결재자] 승인 처리
+  │       POST /documents/:id/approve
+  │
+  ├─9. Document 완료 → Request 완료 → Leave 일정 실제 생성
+  │
+  └─10. 직원에게 휴가 승인 알림 (Discord)
+```
+
+### 8.2 일반 전자결재 흐름
+
+```
+기안자
+  │
+  ├─1. 기안 양식 선택 및 작성
+  ├─2. 결재선 설정 (공용 결재선 자동 로드, 직접 편집 가능)
+  ├─3. 공람자/참조자/수신자 지정
+  ├─4. 상신 → status: pending
+  │
+  └─ 결재자 루프:
+       ├─ [승인] → 다음 결재자로 이동 (or 완료)
+       ├─ [반려] → status: rejected, 기안자에게 알림
+       ├─ [전결] → 이후 결재자 자동 승인, 완료
+       ├─ [전단계반려] → 이전 결재자에게 반환
+       └─ [결재취소] → 이전 상태로 복원 (다음 결재 전까지만)
+```
+
+### 8.3 근무일정 변경 요청 → 전자결재 연동
+
+```
+직원 (앱/웹)
+  │
+  ├─1. 근무일정 생성/수정/삭제 요청 (POST /requests)
+  │       { type: 'SHIFT_CREATE', payload: { templateId, date, startAt, endAt } }
+  │
+  │  [Server Side]
+  ├─2. 승인 규칙 조회 (request_type = 'SHIFT_CREATE', 태그 판별: 연장/휴일/야간)
+  ├─3. '근무일정 변경' 기안양식으로 Document 자동 생성
+  ├─4. 승인 → shift 레코드 생성/수정/삭제 실행
+  │
+  └─ 거절 → request.status = REJECTED, 직원에게 알림
+```
+
+### 8.4 출퇴근 정정 요청 → 전자결재 연동
+
+```
+직원 (앱/웹)
+  │
+  ├─1. 출퇴근 정정 요청 (POST /requests)
+  │       { type: 'ATTENDANCE_EDIT', payload: { attendanceId, clockInAt, clockOutAt, reason } }
+  │
+  │  [Server Side]
+  ├─2. 승인 규칙 조회 (request_type = 'ATTENDANCE_EDIT', 태그: 과거/연장)
+  ├─3. '출퇴근 정정' 기안양식으로 Document 자동 생성
+  ├─4. 승인 → attendance 레코드 수정 실행
+  │
+  └─ 거절 → 정정 미반영
+```
+
+### 8.5 기기 변경 요청
+
+```
+직원 (앱)
+  │
+  ├─1. 기기 변경 요청 (POST /requests)
+  │       { type: 'DEVICE_CHANGE', payload: { newDeviceId, reason } }
+  │
+  ├─2. 관리자 승인
+  ├─3. 승인 → employees.device_id, device_bound_at 업데이트
+  └─4. 기존 기기 바인딩 해제
+```
+
+### 8.6 메시지 자동화 흐름 (휴가 알림)
+
+```
+관리자
+  │
+  ├─1. 메시지 템플릿 등록 ("OOO님, 내일은 휴가입니다")
+  ├─2. 자동화 규칙 생성
+  │       { leaveType: 연차, trigger: 시작일 기준, offset: -1일, time: 09:00 }
+  │
+  │  [Cron Job - 매일 09:00 실행]
+  ├─3. 당일 + 1일 후 휴가 시작인 직원 조회
+  ├─4. messages 레코드 생성 + message_recipients 생성
+  ├─5. 해당 직원에게 앱 메시지 발송
+  └─6. (이메일 옵션 시) 이메일 발송 + notification_logs 기록
+```
+
+---
+
+## 9. 알림 설계
+
+### 9.1 알림 트리거 이벤트 버스
+
+```typescript
+// 이벤트 발행
+EventBus.emit('attendance.clock_in', {
+  employeeId, organizationId,
+  timestamp, location, status
+})
+
+// 알림 서비스에서 구독
+EventBus.on('attendance.clock_in', async (event) => {
+  const rules = await NotificationRule.findActive('attendance.clock_in')
+  for (const rule of rules) {
+    await sendDiscordWebhook(rule.webhookUrl, formatMessage(rule.template, event))
+  }
+})
+```
+
+### 9.2 Discord Embed 포맷 예시
+
+```json
+{
+  "embeds": [{
+    "title": "🕐 출근 기록",
+    "color": 3066993,
+    "fields": [
+      { "name": "직원", "value": "홍길동 (개발팀)", "inline": true },
+      { "name": "출근 시간", "value": "09:03", "inline": true },
+      { "name": "상태", "value": "정상", "inline": true },
+      { "name": "장소", "value": "본사 1층 (GPS)", "inline": false }
+    ],
+    "timestamp": "2026-06-11T09:03:00+09:00",
+    "footer": { "text": "AbleWork ERP" }
+  }]
+}
+```
+
+---
+
+## 10. 구현 로드맵
+
+### Phase 1 (MVP) — 인사/근태 + Discord 알림
+
+| 기간 | 항목 |
+|---|---|
+| W1-2 | 프로젝트 세팅, Auth, 조직/직원 관리 |
+| W3-4 | 근무일정 관리 (CRUD, 템플릿, 스케줄 패턴, 확정) |
+| W5-6 | 출퇴근 기록 (GPS 인증, 상태 분류, 현황) |
+| W7-8 | 휴가 관리 (유형, 발생 규칙, 신청) |
+| W9 | Discord 알림 연동 (근태/휴가 이벤트) |
+| W10 | 메시지 자동화 (휴가 알림 Cron) + 기본 리포트 |
+
+### Phase 2 — 전자결재 통합
+
+| 기간 | 항목 |
+|---|---|
+| W11-12 | 기안양식 관리, 공용 결재선, 문서번호 채번 |
+| W13-14 | 기안 작성/상신/결재 워크플로우 (승인/반려/전결/대결) |
+| W15 | 전단계 반려, 결재 취소, 부서협조/부서수신 |
+| W16 | HR 요청 → 전자결재 자동 연동 (기기변경 포함) |
+| W17 | 문서대장, 공람/참조/수신함 + Discord 알림 (결재 이벤트) |
+
+---
+
+## 부록
+
+### A. 전자결재 문서 상태 코드
+
+| 코드 | 의미 |
+|---|---|
+| `DRAFT` | 임시저장 |
+| `PENDING` | 진행중 (상신됨) |
+| `APPROVED` | 결재 완료 |
+| `REJECTED` | 반려됨 |
+| `RECALLED` | 회수됨 |
+
+### B. 근무일정 유형 분류
+
+| 유형 | 설명 |
+|---|---|
+| `REGULAR` | 일반근로 |
+| `OVERTIME` | 연장근로 (주 40h 초과) |
+| `NIGHT` | 야간근로 (22:00~06:00) |
+| `HOLIDAY` | 휴일근로 |
+| `REMOTE` | 재택근무 (간주근로 가능) |
+| `OFFSITE` | 외근 (간주근로 가능) |
+| `PAID_LEAVE` | 유급휴가 |
+| `UNPAID_LEAVE` | 무급휴가 |
+
+### C. 한국 근로기준법 핵심 기준 (근태 관리 기준)
+
+| 항목 | 기준 |
+|---|---|
+| 법정근로시간 | 주 40시간 (1일 8시간) |
+| 최대근로시간 | 주 52시간 (연장 12시간 포함) — 초과 시 경고 |
+| 야간근로시간대 | 22:00 ~ 06:00 |
+| 연차 발생 | 1년 미만: 매월 1일, 1년 이상: 15일 (최대 25일) |

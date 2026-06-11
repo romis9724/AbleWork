@@ -1,0 +1,24 @@
+# 원본 참조 메뉴얼 — git 추적 제외
+refs/
+
+# 로컬 Claude Code 설정
+.claude/
+
+# 환경 변수
+.env
+.env.local
+.env.*.local
+!.env.example
+!apps/api/.env.example
+!apps/web/.env.example
+
+# 빌드 산출물
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
