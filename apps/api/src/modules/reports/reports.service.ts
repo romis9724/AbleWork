@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common'
+import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { ReportFilterDto, SnapshotListFilterDto } from './dto/report-filter.dto'
@@ -38,41 +39,47 @@ export class ReportsService {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const attendanceWhere: Record<string, any> = {
-      companyId,
-      date: { gte: start, lte: end },
+      employee: { companyId },
+      clockInAt: { gte: start, lte: end },
     }
     if (employeeId) attendanceWhere['employeeId'] = employeeId
-    if (organizationId) attendanceWhere['employee'] = { organizationId }
+    if (organizationId) {
+      attendanceWhere['employee'] = {
+        companyId,
+        organizations: { some: { organizationId } },
+      }
+    }
 
     const attendances = await this.prisma.attendance.findMany({
       where: attendanceWhere,
       select: {
         employeeId: true,
         status: true,
-        workMinutes: true,
-        overtimeMinutes: true,
-        isLate: true,
-        isEarlyLeave: true,
+        clockInAt: true,
+        clockOutAt: true,
         employee: { select: { name: true } },
       },
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const leaveWhere: Record<string, any> = {
-      companyId,
       status: 'APPROVED',
-      OR: [
-        { startDate: { lte: end }, endDate: { gte: start } },
-      ],
+      employee: { companyId },
+      OR: [{ startDate: { lte: end }, endDate: { gte: start } }],
     }
     if (employeeId) leaveWhere['employeeId'] = employeeId
-    if (organizationId) leaveWhere['employee'] = { organizationId }
+    if (organizationId) {
+      leaveWhere['employee'] = {
+        companyId,
+        organizations: { some: { organizationId } },
+      }
+    }
 
-    const leaveRequests = await this.prisma.leaveRequest.findMany({
+    const leaveRecords = await this.prisma.leave.findMany({
       where: leaveWhere,
       select: {
         employeeId: true,
-        leaveDays: true,
+        daysUsed: true,
         employee: { select: { name: true } },
       },
     })
@@ -102,22 +109,35 @@ export class ReportsService {
     for (const att of attendances) {
       const row = getOrCreate(att.employeeId, att.employee.name)
 
+      const isLate = att.status === 'late'
+      const isEarlyLeave = att.status === 'early_leave'
+
+      const workMinutes =
+        att.clockOutAt != null
+          ? Math.floor(
+              (att.clockOutAt.getTime() - att.clockInAt.getTime()) / 60000,
+            )
+          : 0
+
+      // 정규 근무 시간(8시간 = 480분) 초과분을 초과 근무로 간주
+      const overtimeMinutes = Math.max(0, workMinutes - 480)
+
       if (att.status !== 'NO_SCHEDULE') {
         row.totalWorkDays++
       }
-      if (att.status === 'NORMAL') row.normalCount++
-      if (att.status === 'ABSENT') row.absentCount++
+      if (att.status === 'NORMAL' || att.status === 'normal') row.normalCount++
+      if (att.status === 'ABSENT' || att.status === 'absent') row.absentCount++
       if (att.status === 'NO_SCHEDULE') row.noScheduleCount++
-      if (att.isLate) row.lateCount++
-      if (att.isEarlyLeave) row.earlyLeaveCount++
+      if (isLate) row.lateCount++
+      if (isEarlyLeave) row.earlyLeaveCount++
 
-      row.totalWorkMinutes += att.workMinutes ?? 0
-      row.overtimeMinutes += att.overtimeMinutes ?? 0
+      row.totalWorkMinutes += workMinutes
+      row.overtimeMinutes += overtimeMinutes
     }
 
-    for (const leave of leaveRequests) {
+    for (const leave of leaveRecords) {
       const row = getOrCreate(leave.employeeId, leave.employee.name)
-      row.usedLeaveDays += Number(leave.leaveDays ?? 0)
+      row.usedLeaveDays += Number(leave.daysUsed ?? 0)
     }
 
     return Array.from(rowMap.values())
@@ -175,7 +195,7 @@ export class ReportsService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          createdBy: { select: { id: true, name: true } },
+          locker: { select: { id: true, name: true } },
         },
       }),
       this.prisma.reportSnapshot.count({ where: { companyId } }),
@@ -189,17 +209,14 @@ export class ReportsService {
   async createSnapshot(
     companyId: string,
     dto: CreateSnapshotDto,
-    user: JwtPayload,
+    _user: JwtPayload,
   ) {
     const snapshot = await this.prisma.reportSnapshot.create({
       data: {
         companyId,
-        name: dto.name,
         periodStart: new Date(dto.periodStart),
         periodEnd: new Date(dto.periodEnd),
-        columnConfig: dto.columnConfig ?? {},
-        isLocked: false,
-        createdById: user.employeeId,
+        columnConfig: (dto.columnConfig ?? {}) as unknown as Prisma.InputJsonValue,
       },
     })
 
@@ -225,12 +242,12 @@ export class ReportsService {
             overtimeMinutes: r.overtimeMinutes,
             usedLeaveDays: r.usedLeaveDays,
             employeeName: r.employeeName,
-          },
+          } as unknown as Prisma.InputJsonValue,
           calculationBasis: {
             periodStart: dto.periodStart,
             periodEnd: dto.periodEnd,
             generatedAt: new Date().toISOString(),
-          },
+          } as unknown as Prisma.InputJsonValue,
         })),
       })
     }
@@ -270,20 +287,25 @@ export class ReportsService {
   async findCustomColumns(companyId: string) {
     return this.prisma.customReportColumn.findMany({
       where: { companyId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { sortOrder: 'asc' },
     })
   }
 
   // ── 커스텀 열 생성 ────────────────────────────────────────────────────────
 
   async createCustomColumn(companyId: string, dto: CreateCustomColumnDto) {
+    const count = await this.prisma.customReportColumn.count({
+      where: { companyId },
+    })
+
     return this.prisma.customReportColumn.create({
       data: {
         companyId,
         name: dto.name,
         formula: dto.formula,
-        leaveTypeId: dto.leaveTypeId ?? null,
-        shiftTypeId: dto.shiftTypeId ?? null,
+        filterLeaveTypeId: dto.leaveTypeId ?? null,
+        filterShiftTypeId: dto.shiftTypeId ?? null,
+        sortOrder: count + 1,
       },
     })
   }

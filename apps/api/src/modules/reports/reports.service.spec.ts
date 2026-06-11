@@ -9,7 +9,7 @@ const makePrismaMock = () => ({
   attendance: {
     findMany: jest.fn(),
   },
-  leaveRequest: {
+  leave: {
     findMany: jest.fn(),
   },
   reportSnapshot: {
@@ -57,43 +57,19 @@ describe('ReportsService', () => {
   // ── getRealtimeReport ──────────────────────────────────────────────────────
 
   describe('getRealtimeReport', () => {
+    const clockIn9am  = new Date('2026-01-15T09:00:00')
+    const clockOut17  = new Date('2026-01-15T17:00:00')  // 480분, overtime=0
+    const clockOut18  = new Date('2026-01-15T18:30:00')  // 570분, overtime=90
+
     it('집계된 직원별 근태 데이터를 반환한다', async () => {
-      // Arrange
+      // Arrange — 실제 Prisma 리턴 형식 (clockInAt/clockOutAt/status)
       prisma.attendance.findMany.mockResolvedValue([
-        {
-          employeeId: 'emp-001',
-          status: 'NORMAL',
-          workMinutes: 480,
-          overtimeMinutes: 60,
-          isLate: false,
-          isEarlyLeave: false,
-          employee: { name: '홍길동' },
-        },
-        {
-          employeeId: 'emp-001',
-          status: 'NORMAL',
-          workMinutes: 480,
-          overtimeMinutes: 0,
-          isLate: true,
-          isEarlyLeave: false,
-          employee: { name: '홍길동' },
-        },
-        {
-          employeeId: 'emp-002',
-          status: 'ABSENT',
-          workMinutes: 0,
-          overtimeMinutes: 0,
-          isLate: false,
-          isEarlyLeave: false,
-          employee: { name: '김철수' },
-        },
+        { employeeId: 'emp-001', status: 'normal',  clockInAt: clockIn9am, clockOutAt: clockOut18, employee: { name: '홍길동' } },
+        { employeeId: 'emp-001', status: 'late',    clockInAt: clockIn9am, clockOutAt: clockOut17, employee: { name: '홍길동' } },
+        { employeeId: 'emp-002', status: 'absent',  clockInAt: clockIn9am, clockOutAt: null,       employee: { name: '김철수' } },
       ])
-      prisma.leaveRequest.findMany.mockResolvedValue([
-        {
-          employeeId: 'emp-001',
-          leaveDays: 1,
-          employee: { name: '홍길동' },
-        },
+      prisma.leave.findMany.mockResolvedValue([
+        { employeeId: 'emp-001', daysUsed: 1, employee: { name: '홍길동' } },
       ])
 
       // Act
@@ -108,61 +84,46 @@ describe('ReportsService', () => {
       const emp001 = result.find((r) => r.employeeId === 'emp-001')
       expect(emp001).toBeDefined()
       expect(emp001!.employeeName).toBe('홍길동')
-      expect(emp001!.totalWorkDays).toBe(2)
-      expect(emp001!.normalCount).toBe(2)
-      expect(emp001!.lateCount).toBe(1)
+      expect(emp001!.totalWorkDays).toBe(2)       // normal + late 모두 workDay로 카운트
+      expect(emp001!.normalCount).toBe(1)          // status='normal' 1건
+      expect(emp001!.lateCount).toBe(1)            // status='late' 1건
       expect(emp001!.earlyLeaveCount).toBe(0)
       expect(emp001!.absentCount).toBe(0)
-      expect(emp001!.totalWorkMinutes).toBe(960)
-      expect(emp001!.overtimeMinutes).toBe(60)
+      expect(emp001!.totalWorkMinutes).toBe(570 + 480)  // 18:30-9:00=570, 17:00-9:00=480
+      expect(emp001!.overtimeMinutes).toBe(90 + 0)      // 570-480=90, 480-480=0
       expect(emp001!.usedLeaveDays).toBe(1)
 
       const emp002 = result.find((r) => r.employeeId === 'emp-002')
-      expect(emp002).toBeDefined()
       expect(emp002!.absentCount).toBe(1)
-      expect(emp002!.totalWorkDays).toBe(1)
+      expect(emp002!.totalWorkDays).toBe(1)        // absent도 workDay 카운트 (NO_SCHEDULE만 제외)
       expect(emp002!.usedLeaveDays).toBe(0)
     })
 
     it('NO_SCHEDULE 상태는 totalWorkDays에 포함되지 않는다', async () => {
-      // Arrange
       prisma.attendance.findMany.mockResolvedValue([
-        {
-          employeeId: 'emp-003',
-          status: 'NO_SCHEDULE',
-          workMinutes: 0,
-          overtimeMinutes: 0,
-          isLate: false,
-          isEarlyLeave: false,
-          employee: { name: '이영희' },
-        },
+        { employeeId: 'emp-003', status: 'NO_SCHEDULE', clockInAt: clockIn9am, clockOutAt: null, employee: { name: '이영희' } },
       ])
-      prisma.leaveRequest.findMany.mockResolvedValue([])
+      prisma.leave.findMany.mockResolvedValue([])
 
-      // Act
       const result = await service.getRealtimeReport(COMPANY_ID, {
         startDate: '2026-01-01',
         endDate: '2026-01-31',
       })
 
-      // Assert
       const emp003 = result.find((r) => r.employeeId === 'emp-003')
       expect(emp003!.totalWorkDays).toBe(0)
       expect(emp003!.noScheduleCount).toBe(1)
     })
 
     it('데이터가 없을 때 빈 배열을 반환한다', async () => {
-      // Arrange
       prisma.attendance.findMany.mockResolvedValue([])
-      prisma.leaveRequest.findMany.mockResolvedValue([])
+      prisma.leave.findMany.mockResolvedValue([])
 
-      // Act
       const result = await service.getRealtimeReport(COMPANY_ID, {
         startDate: '2026-01-01',
         endDate: '2026-01-31',
       })
 
-      // Assert
       expect(result).toEqual([])
     })
   })
