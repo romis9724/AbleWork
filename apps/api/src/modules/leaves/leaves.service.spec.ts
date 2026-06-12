@@ -624,4 +624,200 @@ describe('LeavesService', () => {
       )
     })
   })
+
+  // ── runAccrualRule (자동 발생 규칙 실행) ─────────────────────────────────────
+
+  describe('runAccrualRule', () => {
+    const RULE_ID = 'rule-1'
+
+    const makeRule = (overrides: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items?: any[]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      leaveTypes?: any[]
+    }) => ({
+      id: RULE_ID,
+      companyId: COMPANY_ID,
+      leaveGroupId: GROUP_ID,
+      name: '연차 발생',
+      isActive: true,
+      items: overrides.items ?? [
+        {
+          accrualBasis: 'yearly',
+          tenureYears: 1,
+          tenureMonths: null,
+          accrualDays: 15,
+          validMonths: 12,
+          periodStartMd: null,
+          periodEndMd: null,
+          sortOrder: 0,
+        },
+        {
+          accrualBasis: 'yearly',
+          tenureYears: 3,
+          tenureMonths: null,
+          accrualDays: 16,
+          validMonths: 12,
+          periodStartMd: null,
+          periodEndMd: null,
+          sortOrder: 1,
+        },
+      ],
+      leaveGroup: {
+        ...baseGroup,
+        leaveTypes: overrides.leaveTypes ?? [
+          { id: TYPE_ID, deductionDays: 1, timeOption: 'full_day' },
+        ],
+      },
+    })
+
+    const setupRun = (rule: ReturnType<typeof makeRule>, joinedAt: Date) => {
+      mockPrisma.leaveAccrualRule.findFirst.mockResolvedValue(rule)
+      mockPrisma.employee.findMany.mockResolvedValue([
+        { id: EMPLOYEE_ID, joinedAt },
+      ])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma))
+      mockPrisma.leaveBalance.findUnique.mockResolvedValue(null)
+    }
+
+    it('충족하는 구간 중 가장 높은 구간을 선택한다 (근속 4년 → 3년 구간 16일)', async () => {
+      // 2020-01-01 입사, 2024년 기준 근속 약 4년 → 1년/3년 구간 모두 충족 → 16일이어야 함
+      setupRun(makeRule({}), new Date('2020-01-01'))
+
+      const result = await service.runAccrualRule(COMPANY_ID, RULE_ID, { year: 2024 })
+
+      expect(result).toEqual({ processed: 1 })
+      expect(mockPrisma.leaveBalance.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            accruedDays: 16,
+            remainingDays: 16,
+          }),
+        }),
+      )
+    })
+
+    it('그룹 내 여러 유형이 있어도 대표 유형 1개에만 발생한다', async () => {
+      setupRun(
+        makeRule({
+          leaveTypes: [
+            { id: 'type-half', deductionDays: 0.5, timeOption: 'half_day' },
+            { id: TYPE_ID, deductionDays: 1, timeOption: 'full_day' },
+            { id: 'type-extra', deductionDays: 1, timeOption: 'full_day' },
+          ],
+        }),
+        new Date('2020-01-01'),
+      )
+
+      await service.runAccrualRule(COMPANY_ID, RULE_ID, { year: 2024 })
+
+      // 대표 유형(deductionDays=1, full_day 중 첫 번째)에만 1회 발생
+      expect(mockPrisma.leaveBalance.create).toHaveBeenCalledTimes(1)
+      expect(mockPrisma.leaveBalance.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ leaveTypeId: TYPE_ID }),
+        }),
+      )
+    })
+
+    it('멱등성 — 같은 연도에 2회 실행해도 잔액이 중복 증가하지 않는다', async () => {
+      setupRun(makeRule({}), new Date('2020-01-01'))
+
+      // 1회차: 잔액 없음 → 생성
+      const first = await service.runAccrualRule(COMPANY_ID, RULE_ID, { year: 2024 })
+      expect(first).toEqual({ processed: 1 })
+      expect(mockPrisma.leaveBalance.create).toHaveBeenCalledTimes(1)
+
+      // 2회차: 이미 목표값(16)만큼 발생됨 → 스킵
+      mockPrisma.leaveBalance.findUnique.mockResolvedValue({
+        ...baseBalance,
+        accruedDays: 16,
+        usedDays: 0,
+        remainingDays: 16,
+      })
+
+      const second = await service.runAccrualRule(COMPANY_ID, RULE_ID, { year: 2024 })
+
+      expect(second).toEqual({ processed: 0 })
+      expect(mockPrisma.leaveBalance.create).toHaveBeenCalledTimes(1) // 추가 생성 없음
+      expect(mockPrisma.leaveBalance.update).not.toHaveBeenCalled() // 증가 없음
+    })
+
+    it('월 기준 규칙 — 경과 개월 수만큼 누적 발생한다 (3/15 입사, 연말 기준 9개월 → 9일)', async () => {
+      setupRun(
+        makeRule({
+          items: [
+            {
+              accrualBasis: 'monthly',
+              tenureYears: null,
+              tenureMonths: 1,
+              accrualDays: 1,
+              validMonths: 12,
+              periodStartMd: null,
+              periodEndMd: null,
+              sortOrder: 0,
+            },
+          ],
+        }),
+        new Date('2024-03-15'),
+      )
+
+      const result = await service.runAccrualRule(COMPANY_ID, RULE_ID, { year: 2024 })
+
+      expect(result).toEqual({ processed: 1 })
+      expect(mockPrisma.leaveBalance.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ accruedDays: 9, remainingDays: 9 }),
+        }),
+      )
+    })
+
+    it('월 기준 규칙 — 이미 발생한 누적분이 있으면 증가분만 가산한다 (멱등 증분)', async () => {
+      setupRun(
+        makeRule({
+          items: [
+            {
+              accrualBasis: 'monthly',
+              tenureYears: null,
+              tenureMonths: 1,
+              accrualDays: 1,
+              validMonths: 12,
+              periodStartMd: null,
+              periodEndMd: null,
+              sortOrder: 0,
+            },
+          ],
+        }),
+        new Date('2024-03-15'),
+      )
+      // 직전 실행까지 8개월분(8일) 발생되어 있음 → 목표 9일과의 차액 1일만 가산
+      mockPrisma.leaveBalance.findUnique.mockResolvedValue({
+        ...baseBalance,
+        accruedDays: 8,
+        usedDays: 2,
+        remainingDays: 6,
+      })
+
+      await service.runAccrualRule(COMPANY_ID, RULE_ID, { year: 2024 })
+
+      expect(mockPrisma.leaveBalance.create).not.toHaveBeenCalled()
+      expect(mockPrisma.leaveBalance.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            accruedDays: 9,
+            remainingDays: { increment: 1 },
+          }),
+        }),
+      )
+    })
+
+    it('존재하지 않는 규칙이면 NotFoundException을 던진다', async () => {
+      mockPrisma.leaveAccrualRule.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.runAccrualRule(COMPANY_ID, 'nonexistent', { year: 2024 }),
+      ).rejects.toThrow(NotFoundException)
+    })
+  })
 })

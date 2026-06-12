@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
-import { AccessLevel } from '@ablework/shared-constants'
+import { AccessLevel, AttendanceStatus, TimeclockAuthMethod } from '@ablework/shared-constants'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
 import { EVENTS } from '../../events/domain-events'
@@ -23,6 +23,32 @@ import { UpdateAttendanceDto } from './dto/update-attendance.dto'
 /** 출근 상태 판정에 필요한 회사 설정 키 */
 const LATE_GRACE_MINUTES_KEY = 'late_grace_minutes'
 const CLOCKIN_BEFORE_SHIFT_MINUTES_KEY = 'clockin_before_shift_minutes'
+const ALLOW_UNSCHEDULED_KEY = 'allow_unscheduled'
+
+/** 무일정 출근 정책 값 */
+const UnscheduledPolicy = {
+  ALWAYS: 'always',
+  IF_NO_SHIFT: 'if_no_shift',
+  NEVER: 'never',
+} as const
+
+/** GPS 검증이 필요한 출퇴근 장소 인증 방식 */
+const GPS_AUTH_METHODS: readonly string[] = [
+  TimeclockAuthMethod.GPS,
+  TimeclockAuthMethod.GPS_OR_WIFI,
+  TimeclockAuthMethod.GPS_AND_WIFI,
+]
+
+/** 지구 평균 반경 (m) — haversine 거리 계산용 */
+const EARTH_RADIUS_METERS = 6_371_000
+
+/** GPS 검증에 필요한 출퇴근 장소 필드 */
+interface TimeclockAreaForGps {
+  authMethod: string
+  locationLat: unknown | null
+  locationLng: unknown | null
+  locationRadiusMeters: number | null
+}
 
 /** 현재 근무 현황 7가지 상태 */
 export const WorkingStatus = {
@@ -103,9 +129,10 @@ export class AttendancesService {
 
     await this.assertEmployee(companyId, employeeId)
 
-    // 출퇴근 장소가 지정된 경우 자사 소속인지 검증 (멀티테넌시)
+    // 출퇴근 장소가 지정된 경우 자사 소속인지 검증 (멀티테넌시) + GPS 반경 검증
     if (timeclockAreaId) {
-      await this.assertTimeclockAreaBelongsToCompany(companyId, timeclockAreaId)
+      const area = await this.assertTimeclockAreaBelongsToCompany(companyId, timeclockAreaId)
+      this.assertWithinTimeclockArea(area, lat, lng)
     }
 
     // 이미 진행 중인 출근 기록 확인
@@ -131,6 +158,11 @@ export class AttendancesService {
       clockInDate,
       shift,
     )
+
+    // 무일정 출근 정책 enforcement (CLAUDE.md §6)
+    if (isOncall) {
+      await this.assertUnscheduledAllowed(companyId, shift)
+    }
 
     const attendance = await this.prisma.attendance.create({
       data: {
@@ -186,14 +218,20 @@ export class AttendancesService {
     }
     this.assertNotConfirmed(attendance)
 
+    const clockOutAt = new Date()
+
+    // 조퇴(early_leave) 판정: 연결된 Shift 종료 전 퇴근 시
+    const earlyLeaveStatus = await this.resolveClockOutStatus(attendance, clockOutAt)
+
     return this.prisma.attendance.update({
       where: { id: attendance.id },
       data: {
-        clockOutAt: new Date(),
+        clockOutAt,
         clockOutLat: dto.lat ?? undefined,
         clockOutLng: dto.lng ?? undefined,
         clockOutMethod: dto.method ?? undefined,
         note: dto.note ?? undefined,
+        ...(earlyLeaveStatus && { status: earlyLeaveStatus }),
       },
     })
   }
@@ -525,7 +563,13 @@ export class AttendancesService {
   private async assertTimeclockAreaBelongsToCompany(companyId: string, timeclockAreaId: string) {
     const area = await this.prisma.timeclockArea.findFirst({
       where: { id: timeclockAreaId, isActive: true, organization: { companyId } },
-      select: { id: true },
+      select: {
+        id: true,
+        authMethod: true,
+        locationLat: true,
+        locationLng: true,
+        locationRadiusMeters: true,
+      },
     })
     if (!area) {
       throw new NotFoundException({
@@ -534,5 +578,138 @@ export class AttendancesService {
       })
     }
     return area
+  }
+
+  /**
+   * 무일정 출근 정책 검증 (CLAUDE.md §6 — company_settings.attendance.allow_unscheduled)
+   *
+   * - 'always'      → 항상 허용
+   * - 'if_no_shift' → 당일 Shift가 없으면 허용, Shift가 있는데 oncall(조기 출근 케이스)이면 거부
+   * - 'never'       → 무일정 출근 거부
+   */
+  private async assertUnscheduledAllowed(
+    companyId: string,
+    shift: { id: string } | null,
+  ): Promise<void> {
+    const policy = await this.settingsService.get<string>(
+      companyId,
+      'attendance',
+      ALLOW_UNSCHEDULED_KEY,
+      UnscheduledPolicy.ALWAYS,
+    )
+
+    const isNever = policy === UnscheduledPolicy.NEVER
+    const isConditionalRejected = policy === UnscheduledPolicy.IF_NO_SHIFT && shift !== null
+
+    if (isNever || isConditionalRejected) {
+      throw new ForbiddenException({
+        code: 'ATTENDANCE_UNSCHEDULED_NOT_ALLOWED',
+        message: '무일정 출근이 허용되지 않습니다.',
+      })
+    }
+  }
+
+  /**
+   * GPS 반경 검증 (haversine)
+   *
+   * - authMethod가 gps 계열(gps, gps_or_wifi, gps_and_wifi)이 아니면 검증 생략 (none/wifi)
+   * - 장소 좌표 미설정 또는 반경 0/null → 무제한 허용
+   * - lat/lng 미전송 + gps 필수 장소 → ATTENDANCE_LOCATION_REQUIRED
+   * - 반경 초과 → ATTENDANCE_OUT_OF_RANGE
+   * - gps_or_wifi는 GPS 검증 실패해도 거부하지 않음 (현재 WiFi 검증 수단이 없으므로 통과)
+   */
+  private assertWithinTimeclockArea(
+    area: TimeclockAreaForGps,
+    lat?: number,
+    lng?: number,
+  ): void {
+    if (!GPS_AUTH_METHODS.includes(area.authMethod)) {
+      return // none / wifi → GPS 검증 생략
+    }
+    if (area.locationLat == null || area.locationLng == null) {
+      return // 좌표 미설정 장소는 거리 검증 불가 → 허용
+    }
+    const radiusMeters = area.locationRadiusMeters
+    if (!radiusMeters) {
+      return // 반경 0 또는 null = 무제한 허용
+    }
+
+    // TODO: WiFi SSID 검증 수단 도입 시 gps_or_wifi는 GPS 실패 → WiFi 검증으로 폴백할 것.
+    //       현재는 WiFi 검증 수단이 없으므로 gps_or_wifi는 GPS 실패 시 통과시킨다.
+    const isGpsOptional = area.authMethod === TimeclockAuthMethod.GPS_OR_WIFI
+
+    if (lat == null || lng == null) {
+      if (isGpsOptional) {
+        return
+      }
+      throw new BadRequestException({
+        code: 'ATTENDANCE_LOCATION_REQUIRED',
+        message: 'GPS 위치 정보(lat/lng)가 필요한 출퇴근 장소입니다.',
+      })
+    }
+
+    const distanceMeters = this.haversineDistanceMeters(
+      lat,
+      lng,
+      Number(area.locationLat),
+      Number(area.locationLng),
+    )
+
+    if (distanceMeters > radiusMeters) {
+      if (isGpsOptional) {
+        return
+      }
+      throw new BadRequestException({
+        code: 'ATTENDANCE_OUT_OF_RANGE',
+        message: `출퇴근 장소 허용 반경을 벗어났습니다. (현재 거리 ${Math.round(distanceMeters)}m, 허용 반경 ${radiusMeters}m)`,
+      })
+    }
+  }
+
+  /** 두 좌표 간 haversine 거리(m) 계산 */
+  private haversineDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const toRad = (deg: number): number => (deg * Math.PI) / 180
+
+    const dLat = toRad(lat2 - lat1)
+    const dLng = toRad(lng2 - lng1)
+
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+
+    return EARTH_RADIUS_METERS * c
+  }
+
+  /**
+   * 퇴근 시 조퇴(early_leave) 판정.
+   *
+   * - 연결된 Shift가 없으면 상태 변경 없음
+   * - clockOutAt < shift.endAt → 'early_leave'
+   * - 단, 기존 status가 'late'면 유지: 지각 + 조퇴가 모두 해당하는 경우
+   *   Shiftee 동작이 모호하므로 조퇴로 덮어쓰지 않고 'late'를 우선한다.
+   */
+  private async resolveClockOutStatus(
+    attendance: { shiftId: string | null; status: string },
+    clockOutAt: Date,
+  ): Promise<string | undefined> {
+    if (!attendance.shiftId) {
+      return undefined
+    }
+
+    const shift = await this.prisma.shift.findFirst({
+      where: { id: attendance.shiftId },
+      select: { endAt: true },
+    })
+    if (!shift || clockOutAt.getTime() >= shift.endAt.getTime()) {
+      return undefined
+    }
+
+    // 지각 + 조퇴 모두 해당 → 'late' 유지 (조퇴로 덮지 않음)
+    if (attendance.status === AttendanceStatus.LATE) {
+      return undefined
+    }
+
+    return AttendanceStatus.EARLY_LEAVE
   }
 }

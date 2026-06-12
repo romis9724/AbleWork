@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
+import { MailService } from '../mail/mail.service'
 import {
   CreateTemplateDto,
   UpdateTemplateDto,
@@ -13,7 +14,12 @@ import {
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(MessagesService.name)
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mail: MailService,
+  ) {}
 
   // ── MSG-01 템플릿 목록 ────────────────────────────────────────────────────────
 
@@ -74,9 +80,7 @@ export class MessagesService {
 
     await this.assertEmployeesBelongToCompany(companyId, recipientEmployeeIds)
 
-    // TODO(다음 Wave): sendEmail=true인 경우 Nodemailer로 이메일 실발송 처리.
-    //   현재는 발송 옵션을 레코드에 기록하고 수신함(in-app) 발송만 수행한다.
-    return this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: {
         companyId,
         type: 'manual',
@@ -93,6 +97,38 @@ export class MessagesService {
         recipients: true,
       },
     })
+
+    // 이메일 실발송 — fire-and-forget. 실패해도 메시지 저장은 유지된다.
+    if (sendEmail) {
+      void this.dispatchMessageEmails(companyId, recipientEmployeeIds, title, content)
+    }
+
+    return message
+  }
+
+  /** 수신 직원들의 User 이메일을 조회하여 발송. 실패는 로깅만 한다. */
+  private async dispatchMessageEmails(
+    companyId: string,
+    recipientEmployeeIds: string[],
+    title: string,
+    content: string,
+  ): Promise<void> {
+    try {
+      const employees = await this.prisma.employee.findMany({
+        where: { companyId, id: { in: recipientEmployeeIds } },
+        select: { user: { select: { email: true } } },
+      })
+
+      const emails = employees
+        .map((e) => e.user?.email)
+        .filter((email): email is string => !!email)
+
+      await Promise.all(
+        emails.map((email) => this.mail.sendMessageMail(email, title, content)),
+      )
+    } catch (error) {
+      this.logger.error('메시지 이메일 발송 중 오류', error)
+    }
   }
 
   // ── MSG-06 수신 메시지 목록 ───────────────────────────────────────────────────

@@ -5,9 +5,9 @@ import {
   UpdateStandardizationRuleDto,
 } from './dto/standardization-rule.dto'
 
-// TODO(Wave 5): 리포트 계산(getRealtimeReport/스냅샷 생성)에 표준화 규칙
-// (calculationBasis, startTimeRule/endTimeRule 반올림, excludeNoCheckin,
-// includeManualBreak)을 반영할 것. 현재는 규칙 CRUD만 제공한다.
+// Wave 5: 기본 규칙(isDefault=true)의 startTimeRule/endTimeRule/includeManualBreak는
+// ReportsService.getRealtimeReport의 standardizedWorkMinutes 계산에 반영된다.
+// TODO: calculationBasis 세분화·excludeNoCheckin은 출근 누락 데이터 모델 확정 후 반영.
 @Injectable()
 export class StandardizationRulesService {
   constructor(private readonly prisma: PrismaService) {}

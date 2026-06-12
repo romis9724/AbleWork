@@ -58,12 +58,16 @@ interface ReportRow {
   employeeId: string
   employeeName: string
   totalWorkDays: number
+  scheduledWorkDays: number
+  scheduledWorkMinutes: number
   normalCount: number
   lateCount: number
   earlyLeaveCount: number
   absentCount: number
   noScheduleCount: number
+  missingClockOutCount: number
   totalWorkMinutes: number
+  standardizedWorkMinutes: number
   overtimeMinutes: number
   usedLeaveDays: number
 }
@@ -127,18 +131,22 @@ export default function ReportsPage() {
 
   function handleExport() {
     const headers = [
-      '직원명', '근로일수', '정상출근', '근로시간', '연장근로시간',
-      '지각횟수', '조퇴횟수', '결근횟수', '무일정근무', '휴가사용일수',
+      '직원명', '근로일수', '일정일수', '일정근로시간', '정상출근', '근로시간', '표준화근로시간', '연장근로시간',
+      '지각횟수', '조퇴횟수', '결근횟수', '퇴근누락', '무일정근무', '휴가사용일수',
     ]
     const csvRows = rows.map((r) => [
       r.employeeName,
       r.totalWorkDays,
+      r.scheduledWorkDays,
+      minutesToHours(r.scheduledWorkMinutes),
       r.normalCount,
       minutesToHours(r.totalWorkMinutes),
+      minutesToHours(r.standardizedWorkMinutes),
       minutesToHours(r.overtimeMinutes),
       r.lateCount,
       r.earlyLeaveCount,
       r.absentCount,
+      r.missingClockOutCount,
       r.noScheduleCount,
       r.usedLeaveDays,
     ])
@@ -277,12 +285,16 @@ export default function ReportsPage() {
                 <TableRow sx={{ bgcolor: 'background.default' }}>
                   <TableCell>직원명</TableCell>
                   <TableCell align="right">근로일수</TableCell>
+                  <TableCell align="right">일정일수</TableCell>
+                  <TableCell align="right">일정근로시간</TableCell>
                   <TableCell align="right">정상출근</TableCell>
                   <TableCell align="right">근로시간</TableCell>
+                  <TableCell align="right">표준화근로시간</TableCell>
                   <TableCell align="right">연장근로시간</TableCell>
                   <TableCell align="right">지각</TableCell>
                   <TableCell align="right">조퇴</TableCell>
                   <TableCell align="right">결근</TableCell>
+                  <TableCell align="right">퇴근누락</TableCell>
                   <TableCell align="right">무일정근무</TableCell>
                   <TableCell align="right">휴가사용</TableCell>
                 </TableRow>
@@ -292,12 +304,16 @@ export default function ReportsPage() {
                   <TableRow key={row.employeeId} hover>
                     <TableCell sx={{ fontWeight: 500 }}>{row.employeeName}</TableCell>
                     <TableCell align="right">{row.totalWorkDays}일</TableCell>
+                    <TableCell align="right">{row.scheduledWorkDays}일</TableCell>
+                    <TableCell align="right">{minutesToHours(row.scheduledWorkMinutes)}</TableCell>
                     <TableCell align="right">{row.normalCount}회</TableCell>
                     <TableCell align="right">{minutesToHours(row.totalWorkMinutes)}</TableCell>
+                    <TableCell align="right">{minutesToHours(row.standardizedWorkMinutes)}</TableCell>
                     <TableCell align="right">{minutesToHours(row.overtimeMinutes)}</TableCell>
                     <TableCell align="right">{row.lateCount}회</TableCell>
                     <TableCell align="right">{row.earlyLeaveCount}회</TableCell>
                     <TableCell align="right">{row.absentCount}일</TableCell>
+                    <TableCell align="right">{row.missingClockOutCount}회</TableCell>
                     <TableCell align="right">{row.noScheduleCount}회</TableCell>
                     <TableCell align="right">{row.usedLeaveDays}일</TableCell>
                   </TableRow>

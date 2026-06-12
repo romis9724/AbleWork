@@ -100,6 +100,11 @@ describe('AttendancesService', () => {
       (_companyId: string, _section: string, _key: string, defaultValue: number) =>
         Promise.resolve(defaultValue),
     )
+    // 기본 설정: 무일정 출근 'always' 등 (defaultValue 그대로 반환)
+    mockSettings.get.mockImplementation(
+      (_companyId: string, _section: string, _key: string, defaultValue: unknown) =>
+        Promise.resolve(defaultValue),
+    )
   })
 
   // ── determineStatus ──────────────────────────────────────────────────────
@@ -238,6 +243,181 @@ describe('AttendancesService', () => {
     })
   })
 
+  // ── clockIn: 무일정 출근 정책 (allow_unscheduled) ─────────────────────────
+
+  describe('clockIn — 무일정 출근 정책', () => {
+    beforeEach(() => {
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.attendance.findFirst.mockResolvedValue(null)
+      mockPrisma.shift.findFirst.mockResolvedValue(null) // 무일정
+      mockPrisma.attendance.create.mockResolvedValue({
+        ...baseAttendance,
+        status: 'oncall',
+        isOncall: true,
+      })
+    })
+
+    it("정책이 'never'면 무일정 출근을 ForbiddenException(ATTENDANCE_UNSCHEDULED_NOT_ALLOWED)으로 거부한다", async () => {
+      mockSettings.get.mockImplementation(
+        (_companyId: string, _section: string, key: string, defaultValue: unknown) =>
+          Promise.resolve(key === 'allow_unscheduled' ? 'never' : defaultValue),
+      )
+
+      await expect(service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })).rejects.toThrow(
+        ForbiddenException,
+      )
+      expect(mockPrisma.attendance.create).not.toHaveBeenCalled()
+    })
+
+    it("정책이 'if_no_shift'이고 당일 Shift가 없으면 무일정 출근을 허용한다", async () => {
+      mockSettings.get.mockImplementation(
+        (_companyId: string, _section: string, key: string, defaultValue: unknown) =>
+          Promise.resolve(key === 'allow_unscheduled' ? 'if_no_shift' : defaultValue),
+      )
+
+      const result = await service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })
+
+      expect(result).toBeDefined()
+      expect(mockPrisma.attendance.create).toHaveBeenCalled()
+    })
+
+    it("정책이 'if_no_shift'이고 당일 Shift가 있는데 조기 출근(oncall)이면 거부한다", async () => {
+      mockSettings.get.mockImplementation(
+        (_companyId: string, _section: string, key: string, defaultValue: unknown) =>
+          Promise.resolve(key === 'allow_unscheduled' ? 'if_no_shift' : defaultValue),
+      )
+      // Shift 시작이 2시간 뒤 → 사전 허용 30분보다 이른 출근 → oncall
+      mockPrisma.shift.findFirst.mockResolvedValue({
+        id: 'shift-1',
+        startAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+        endAt: new Date(Date.now() + 10 * 60 * 60 * 1000),
+      })
+
+      await expect(service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })).rejects.toThrow(
+        ForbiddenException,
+      )
+      expect(mockPrisma.attendance.create).not.toHaveBeenCalled()
+    })
+
+    it("정책이 'always'면 무일정 출근을 허용한다 (기본값)", async () => {
+      const result = await service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })
+
+      expect(result).toBeDefined()
+      expect(mockPrisma.attendance.create).toHaveBeenCalled()
+    })
+  })
+
+  // ── clockIn: GPS 반경 검증 (haversine) ─────────────────────────────────────
+
+  describe('clockIn — GPS 반경 검증', () => {
+    // 서울시청 좌표 기준
+    const AREA_LAT = 37.5665
+    const AREA_LNG = 126.978
+
+    const makeArea = (overrides: Record<string, unknown> = {}) => ({
+      id: 'area-1',
+      authMethod: 'gps',
+      locationLat: AREA_LAT,
+      locationLng: AREA_LNG,
+      locationRadiusMeters: 100,
+      ...overrides,
+    })
+
+    beforeEach(() => {
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.attendance.findFirst.mockResolvedValue(null)
+      mockPrisma.shift.findFirst.mockResolvedValue(null)
+      mockPrisma.attendance.create.mockResolvedValue({
+        ...baseAttendance,
+        status: 'oncall',
+        isOncall: true,
+      })
+    })
+
+    it('반경을 초과하면 BadRequestException(ATTENDANCE_OUT_OF_RANGE)을 던진다', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(makeArea())
+
+      // 약 4km 떨어진 좌표 (반경 100m 초과)
+      await expect(
+        service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
+          method: 'gps',
+          timeclockAreaId: 'area-1',
+          lat: 37.6,
+          lng: 127.0,
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'ATTENDANCE_OUT_OF_RANGE' }),
+      })
+      expect(mockPrisma.attendance.create).not.toHaveBeenCalled()
+    })
+
+    it('반경이 0이면 거리와 무관하게 허용한다 (무제한)', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(
+        makeArea({ locationRadiusMeters: 0 }),
+      )
+
+      const result = await service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
+        method: 'gps',
+        timeclockAreaId: 'area-1',
+        lat: 37.6,
+        lng: 127.0,
+      })
+
+      expect(result).toBeDefined()
+      expect(mockPrisma.attendance.create).toHaveBeenCalled()
+    })
+
+    it('반경 이내면 허용한다', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(makeArea())
+
+      // 장소 좌표와 동일한 위치 (거리 0m)
+      const result = await service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
+        method: 'gps',
+        timeclockAreaId: 'area-1',
+        lat: AREA_LAT,
+        lng: AREA_LNG,
+      })
+
+      expect(result).toBeDefined()
+    })
+
+    it('GPS 필수 장소에 lat/lng 없이 출근하면 BadRequestException(ATTENDANCE_LOCATION_REQUIRED)을 던진다', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(makeArea())
+
+      await expect(
+        service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'gps', timeclockAreaId: 'area-1' }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'ATTENDANCE_LOCATION_REQUIRED' }),
+      })
+    })
+
+    it('gps_or_wifi 장소는 반경을 초과해도 거부하지 않는다 (WiFi 검증 수단 부재 → 통과)', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(
+        makeArea({ authMethod: 'gps_or_wifi' }),
+      )
+
+      const result = await service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
+        method: 'gps',
+        timeclockAreaId: 'area-1',
+        lat: 37.6,
+        lng: 127.0,
+      })
+
+      expect(result).toBeDefined()
+    })
+
+    it("authMethod가 'none'이면 GPS 검증을 생략한다", async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(makeArea({ authMethod: 'none' }))
+
+      const result = await service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
+        method: 'web',
+        timeclockAreaId: 'area-1',
+      })
+
+      expect(result).toBeDefined()
+    })
+  })
+
   // ── clockOut ─────────────────────────────────────────────────────────────
 
   describe('clockOut', () => {
@@ -261,6 +441,92 @@ describe('AttendancesService', () => {
 
       await expect(service.clockOut(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })).rejects.toThrow(
         BadRequestException,
+      )
+    })
+
+    it('Shift 종료 전에 퇴근하면 status를 early_leave로 갱신한다', async () => {
+      const shiftEndAt = new Date(Date.now() + 2 * 60 * 60 * 1000) // 2시간 뒤 종료
+      mockPrisma.attendance.findFirst.mockResolvedValue({
+        ...baseAttendance,
+        shiftId: 'shift-1',
+        status: 'normal',
+      })
+      mockPrisma.shift.findFirst.mockResolvedValue({ endAt: shiftEndAt })
+      mockPrisma.attendance.update.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve({ ...baseAttendance, ...data }),
+      )
+
+      const result = await service.clockOut(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })
+
+      expect(result.status).toBe('early_leave')
+      expect(mockPrisma.attendance.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'early_leave' }),
+        }),
+      )
+    })
+
+    it('지각(late) 상태에서 조퇴해도 late를 유지한다 (조퇴로 덮지 않음)', async () => {
+      const shiftEndAt = new Date(Date.now() + 2 * 60 * 60 * 1000)
+      mockPrisma.attendance.findFirst.mockResolvedValue({
+        ...baseAttendance,
+        shiftId: 'shift-1',
+        status: 'late',
+      })
+      mockPrisma.shift.findFirst.mockResolvedValue({ endAt: shiftEndAt })
+      mockPrisma.attendance.update.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve({ ...baseAttendance, status: 'late', ...data }),
+      )
+
+      const result = await service.clockOut(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })
+
+      expect(result.status).toBe('late')
+      expect(mockPrisma.attendance.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({ status: expect.anything() }),
+        }),
+      )
+    })
+
+    it('Shift 종료 이후 퇴근하면 status를 변경하지 않는다', async () => {
+      const shiftEndAt = new Date(Date.now() - 60 * 60 * 1000) // 1시간 전 종료
+      mockPrisma.attendance.findFirst.mockResolvedValue({
+        ...baseAttendance,
+        shiftId: 'shift-1',
+        status: 'normal',
+      })
+      mockPrisma.shift.findFirst.mockResolvedValue({ endAt: shiftEndAt })
+      mockPrisma.attendance.update.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve({ ...baseAttendance, ...data }),
+      )
+
+      const result = await service.clockOut(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })
+
+      expect(result.status).toBe('normal')
+      expect(mockPrisma.attendance.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({ status: expect.anything() }),
+        }),
+      )
+    })
+
+    it('연결된 Shift가 없으면 status를 변경하지 않는다', async () => {
+      mockPrisma.attendance.findFirst.mockResolvedValue(baseAttendance) // shiftId: null
+      mockPrisma.attendance.update.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve({ ...baseAttendance, ...data }),
+      )
+
+      await service.clockOut(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })
+
+      expect(mockPrisma.shift.findFirst).not.toHaveBeenCalled()
+      expect(mockPrisma.attendance.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({ status: expect.anything() }),
+        }),
       )
     })
   })

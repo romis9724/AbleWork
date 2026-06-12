@@ -13,15 +13,64 @@ export interface EmployeeReportRow {
   employeeId: string
   employeeName: string
   totalWorkDays: number
+  scheduledWorkDays: number
+  scheduledWorkMinutes: number
   normalCount: number
   lateCount: number
   earlyLeaveCount: number
   absentCount: number
   noScheduleCount: number
+  missingClockOutCount: number
   totalWorkMinutes: number
+  standardizedWorkMinutes: number
   overtimeMinutes: number
   usedLeaveDays: number
 }
+
+// ── 집계용 내부 타입 ──────────────────────────────────────────────────────────
+
+interface BreakForReport {
+  startAt: Date
+  endAt: Date | null
+  isManual: boolean
+}
+
+interface AttendanceForReport {
+  employeeId: string
+  status: string
+  isOncall: boolean
+  clockInAt: Date
+  clockOutAt: Date | null
+  shift: { startAt: Date; endAt: Date } | null
+  breaks: BreakForReport[]
+  employee: { name: string }
+}
+
+interface ShiftForReport {
+  employeeId: string
+  startAt: Date
+  endAt: Date
+  attendance: { id: string } | null
+  employee: { name: string }
+}
+
+interface WageInfoForReport {
+  employeeId: string
+  contractedWorkDays: string
+  contractedHoursPerWeek: Prisma.Decimal | number
+}
+
+interface StandardizationRuleForReport {
+  startTimeRule: string
+  endTimeRule: string
+  includeManualBreak: boolean
+}
+
+// ── 상수 ─────────────────────────────────────────────────────────────────────
+
+const MS_PER_MINUTE = 60_000
+const DEFAULT_DAILY_WORK_MINUTES = 480 // WageInfo 부재 시 일 8시간 기준
+const DEFAULT_CONTRACTED_WORK_DAYS = 5
 
 @Injectable()
 export class ReportsService {
@@ -42,51 +91,84 @@ export class ReportsService {
     const end = new Date(endDate)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const employeeWhere: Record<string, any> = organizationId
+      ? { companyId, organizations: { some: { organizationId } } }
+      : { companyId }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const attendanceWhere: Record<string, any> = {
-      employee: { companyId },
+      employee: employeeWhere,
       clockInAt: { gte: start, lte: end },
     }
     if (employeeId) attendanceWhere['employeeId'] = employeeId
-    if (organizationId) {
-      attendanceWhere['employee'] = {
-        companyId,
-        organizations: { some: { organizationId } },
-      }
-    }
-
-    const attendances = await this.prisma.attendance.findMany({
-      where: attendanceWhere,
-      select: {
-        employeeId: true,
-        status: true,
-        clockInAt: true,
-        clockOutAt: true,
-        employee: { select: { name: true } },
-      },
-    })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const leaveWhere: Record<string, any> = {
       status: 'APPROVED',
-      employee: { companyId },
+      employee: employeeWhere,
       OR: [{ startDate: { lte: end }, endDate: { gte: start } }],
     }
     if (employeeId) leaveWhere['employeeId'] = employeeId
-    if (organizationId) {
-      leaveWhere['employee'] = {
-        companyId,
-        organizations: { some: { organizationId } },
-      }
-    }
 
-    const leaveRecords = await this.prisma.leave.findMany({
-      where: leaveWhere,
-      select: {
-        employeeId: true,
-        daysUsed: true,
-        employee: { select: { name: true } },
-      },
-    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const shiftWhere: Record<string, any> = {
+      employee: employeeWhere,
+      startAt: { gte: start, lte: end },
+    }
+    if (employeeId) shiftWhere['employeeId'] = employeeId
+
+    const [attendances, leaveRecords, shifts, wageInfos, standardRule] =
+      await Promise.all([
+        this.prisma.attendance.findMany({
+          where: attendanceWhere,
+          select: {
+            employeeId: true,
+            status: true,
+            isOncall: true,
+            clockInAt: true,
+            clockOutAt: true,
+            shift: { select: { startAt: true, endAt: true } },
+            breaks: { select: { startAt: true, endAt: true, isManual: true } },
+            employee: { select: { name: true } },
+          },
+        }) as Promise<AttendanceForReport[]>,
+        this.prisma.leave.findMany({
+          where: leaveWhere,
+          select: {
+            employeeId: true,
+            daysUsed: true,
+            employee: { select: { name: true } },
+          },
+        }),
+        this.prisma.shift.findMany({
+          where: shiftWhere,
+          select: {
+            employeeId: true,
+            startAt: true,
+            endAt: true,
+            attendance: { select: { id: true } },
+            employee: { select: { name: true } },
+          },
+        }) as Promise<ShiftForReport[]>,
+        this.prisma.wageInfo.findMany({
+          where: { employee: employeeWhere, effectiveFrom: { lte: end } },
+          orderBy: [{ employeeId: 'asc' }, { effectiveFrom: 'desc' }],
+          select: {
+            employeeId: true,
+            contractedWorkDays: true,
+            contractedHoursPerWeek: true,
+          },
+        }) as Promise<WageInfoForReport[]>,
+        this.prisma.standardizationRule.findFirst({
+          where: { companyId, isDefault: true, isActive: true },
+        }) as Promise<StandardizationRuleForReport | null>,
+      ])
+
+    // 직원별 유효 WageInfo (effectiveFrom 최신 1건)
+    const wageMap = new Map<string, WageInfoForReport>()
+    for (const wage of wageInfos) {
+      if (!wageMap.has(wage.employeeId)) wageMap.set(wage.employeeId, wage)
+    }
 
     // 직원별 집계
     const rowMap = new Map<string, EmployeeReportRow>()
@@ -97,12 +179,16 @@ export class ReportsService {
           employeeId: empId,
           employeeName: empName,
           totalWorkDays: 0,
+          scheduledWorkDays: 0,
+          scheduledWorkMinutes: 0,
           normalCount: 0,
           lateCount: 0,
           earlyLeaveCount: 0,
           absentCount: 0,
           noScheduleCount: 0,
+          missingClockOutCount: 0,
           totalWorkMinutes: 0,
+          standardizedWorkMinutes: 0,
           overtimeMinutes: 0,
           usedLeaveDays: 0,
         })
@@ -113,30 +199,66 @@ export class ReportsService {
     for (const att of attendances) {
       const row = getOrCreate(att.employeeId, att.employee.name)
 
-      const isLate = att.status === 'late'
-      const isEarlyLeave = att.status === 'early_leave'
-
-      const workMinutes =
+      // 휴게(종료된 건) 차감 후 실근무 분
+      const breakMinutes = this.sumBreakMinutes(att.breaks ?? [])
+      const rawMinutes =
         att.clockOutAt != null
-          ? Math.floor(
-              (att.clockOutAt.getTime() - att.clockInAt.getTime()) / 60000,
-            )
+          ? this.diffMinutes(att.clockInAt, att.clockOutAt)
           : 0
+      const workMinutes = Math.max(0, rawMinutes - breakMinutes)
 
-      // 정규 근무 시간(8시간 = 480분) 초과분을 초과 근무로 간주
-      const overtimeMinutes = Math.max(0, workMinutes - 480)
+      // 연장근로: 유효 WageInfo의 일일 소정근로 초과분 (없으면 480분 기준)
+      const dailyContracted = this.getDailyContractedMinutes(
+        wageMap.get(att.employeeId),
+      )
 
-      if (att.status !== 'NO_SCHEDULE') {
+      // 상태별 집계 — 실제 저장값(소문자) 기준
+      if (att.isOncall) {
+        row.noScheduleCount++ // 무일정 근무
+      } else {
         row.totalWorkDays++
       }
-      if (att.status === 'NORMAL' || att.status === 'normal') row.normalCount++
-      if (att.status === 'ABSENT' || att.status === 'absent') row.absentCount++
-      if (att.status === 'NO_SCHEDULE') row.noScheduleCount++
-      if (isLate) row.lateCount++
-      if (isEarlyLeave) row.earlyLeaveCount++
+      if (att.status === 'normal') row.normalCount++
+      if (att.status === 'late') row.lateCount++
+      if (att.status === 'early_leave') row.earlyLeaveCount++
+      if (att.status === 'absent') row.absentCount++
+      if (att.clockOutAt == null && att.status !== 'absent') {
+        row.missingClockOutCount++ // 출근만 있고 퇴근 없는 건
+      }
 
       row.totalWorkMinutes += workMinutes
-      row.overtimeMinutes += overtimeMinutes
+      row.overtimeMinutes += Math.max(0, workMinutes - dailyContracted)
+      row.standardizedWorkMinutes += standardRule
+        ? this.getStandardizedMinutes(att, standardRule)
+        : workMinutes
+    }
+
+    // Shift 연동 집계: 일정 일수/합계 분 + 일정만 있고 출근이 없는 결근
+    const scheduledDates = new Map<string, Set<string>>()
+    const now = new Date()
+    for (const shift of shifts) {
+      const row = getOrCreate(shift.employeeId, shift.employee.name)
+
+      if (!scheduledDates.has(shift.employeeId)) {
+        scheduledDates.set(shift.employeeId, new Set())
+      }
+      scheduledDates
+        .get(shift.employeeId)!
+        .add(shift.startAt.toISOString().slice(0, 10))
+
+      row.scheduledWorkMinutes += Math.max(
+        0,
+        this.diffMinutes(shift.startAt, shift.endAt),
+      )
+
+      // 기간 내 종료된 shift 중 attendance가 없는 건 → 결근 합산
+      // (attendance.status='absent' 건과는 attendance 유무로 자연 중복 제거)
+      if (shift.endAt.getTime() <= now.getTime() && shift.attendance == null) {
+        row.absentCount++
+      }
+    }
+    for (const [empId, dates] of scheduledDates) {
+      rowMap.get(empId)!.scheduledWorkDays = dates.size
     }
 
     for (const leave of leaveRecords) {
@@ -145,6 +267,83 @@ export class ReportsService {
     }
 
     return Array.from(rowMap.values())
+  }
+
+  // ── 집계 헬퍼 ─────────────────────────────────────────────────────────────
+
+  private diffMinutes(from: Date, to: Date): number {
+    return Math.floor((to.getTime() - from.getTime()) / MS_PER_MINUTE)
+  }
+
+  /** 종료(endAt)된 휴게만 합산. includeManual=false면 수동 휴게 제외. */
+  private sumBreakMinutes(
+    breaks: BreakForReport[],
+    includeManual = true,
+  ): number {
+    let total = 0
+    for (const brk of breaks) {
+      if (brk.endAt == null) continue
+      if (!includeManual && brk.isManual) continue
+      total += Math.max(0, this.diffMinutes(brk.startAt, brk.endAt))
+    }
+    return total
+  }
+
+  /** 주 계약시간을 근무일수로 환산한 일일 소정근로(분). WageInfo 없으면 480분. */
+  private getDailyContractedMinutes(wage?: WageInfoForReport): number {
+    if (!wage) return DEFAULT_DAILY_WORK_MINUTES
+
+    const weeklyHours = Number(wage.contractedHoursPerWeek)
+    if (!Number.isFinite(weeklyHours) || weeklyHours <= 0) {
+      return DEFAULT_DAILY_WORK_MINUTES
+    }
+
+    const workDays = this.parseContractedWorkDays(wage.contractedWorkDays)
+    return Math.round((weeklyHours * 60) / workDays)
+  }
+
+  /** contracted_work_days('mon,tue,…' 또는 '5') → 주 근무일수. 기본 5일. */
+  private parseContractedWorkDays(value: string | null | undefined): number {
+    if (!value) return DEFAULT_CONTRACTED_WORK_DAYS
+
+    const trimmed = value.trim()
+    const asNumber = Number(trimmed)
+    if (Number.isInteger(asNumber) && asNumber > 0) return asNumber
+
+    const dayCount = trimmed
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean).length
+    return dayCount > 0 ? dayCount : DEFAULT_CONTRACTED_WORK_DAYS
+  }
+
+  /**
+   * 표준화 규칙 적용 근무 분.
+   * - startTimeRule='shift_start' → 일정 시작 시각으로 표준화 (그 외 실제 출근)
+   * - endTimeRule='shift_end' → 일정 종료 시각으로 표준화 (그 외 실제 퇴근)
+   * - shift 미연결 기록은 실제 시각 그대로 사용
+   */
+  private getStandardizedMinutes(
+    att: AttendanceForReport,
+    rule: StandardizationRuleForReport,
+  ): number {
+    const shift = att.shift ?? null
+
+    const startAt =
+      rule.startTimeRule === 'shift_start' && shift
+        ? shift.startAt
+        : att.clockInAt
+    const endAt =
+      rule.endTimeRule === 'shift_end' && shift ? shift.endAt : att.clockOutAt
+
+    if (endAt == null) return 0
+
+    const rawMinutes = this.diffMinutes(startAt, endAt)
+    const breakMinutes = this.sumBreakMinutes(
+      att.breaks ?? [],
+      rule.includeManualBreak,
+    )
+    return Math.max(0, rawMinutes - breakMinutes)
   }
 
   // ── CSV 내보내기 ───────────────────────────────────────────────────────────
@@ -159,11 +358,16 @@ export class ReportsService {
       'employeeId',
       'employeeName',
       'totalWorkDays',
+      'scheduledWorkDays',
+      'scheduledWorkMinutes',
       'normalCount',
       'lateCount',
       'earlyLeaveCount',
       'absentCount',
+      'noScheduleCount',
+      'missingClockOutCount',
       'totalWorkMinutes',
+      'standardizedWorkMinutes',
       'overtimeMinutes',
       'usedLeaveDays',
     ].join(',')
@@ -173,11 +377,16 @@ export class ReportsService {
         r.employeeId,
         `"${r.employeeName.replace(/"/g, '""')}"`,
         r.totalWorkDays,
+        r.scheduledWorkDays,
+        r.scheduledWorkMinutes,
         r.normalCount,
         r.lateCount,
         r.earlyLeaveCount,
         r.absentCount,
+        r.noScheduleCount,
+        r.missingClockOutCount,
         r.totalWorkMinutes,
+        r.standardizedWorkMinutes,
         r.overtimeMinutes,
         r.usedLeaveDays,
       ].join(','),
@@ -238,12 +447,16 @@ export class ReportsService {
           employeeId: r.employeeId,
           values: {
             totalWorkDays: r.totalWorkDays,
+            scheduledWorkDays: r.scheduledWorkDays,
+            scheduledWorkMinutes: r.scheduledWorkMinutes,
             normalCount: r.normalCount,
             lateCount: r.lateCount,
             earlyLeaveCount: r.earlyLeaveCount,
             absentCount: r.absentCount,
             noScheduleCount: r.noScheduleCount,
+            missingClockOutCount: r.missingClockOutCount,
             totalWorkMinutes: r.totalWorkMinutes,
+            standardizedWorkMinutes: r.standardizedWorkMinutes,
             overtimeMinutes: r.overtimeMinutes,
             usedLeaveDays: r.usedLeaveDays,
             employeeName: r.employeeName,

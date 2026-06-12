@@ -6,6 +6,17 @@ import Mail from 'nodemailer/lib/mailer'
 export interface IMailService {
   sendInviteCode(to: string, code: string, companyName: string): Promise<void>
   sendPasswordReset(to: string, token: string): Promise<void>
+  sendMessageMail(to: string, title: string, content: string): Promise<void>
+}
+
+/** HTML 본문에 삽입되는 사용자 입력 값 이스케이프 (XSS 방지) */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 @Injectable()
@@ -80,6 +91,37 @@ export class MailService implements IMailService {
     } catch (error) {
       this.logger.error(`Failed to send password reset email to ${to}`, error)
       throw error
+    }
+  }
+
+  /**
+   * 범용 메시지 이메일 발송 (사내 메시지 / 자동화 메시지).
+   * 발송 실패는 로깅만 하고 throw 하지 않는다 — 메시지 저장 자체는 유지되어야 한다.
+   */
+  async sendMessageMail(to: string, title: string, content: string): Promise<void> {
+    const from = this.config.get<string>('MAIL_FROM', 'no-reply@ablework.kr')
+
+    const html = `
+<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+  <h2>${escapeHtml(title)}</h2>
+  <div style="background: #f9f9f9; padding: 20px; border-radius: 6px; margin: 20px 0; white-space: pre-wrap;">
+    ${escapeHtml(content)}
+  </div>
+  <p style="color: #666; font-size: 12px;">본 메일은 AbleWork에서 자동 발송되었습니다.</p>
+</div>
+`
+
+    try {
+      await this.transporter.sendMail({
+        from,
+        to,
+        subject: `[AbleWork] ${title}`,
+        html,
+      })
+      this.logger.log(`Message email sent to ${to}`)
+    } catch (error) {
+      // 이메일 실패는 메시지 발송 자체를 막지 않는다 (fire-and-forget)
+      this.logger.error(`Failed to send message email to ${to}`, error)
     }
   }
 }
