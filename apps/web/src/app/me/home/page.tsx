@@ -9,34 +9,92 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import AccessTimeIcon from '@mui/icons-material/AccessTime'
-import apiClient from '@/lib/api-client'
+import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast'
+import { useClockIn, useClockOut, useBreakStart, useBreakEnd } from '@/lib/query/attendances'
 
 export default function HomePage() {
-  const [clocking, setClocking] = useState<'in' | 'out' | null>(null)
+  const [clockedIn, setClockedIn] = useState(false)
+  const [onBreak, setOnBreak] = useState(false)
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
     severity: 'success',
   })
 
-  const handleClock = async (type: 'in' | 'out') => {
-    setClocking(type)
-    try {
-      if (!navigator.geolocation) throw new Error('위치 서비스를 사용할 수 없습니다.')
+  const showSnack = (message: string, severity: 'success' | 'error') =>
+    setSnack({ open: true, message, severity })
 
+  const clockInMutation = useClockIn()
+  const clockOutMutation = useClockOut()
+  const breakStartMutation = useBreakStart()
+  const breakEndMutation = useBreakEnd()
+
+  const isLoading =
+    clockInMutation.isPending ||
+    clockOutMutation.isPending ||
+    breakStartMutation.isPending ||
+    breakEndMutation.isPending
+
+  const handleClockIn = async () => {
+    if (!navigator.geolocation) {
+      showSnack('위치 서비스를 사용할 수 없습니다.', 'error')
+      return
+    }
+    try {
       const position = await new Promise<GeolocationPosition>((resolve, reject) =>
         navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 }),
       )
-      await apiClient.post(type === 'in' ? '/attendances/clock-in' : '/attendances/clock-out', {
+      await clockInMutation.mutateAsync({
         lat: position.coords.latitude,
         lng: position.coords.longitude,
         method: 'gps',
       })
-      setSnack({ open: true, message: type === 'in' ? '출근 기록이 완료됐습니다.' : '퇴근 기록이 완료됐습니다.', severity: 'success' })
+      setClockedIn(true)
+      showSnack('출근 기록이 완료됐습니다.', 'success')
     } catch (err) {
-      setSnack({ open: true, message: err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.', severity: 'error' })
-    } finally {
-      setClocking(null)
+      showSnack(err instanceof Error ? err.message : '출근 처리 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
+  const handleClockOut = async () => {
+    if (!navigator.geolocation) {
+      showSnack('위치 서비스를 사용할 수 없습니다.', 'error')
+      return
+    }
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 }),
+      )
+      await clockOutMutation.mutateAsync({
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        method: 'gps',
+      })
+      setClockedIn(false)
+      setOnBreak(false)
+      showSnack('퇴근 기록이 완료됐습니다.', 'success')
+    } catch (err) {
+      showSnack(err instanceof Error ? err.message : '퇴근 처리 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
+  const handleBreakStart = async () => {
+    try {
+      await breakStartMutation.mutateAsync()
+      setOnBreak(true)
+      showSnack('휴게 시간이 시작됐습니다.', 'success')
+    } catch (err) {
+      showSnack(err instanceof Error ? err.message : '휴게 처리 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
+  const handleBreakEnd = async () => {
+    try {
+      await breakEndMutation.mutateAsync()
+      setOnBreak(false)
+      showSnack('휴게 시간이 종료됐습니다.', 'success')
+    } catch (err) {
+      showSnack(err instanceof Error ? err.message : '휴게 종료 처리 중 오류가 발생했습니다.', 'error')
     }
   }
 
@@ -49,18 +107,75 @@ export default function HomePage() {
           <Typography variant="body1" color="text.secondary" mb={3}>
             {new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
           </Typography>
-          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
-            <Button variant="contained" size="large" onClick={() => handleClock('in')} disabled={clocking !== null} sx={{ minWidth: 120 }}>
-              {clocking === 'in' ? <CircularProgress size={24} color="inherit" /> : '출근'}
+
+          {!clockedIn && (
+            <Button
+              variant="contained"
+              color="primary"
+              size="large"
+              onClick={handleClockIn}
+              disabled={isLoading}
+              sx={{ minWidth: 120 }}
+            >
+              {clockInMutation.isPending ? <CircularProgress size={24} color="inherit" /> : '출근'}
             </Button>
-            <Button variant="outlined" size="large" onClick={() => handleClock('out')} disabled={clocking !== null} sx={{ minWidth: 120 }}>
-              {clocking === 'out' ? <CircularProgress size={24} color="inherit" /> : '퇴근'}
+          )}
+
+          {clockedIn && !onBreak && (
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+              <Button
+                variant="outlined"
+                color="warning"
+                size="large"
+                onClick={handleBreakStart}
+                disabled={isLoading}
+                startIcon={<FreeBreakfastIcon />}
+                sx={{ minWidth: 130 }}
+              >
+                {breakStartMutation.isPending ? <CircularProgress size={24} color="inherit" /> : '휴게 시작'}
+              </Button>
+              <Button
+                variant="outlined"
+                size="large"
+                onClick={handleClockOut}
+                disabled={isLoading}
+                sx={{ minWidth: 120 }}
+              >
+                {clockOutMutation.isPending ? <CircularProgress size={24} color="inherit" /> : '퇴근'}
+              </Button>
+            </Box>
+          )}
+
+          {clockedIn && onBreak && (
+            <Button
+              variant="contained"
+              color="warning"
+              size="large"
+              onClick={handleBreakEnd}
+              disabled={isLoading}
+              startIcon={<FreeBreakfastIcon />}
+              sx={{ minWidth: 130 }}
+            >
+              {breakEndMutation.isPending ? <CircularProgress size={24} color="inherit" /> : '휴게 종료'}
             </Button>
-          </Box>
+          )}
+
+          {clockedIn && (
+            <Typography variant="caption" color="text.secondary" display="block" mt={2}>
+              {onBreak ? '휴게 중입니다.' : '근무 중입니다.'}
+            </Typography>
+          )}
         </CardContent>
       </Card>
-      <Snackbar open={snack.open} autoHideDuration={4000} onClose={() => setSnack(s => ({ ...s, open: false }))}>
-        <Alert severity={snack.severity} onClose={() => setSnack(s => ({ ...s, open: false }))}>{snack.message}</Alert>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4000}
+        onClose={() => setSnack((s) => ({ ...s, open: false }))}
+      >
+        <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))}>
+          {snack.message}
+        </Alert>
       </Snackbar>
     </Box>
   )

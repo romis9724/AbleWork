@@ -1,0 +1,52 @@
+'use client'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import apiClient from '@/lib/api-client'
+
+export type AuthMethod = 'gps' | 'wifi' | 'gps_or_wifi' | 'gps_and_wifi' | 'none'
+
+export interface TimeclockArea {
+  id: string
+  name: string
+  organizationId: string
+  organization?: { id: string; name: string }
+  authMethod: AuthMethod
+  latitude?: number | null
+  longitude?: number | null
+  radius?: number | null
+  wifiSsid?: string | null
+  isActive?: boolean
+}
+
+const QUERY_KEY = ['timeclock-areas']
+
+export const useTimeclockAreas = () =>
+  useQuery({
+    queryKey: QUERY_KEY,
+    queryFn: () => apiClient.get('/timeclock-areas') as Promise<TimeclockArea[]>,
+    staleTime: 60_000,
+  })
+
+export const useCreateTimeclockArea = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: Partial<TimeclockArea>) => apiClient.post('/timeclock-areas', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useUpdateTimeclockArea = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: Partial<TimeclockArea> & { id: string }) =>
+      apiClient.patch(`/timeclock-areas/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useDeleteTimeclockArea = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/timeclock-areas/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}

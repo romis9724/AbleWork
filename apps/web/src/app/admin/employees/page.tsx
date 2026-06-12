@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Typography from '@mui/material/Typography'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
@@ -32,6 +33,7 @@ const LEVEL_COLOR: Record<string, 'error' | 'warning' | 'info' | 'default'> = {
 }
 
 export default function EmployeesPage() {
+  const router = useRouter()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -62,7 +64,12 @@ export default function EmployeesPage() {
           </TableHead>
           <TableBody>
             {employees.map((emp) => (
-              <TableRow key={emp.id} hover>
+              <TableRow
+                key={emp.id}
+                hover
+                sx={{ cursor: 'pointer' }}
+                onClick={() => router.push(`/admin/employees/${emp.id}`)}
+              >
                 <TableCell sx={{ fontWeight: 600 }}>{emp.name}</TableCell>
                 <TableCell>{emp.user?.email ?? '—'}</TableCell>
                 <TableCell>{emp.organizations?.[0]?.organization.name ?? '—'}</TableCell>

@@ -4,14 +4,14 @@ import BottomNavigation from '@mui/material/BottomNavigation'
 import BottomNavigationAction from '@mui/material/BottomNavigationAction'
 import Paper from '@mui/material/Paper'
 import HomeIcon from '@mui/icons-material/Home'
-import AccessTimeIcon from '@mui/icons-material/AccessTime'
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import BeachAccessIcon from '@mui/icons-material/BeachAccess'
 import AssignmentIcon from '@mui/icons-material/Assignment'
 import PersonIcon from '@mui/icons-material/Person'
 
 const NAV_ITEMS = [
   { label: '홈', icon: <HomeIcon />, path: '/me/home' },
-  { label: '출퇴근', icon: <AccessTimeIcon />, path: '/me/attendances' },
+  { label: '근무일정', icon: <CalendarMonthIcon />, path: '/me/shifts' },
   { label: '휴가', icon: <BeachAccessIcon />, path: '/me/leaves' },
   { label: '요청', icon: <AssignmentIcon />, path: '/me/requests' },
   { label: '프로필', icon: <PersonIcon />, path: '/me/profile' },

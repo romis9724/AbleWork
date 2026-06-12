@@ -1,0 +1,74 @@
+[
+  {
+    "url": "http://localhost:3000/admin/attendances/now",
+    "role": "admin",
+    "httpStatus": 200,
+    "state": "PASS",
+    "hasRuntimeError": false,
+    "errorDetails": "",
+    "pageTitle": "현재 근무 현황",
+    "contentSummary": "btn:5, card:4",
+    "screenshotFile": "recheck_01_attendances_now.png",
+    "notes": ""
+  },
+  {
+    "url": "http://localhost:3000/admin/reports/snapshots",
+    "role": "admin",
+    "httpStatus": 200,
+    "state": "PASS",
+    "hasRuntimeError": false,
+    "errorDetails": "",
+    "pageTitle": "리포트 스냅샷",
+    "contentSummary": "btn:5, card:1",
+    "screenshotFile": "recheck_02_reports_snapshots.png",
+    "notes": ""
+  },
+  {
+    "url": "http://localhost:3000/admin/messages/automations",
+    "role": "admin",
+    "httpStatus": 200,
+    "state": "PASS",
+    "hasRuntimeError": false,
+    "errorDetails": "",
+    "pageTitle": "메시지 자동화",
+    "contentSummary": "btn:5, card:1",
+    "screenshotFile": "recheck_03_messages_automations.png",
+    "notes": ""
+  },
+  {
+    "url": "http://localhost:3000/admin/settings/notifications",
+    "role": "admin",
+    "httpStatus": 200,
+    "state": "PASS",
+    "hasRuntimeError": false,
+    "errorDetails": "",
+    "pageTitle": "Discord 알림 설정",
+    "contentSummary": "table:1, btn:6, card:11",
+    "screenshotFile": "recheck_04_settings_notifications.png",
+    "notes": ""
+  },
+  {
+    "url": "http://localhost:3000/admin/messages",
+    "role": "admin",
+    "httpStatus": 200,
+    "state": "PASS",
+    "hasRuntimeError": false,
+    "errorDetails": "",
+    "pageTitle": "메시지 관리",
+    "contentSummary": "btn:8, card:1",
+    "screenshotFile": "recheck_05_messages.png",
+    "notes": ""
+  },
+  {
+    "url": "http://localhost:3000/me/messages",
+    "role": "employee",
+    "httpStatus": 200,
+    "state": "PASS",
+    "hasRuntimeError": false,
+    "errorDetails": "",
+    "pageTitle": "내 메시지",
+    "contentSummary": "btn:7, card:1",
+    "screenshotFile": "recheck_06_me_messages.png",
+    "notes": ""
+  }
+]

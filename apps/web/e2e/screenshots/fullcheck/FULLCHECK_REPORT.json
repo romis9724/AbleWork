@@ -1,0 +1,67 @@
+[
+  {
+    "url": "http://localhost:3000/me/home",
+    "httpStatus": 200,
+    "screenState": "404",
+    "mainElements": [
+      "Buttons: 9"
+    ],
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/fullcheck/employee_001_home.png"
+  },
+  {
+    "url": "http://localhost:3000/me/shifts",
+    "httpStatus": 404,
+    "screenState": "404",
+    "mainElements": [
+      "Buttons: 2",
+      "Headings: 2"
+    ],
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/fullcheck/employee_002_shifts.png"
+  },
+  {
+    "url": "http://localhost:3000/me/attendances",
+    "httpStatus": 200,
+    "screenState": "404",
+    "mainElements": [
+      "Buttons: 7"
+    ],
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/fullcheck/employee_003_attendances.png"
+  },
+  {
+    "url": "http://localhost:3000/me/leaves",
+    "httpStatus": 200,
+    "screenState": "404",
+    "mainElements": [
+      "Buttons: 7"
+    ],
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/fullcheck/employee_004_leaves.png"
+  },
+  {
+    "url": "http://localhost:3000/me/requests",
+    "httpStatus": 200,
+    "screenState": "404",
+    "mainElements": [
+      "Buttons: 7"
+    ],
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/fullcheck/employee_005_requests.png"
+  },
+  {
+    "url": "http://localhost:3000/me/messages",
+    "httpStatus": 404,
+    "screenState": "404",
+    "mainElements": [
+      "Buttons: 2",
+      "Headings: 2"
+    ],
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/fullcheck/employee_006_messages.png"
+  },
+  {
+    "url": "http://localhost:3000/me/profile",
+    "httpStatus": 200,
+    "screenState": "404",
+    "mainElements": [
+      "Buttons: 8"
+    ],
+    "screenshotPath": "/Users/user/Workspace/AbleWork/apps/web/e2e/screenshots/fullcheck/employee_007_profile.png"
+  }
+]
