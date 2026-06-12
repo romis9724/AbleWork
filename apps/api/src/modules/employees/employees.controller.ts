@@ -74,7 +74,7 @@ export class EmployeesController {
   @ApiParam({ name: 'id', type: String })
   findOne(
     @CompanyId() companyId: string,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @CurrentUser() requester: JwtPayload,
   ) {
     return this.employeesService.findOne(companyId, id, requester)
@@ -86,7 +86,7 @@ export class EmployeesController {
   @ApiParam({ name: 'id', type: String })
   update(
     @CompanyId() companyId: string,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body(new ZodValidationPipe(UpdateEmployeeSchema)) dto: UpdateEmployeeDto,
     @CurrentUser() requester: JwtPayload,
   ) {
@@ -100,7 +100,7 @@ export class EmployeesController {
   @ApiParam({ name: 'id', type: String })
   deactivate(
     @CompanyId() companyId: string,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body(new ZodValidationPipe(DeactivateSchema)) body: DeactivateDto,
     @CurrentUser() requester: JwtPayload,
   ) {
@@ -115,7 +115,7 @@ export class EmployeesController {
   @ApiParam({ name: 'id', type: String })
   resetDevice(
     @CompanyId() companyId: string,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @CurrentUser() requester: JwtPayload,
   ) {
     return this.employeesService.resetDevice(companyId, id, requester)
@@ -127,7 +127,7 @@ export class EmployeesController {
   @ApiParam({ name: 'id', type: String })
   findWageInfos(
     @CompanyId() companyId: string,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @CurrentUser() requester: JwtPayload,
   ) {
     return this.employeesService.findWageInfos(companyId, id, requester)
@@ -140,7 +140,7 @@ export class EmployeesController {
   @ApiParam({ name: 'id', type: String })
   createWageInfo(
     @CompanyId() companyId: string,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body(new ZodValidationPipe(CreateWageInfoSchema)) dto: CreateWageInfoDto,
     @CurrentUser() requester: JwtPayload,
   ) {

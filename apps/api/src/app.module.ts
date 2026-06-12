@@ -12,6 +12,7 @@ import { EmployeesModule } from './modules/employees/employees.module'
 import { PositionsModule } from './modules/positions/positions.module'
 import { TimeclockAreasModule } from './modules/timeclock-areas/timeclock-areas.module'
 import { ShiftsModule } from './modules/shifts/shifts.module'
+import { ShiftTypesModule } from './modules/shift-types/shift-types.module'
 import { ShiftTemplatesModule } from './modules/shift-templates/shift-templates.module'
 import { SchedulePatternsModule } from './modules/schedule-patterns/schedule-patterns.module'
 import { AttendancesModule } from './modules/attendances/attendances.module'
@@ -48,6 +49,7 @@ import { MailModule } from './modules/mail/mail.module'
     PositionsModule,
     TimeclockAreasModule,
     ShiftsModule,
+    ShiftTypesModule,
     ShiftTemplatesModule,
     SchedulePatternsModule,
     AttendancesModule,
