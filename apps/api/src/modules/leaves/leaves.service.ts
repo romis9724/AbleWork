@@ -19,6 +19,7 @@ import {
   ManualAccrualDto,
   CompensationLeaveDto,
   LeaveFilterDto,
+  CompanyBalanceFilterDto,
 } from './dto/create-leave.dto'
 
 @Injectable()
@@ -469,6 +470,41 @@ export class LeavesService {
       },
       orderBy: [{ year: 'desc' }, { leaveType: { name: 'asc' } }],
     })
+  }
+
+  // ── 회사 전체 잔여 휴가 일괄 조회 (N+1 제거용) ───────────────────────────────
+
+  async findCompanyBalances(companyId: string, filter: CompanyBalanceFilterDto) {
+    const { year, organizationId } = filter
+
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        ...(organizationId && {
+          organizations: { some: { organizationId } },
+        }),
+      },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        leaveBalances: {
+          where: { ...(year && { year }) },
+          include: {
+            leaveType: {
+              select: { id: true, name: true, displayName: true, code: true, groupId: true },
+            },
+          },
+          orderBy: [{ year: 'desc' }, { leaveType: { name: 'asc' } }],
+        },
+      },
+    })
+
+    return employees.map((employee) => ({
+      employee: { id: employee.id, name: employee.name },
+      balances: employee.leaveBalances,
+    }))
   }
 
   // ── HR-06-10 수동 발생 ───────────────────────────────────────────────────────

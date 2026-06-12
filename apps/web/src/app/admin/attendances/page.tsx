@@ -2,17 +2,22 @@
 import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Divider from '@mui/material/Divider'
 import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import IconButton from '@mui/material/IconButton'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Snackbar from '@mui/material/Snackbar'
+import Switch from '@mui/material/Switch'
 import Alert from '@mui/material/Alert'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
@@ -20,20 +25,29 @@ import TableCell from '@mui/material/TableCell'
 import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
+import Toolbar from '@mui/material/Toolbar'
+import Typography from '@mui/material/Typography'
 import Paper from '@mui/material/Paper'
 import TextField from '@mui/material/TextField'
 import Autocomplete from '@mui/material/Autocomplete'
+import AddIcon from '@mui/icons-material/Add'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import DownloadIcon from '@mui/icons-material/Download'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
+import LockOpenIcon from '@mui/icons-material/LockOpen'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import {
   useAttendances,
+  useCreateAttendance,
   useUpdateAttendance,
+  useUpdateAttendanceBreaks,
+  useDeleteAttendance,
   useConfirmPeriod,
   useUnconfirmAttendances,
   type Attendance,
 } from '@/lib/query/attendances'
+import { useEmployees } from '@/lib/query/employees'
 import { useOrganizations } from '@/lib/query/organizations'
 import { useAuthStore } from '@/stores/auth.store'
 import { ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
@@ -54,6 +68,12 @@ const STATUS_COLOR: Record<string, 'success' | 'warning' | 'error' | 'default'> 
   oncall: 'default',
 }
 
+const BREAK_TYPE_LABEL: Record<string, string> = {
+  rest: '휴게',
+  meal: '식사',
+  other: '기타',
+}
+
 function getThisMonthRange() {
   const now = new Date()
   const y = now.getFullYear()
@@ -62,7 +82,7 @@ function getThisMonthRange() {
   return { start: `${y}-${m}-01`, end: `${y}-${m}-${lastDay}` }
 }
 
-function toDatetimeLocal(iso?: string) {
+function toDatetimeLocal(iso?: string | null) {
   if (!iso) return ''
   return iso.slice(0, 16)
 }
@@ -83,11 +103,35 @@ interface EditForm {
   note: string
 }
 
+interface BreakRow {
+  id?: string
+  breakType: string
+  startAt: string
+  endAt: string
+}
+
+interface CreateForm {
+  employeeId: string
+  clockInAt: string
+  clockOutAt: string
+  status: string // '' = 자동 판정
+  note: string
+}
+
+const EMPTY_CREATE_FORM: CreateForm = {
+  employeeId: '',
+  clockInAt: '',
+  clockOutAt: '',
+  status: '',
+  note: '',
+}
+
 export default function AttendancesPage() {
   const defaultRange = getThisMonthRange()
   const [startDate, setStartDate] = useState(defaultRange.start)
   const [endDate, setEndDate] = useState(defaultRange.end)
   const [orgId, setOrgId] = useState<string | undefined>(undefined)
+  const [missingOnly, setMissingOnly] = useState(false)
   const [queryParams, setQueryParams] = useState<Record<string, string | undefined>>({
     startDate: defaultRange.start,
     endDate: defaultRange.end,
@@ -95,7 +139,13 @@ export default function AttendancesPage() {
 
   const { data: rawData, isLoading } = useAttendances(queryParams)
   const { data: orgs = [] } = useOrganizations()
+  const { data: employeesData } = useEmployees({ limit: 200 })
+  const employees = employeesData?.items ?? []
+
+  const createMutation = useCreateAttendance()
   const updateMutation = useUpdateAttendance()
+  const updateBreaksMutation = useUpdateAttendanceBreaks()
+  const deleteMutation = useDeleteAttendance()
   const confirmPeriodMutation = useConfirmPeriod()
   const unconfirmMutation = useUnconfirmAttendances()
 
@@ -108,6 +158,23 @@ export default function AttendancesPage() {
     ? rawData
     : (rawData as { items?: Attendance[] })?.items ?? []
 
+  // ── 다중 선택 ───────────────────────────────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const visibleIds = records.map((r) => r.id)
+  const selectedVisible = selectedIds.filter((id) => visibleIds.includes(id))
+  const isAllSelected = visibleIds.length > 0 && selectedVisible.length === visibleIds.length
+
+  function toggleSelectAll() {
+    setSelectedIds(isAllSelected ? [] : visibleIds)
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id],
+    )
+  }
+
+  // ── 다이얼로그 상태 ─────────────────────────────────────────────────────────
   const [editRow, setEditRow] = useState<Attendance | null>(null)
   const [editForm, setEditForm] = useState<EditForm>({
     clockInAt: '',
@@ -115,6 +182,10 @@ export default function AttendancesPage() {
     status: 'normal',
     note: '',
   })
+  const [breakRows, setBreakRows] = useState<BreakRow[]>([])
+
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE_FORM)
 
   const [confirmPeriodOpen, setConfirmPeriodOpen] = useState(false)
   const [confirmStart, setConfirmStart] = useState(defaultRange.start)
@@ -126,6 +197,9 @@ export default function AttendancesPage() {
     severity: 'success',
   })
 
+  const showSnack = (message: string, severity: 'success' | 'error') =>
+    setSnack({ open: true, message, severity })
+
   function openEdit(row: Attendance) {
     setEditRow(row)
     setEditForm({
@@ -134,12 +208,38 @@ export default function AttendancesPage() {
       status: row.status,
       note: row.note ?? '',
     })
+    setBreakRows(
+      (row.breaks ?? []).map((b) => ({
+        id: b.id,
+        breakType: b.breakType,
+        startAt: toDatetimeLocal(b.startAt),
+        endAt: toDatetimeLocal(b.endAt),
+      })),
+    )
   }
 
   function handleSearch() {
-    setQueryParams({ startDate, endDate, organizationId: orgId })
+    setSelectedIds([])
+    setQueryParams({
+      startDate,
+      endDate,
+      organizationId: orgId,
+      ...(missingOnly ? { missingClockOut: 'true' } : {}),
+    })
   }
 
+  function handleMissingToggle(checked: boolean) {
+    setMissingOnly(checked)
+    setSelectedIds([])
+    setQueryParams((prev) => {
+      const next = { ...prev }
+      if (checked) next.missingClockOut = 'true'
+      else delete next.missingClockOut
+      return next
+    })
+  }
+
+  // ── 저장 (수정 + 휴게 교체) ─────────────────────────────────────────────────
   async function handleSave() {
     if (!editRow) return
     try {
@@ -150,19 +250,89 @@ export default function AttendancesPage() {
         status: editForm.status,
         note: editForm.note || undefined,
       })
+      await updateBreaksMutation.mutateAsync({
+        id: editRow.id,
+        breaks: breakRows
+          .filter((b) => b.startAt)
+          .map((b) => ({
+            id: b.id,
+            breakType: b.breakType,
+            startAt: new Date(b.startAt).toISOString(),
+            endAt: b.endAt ? new Date(b.endAt).toISOString() : undefined,
+          })),
+      })
       setEditRow(null)
-      setSnack({ open: true, message: '저장되었습니다.', severity: 'success' })
+      showSnack('저장되었습니다.', 'success')
     } catch {
-      setSnack({ open: true, message: '저장에 실패했습니다.', severity: 'error' })
+      showSnack('저장에 실패했습니다.', 'error')
+    }
+  }
+
+  // ── 기록 추가 ───────────────────────────────────────────────────────────────
+  async function handleCreate() {
+    if (!createForm.employeeId || !createForm.clockInAt) {
+      showSnack('직원과 출근 시각을 입력하세요.', 'error')
+      return
+    }
+    try {
+      await createMutation.mutateAsync({
+        employeeId: createForm.employeeId,
+        clockInAt: new Date(createForm.clockInAt).toISOString(),
+        clockOutAt: createForm.clockOutAt
+          ? new Date(createForm.clockOutAt).toISOString()
+          : undefined,
+        status: createForm.status || undefined,
+        note: createForm.note || undefined,
+      })
+      setCreateOpen(false)
+      setCreateForm(EMPTY_CREATE_FORM)
+      showSnack('기록이 추가되었습니다.', 'success')
+    } catch {
+      showSnack('기록 추가에 실패했습니다.', 'error')
+    }
+  }
+
+  // ── 일괄 작업 ───────────────────────────────────────────────────────────────
+  async function handleBulkConfirm() {
+    try {
+      await confirmPeriodMutation.mutateAsync({ attendanceIds: selectedVisible })
+      setSelectedIds([])
+      showSnack('선택한 기록이 확정되었습니다.', 'success')
+    } catch {
+      showSnack('일괄 확정에 실패했습니다.', 'error')
+    }
+  }
+
+  async function handleBulkUnconfirm() {
+    try {
+      await unconfirmMutation.mutateAsync({ attendanceIds: selectedVisible })
+      setSelectedIds([])
+      showSnack('선택한 기록의 확정이 해제되었습니다.', 'success')
+    } catch {
+      showSnack('일괄 해제에 실패했습니다.', 'error')
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (!window.confirm(`선택한 ${selectedVisible.length}건을 삭제하시겠습니까?`)) return
+    const results = await Promise.allSettled(
+      selectedVisible.map((id) => deleteMutation.mutateAsync(id)),
+    )
+    const failed = results.filter((r) => r.status === 'rejected').length
+    setSelectedIds([])
+    if (failed > 0) {
+      showSnack(`${results.length - failed}건 삭제, ${failed}건 실패 (확정 기록은 삭제할 수 없습니다)`, 'error')
+    } else {
+      showSnack('선택한 기록이 삭제되었습니다.', 'success')
     }
   }
 
   async function handleUnconfirm(row: Attendance) {
     try {
       await unconfirmMutation.mutateAsync({ attendanceIds: [row.id] })
-      setSnack({ open: true, message: '확정이 해제되었습니다.', severity: 'success' })
+      showSnack('확정이 해제되었습니다.', 'success')
     } catch {
-      setSnack({ open: true, message: '확정 해제에 실패했습니다.', severity: 'error' })
+      showSnack('확정 해제에 실패했습니다.', 'error')
     }
   }
 
@@ -174,9 +344,9 @@ export default function AttendancesPage() {
         organizationId: orgId,
       })
       setConfirmPeriodOpen(false)
-      setSnack({ open: true, message: '기간 확정이 완료되었습니다.', severity: 'success' })
+      showSnack('기간 확정이 완료되었습니다.', 'success')
     } catch {
-      setSnack({ open: true, message: '기간 확정에 실패했습니다.', severity: 'error' })
+      showSnack('기간 확정에 실패했습니다.', 'error')
     }
   }
 
@@ -189,12 +359,22 @@ export default function AttendancesPage() {
     window.location.href = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'}/reports/export?${params}`
   }
 
+  const isBulkPending =
+    confirmPeriodMutation.isPending || unconfirmMutation.isPending || deleteMutation.isPending
+
   return (
     <>
       <PageHeader
         title="출퇴근 기록"
         actions={
           <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setCreateOpen(true)}
+            >
+              기록 추가
+            </Button>
             <Button
               variant="outlined"
               startIcon={<CheckCircleOutlineIcon />}
@@ -257,7 +437,65 @@ export default function AttendancesPage() {
         <Button variant="contained" onClick={handleSearch}>
           검색
         </Button>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={missingOnly}
+              onChange={(e) => handleMissingToggle(e.target.checked)}
+              size="small"
+            />
+          }
+          label="퇴근 누락만"
+        />
       </Paper>
+
+      {/* Bulk action toolbar */}
+      {selectedVisible.length > 0 && (
+        <Toolbar
+          variant="dense"
+          disableGutters
+          sx={{
+            mb: 1,
+            px: 2,
+            gap: 1,
+            bgcolor: 'action.selected',
+            borderRadius: 1,
+            minHeight: 48,
+          }}
+        >
+          <Typography variant="body2" sx={{ flexGrow: 1, fontWeight: 600 }}>
+            {selectedVisible.length}건 선택됨
+          </Typography>
+          <Button
+            size="small"
+            startIcon={<CheckCircleOutlineIcon />}
+            disabled={isBulkPending}
+            onClick={handleBulkConfirm}
+          >
+            일괄 확정
+          </Button>
+          {canUnconfirm && (
+            <Button
+              size="small"
+              color="warning"
+              startIcon={<LockOpenIcon />}
+              disabled={isBulkPending}
+              onClick={handleBulkUnconfirm}
+            >
+              일괄 해제
+            </Button>
+          )}
+          <Button
+            size="small"
+            color="error"
+            startIcon={<DeleteOutlineIcon />}
+            disabled={isBulkPending}
+            onClick={handleBulkDelete}
+          >
+            일괄 삭제
+          </Button>
+        </Toolbar>
+      )}
 
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
@@ -274,6 +512,14 @@ export default function AttendancesPage() {
           <Table>
             <TableHead>
               <TableRow sx={{ bgcolor: 'background.default' }}>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    checked={isAllSelected}
+                    indeterminate={selectedVisible.length > 0 && !isAllSelected}
+                    onChange={toggleSelectAll}
+                    inputProps={{ 'aria-label': '전체 선택' }}
+                  />
+                </TableCell>
                 <TableCell>직원명</TableCell>
                 <TableCell>날짜</TableCell>
                 <TableCell>출근 시간</TableCell>
@@ -288,9 +534,17 @@ export default function AttendancesPage() {
                 <TableRow
                   key={r.id}
                   hover
+                  selected={selectedIds.includes(r.id)}
                   sx={{ cursor: 'pointer' }}
                   onClick={() => openEdit(r)}
                 >
+                  <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.includes(r.id)}
+                      onChange={() => toggleSelect(r.id)}
+                      inputProps={{ 'aria-label': '기록 선택' }}
+                    />
+                  </TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{r.employee?.name ?? '—'}</TableCell>
                   <TableCell>{r.clockInAt.slice(0, 10)}</TableCell>
                   <TableCell>
@@ -300,12 +554,14 @@ export default function AttendancesPage() {
                     })}
                   </TableCell>
                   <TableCell>
-                    {r.clockOutAt
-                      ? new Date(r.clockOutAt).toLocaleTimeString('ko-KR', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : '—'}
+                    {r.clockOutAt ? (
+                      new Date(r.clockOutAt).toLocaleTimeString('ko-KR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    ) : (
+                      <Chip label="퇴근 누락" color="warning" size="small" variant="outlined" />
+                    )}
                   </TableCell>
                   <TableCell>{calcWorkHours(r.clockInAt, r.clockOutAt)}</TableCell>
                   <TableCell>
@@ -388,15 +644,158 @@ export default function AttendancesPage() {
             rows={2}
             fullWidth
           />
+
+          <Divider />
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="subtitle2">휴게 기록</Typography>
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() =>
+                setBreakRows((rows) => [
+                  ...rows,
+                  { breakType: 'rest', startAt: '', endAt: '' },
+                ])
+              }
+            >
+              휴게 추가
+            </Button>
+          </Box>
+          {breakRows.length === 0 && (
+            <Typography variant="caption" color="text.secondary">
+              등록된 휴게 기록이 없습니다.
+            </Typography>
+          )}
+          {breakRows.map((b, idx) => (
+            <Box key={b.id ?? `new-${idx}`} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <FormControl size="small" sx={{ minWidth: 90 }}>
+                <InputLabel>유형</InputLabel>
+                <Select
+                  value={b.breakType}
+                  label="유형"
+                  onChange={(e) =>
+                    setBreakRows((rows) =>
+                      rows.map((row, i) =>
+                        i === idx ? { ...row, breakType: e.target.value } : row,
+                      ),
+                    )
+                  }
+                >
+                  {Object.entries(BREAK_TYPE_LABEL).map(([value, label]) => (
+                    <MenuItem key={value} value={value}>
+                      {label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label="시작"
+                type="datetime-local"
+                size="small"
+                value={b.startAt}
+                onChange={(e) =>
+                  setBreakRows((rows) =>
+                    rows.map((row, i) => (i === idx ? { ...row, startAt: e.target.value } : row)),
+                  )
+                }
+                InputLabelProps={{ shrink: true }}
+                sx={{ flex: 1 }}
+              />
+              <TextField
+                label="종료"
+                type="datetime-local"
+                size="small"
+                value={b.endAt}
+                onChange={(e) =>
+                  setBreakRows((rows) =>
+                    rows.map((row, i) => (i === idx ? { ...row, endAt: e.target.value } : row)),
+                  )
+                }
+                InputLabelProps={{ shrink: true }}
+                sx={{ flex: 1 }}
+              />
+              <IconButton
+                size="small"
+                aria-label="휴게 삭제"
+                onClick={() => setBreakRows((rows) => rows.filter((_, i) => i !== idx))}
+              >
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          ))}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditRow(null)}>취소</Button>
           <Button
             variant="contained"
             onClick={handleSave}
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || updateBreaksMutation.isPending}
           >
             저장
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Create Dialog */}
+      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>출퇴근 기록 추가</DialogTitle>
+        <DialogContent
+          sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}
+        >
+          <Autocomplete
+            options={employees}
+            getOptionLabel={(e) =>
+              e.employeeNumber ? `${e.name} (${e.employeeNumber})` : e.name
+            }
+            value={employees.find((e) => e.id === createForm.employeeId) ?? null}
+            onChange={(_, v) => setCreateForm((f) => ({ ...f, employeeId: v?.id ?? '' }))}
+            renderInput={(params) => <TextField {...params} label="직원" required />}
+          />
+          <TextField
+            label="출근 시각"
+            type="datetime-local"
+            value={createForm.clockInAt}
+            onChange={(e) => setCreateForm((f) => ({ ...f, clockInAt: e.target.value }))}
+            InputLabelProps={{ shrink: true }}
+            required
+            fullWidth
+          />
+          <TextField
+            label="퇴근 시각 (선택)"
+            type="datetime-local"
+            value={createForm.clockOutAt}
+            onChange={(e) => setCreateForm((f) => ({ ...f, clockOutAt: e.target.value }))}
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+          <FormControl fullWidth>
+            <InputLabel>상태</InputLabel>
+            <Select
+              value={createForm.status}
+              label="상태"
+              onChange={(e) => setCreateForm((f) => ({ ...f, status: e.target.value }))}
+            >
+              <MenuItem value="">자동 판정</MenuItem>
+              <MenuItem value="normal">정상</MenuItem>
+              <MenuItem value="late">지각</MenuItem>
+              <MenuItem value="early_leave">조퇴</MenuItem>
+              <MenuItem value="absent">결근</MenuItem>
+              <MenuItem value="oncall">무일정</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField
+            label="근무 노트"
+            value={createForm.note}
+            onChange={(e) => setCreateForm((f) => ({ ...f, note: e.target.value }))}
+            multiline
+            rows={2}
+            fullWidth
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateOpen(false)}>취소</Button>
+          <Button variant="contained" onClick={handleCreate} disabled={createMutation.isPending}>
+            추가
           </Button>
         </DialogActions>
       </Dialog>

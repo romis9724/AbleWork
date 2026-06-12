@@ -169,6 +169,19 @@ export class RequestsController {
     return this.requestsService.forceReject(companyId, id, dto, requester)
   }
 
+  // HR-07-10 요청 취소 (본인의 PENDING 요청만)
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '요청 취소 (본인의 PENDING 요청만 가능)' })
+  @ApiParam({ name: 'id', type: String })
+  cancel(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.requestsService.cancel(companyId, id, requester)
+  }
+
   // HR-07-09 일괄 승인
   @Post('bulk-approve')
   @HttpCode(HttpStatus.OK)

@@ -33,6 +33,11 @@ export const CompensationLeaveSchema = z.object({
   reason: z.string().optional(),
 })
 
+export const CompanyBalanceFilterSchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  organizationId: z.string().uuid().optional(),
+})
+
 export const LeaveFilterSchema = z.object({
   employeeId: z.string().uuid().optional(),
   leaveTypeId: z.string().uuid().optional(),
@@ -46,3 +51,4 @@ export type CreateLeaveDto = z.infer<typeof CreateLeaveSchema>
 export type ManualAccrualDto = z.infer<typeof ManualAccrualSchema>
 export type CompensationLeaveDto = z.infer<typeof CompensationLeaveSchema>
 export type LeaveFilterDto = z.infer<typeof LeaveFilterSchema>
+export type CompanyBalanceFilterDto = z.infer<typeof CompanyBalanceFilterSchema>

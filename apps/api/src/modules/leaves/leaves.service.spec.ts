@@ -423,6 +423,59 @@ describe('LeavesService', () => {
     })
   })
 
+  // ── findCompanyBalances (일괄 조회) ─────────────────────────────────────────
+
+  describe('findCompanyBalances', () => {
+    it('직원별로 그룹화된 잔액 목록을 반환한다', async () => {
+      mockPrisma.employee.findMany.mockResolvedValue([
+        { id: EMPLOYEE_ID, name: '홍길동', leaveBalances: [baseBalance] },
+        { id: 'employee-2', name: '김철수', leaveBalances: [] },
+      ])
+
+      const result = await service.findCompanyBalances(COMPANY_ID, {})
+
+      expect(result).toEqual([
+        { employee: { id: EMPLOYEE_ID, name: '홍길동' }, balances: [baseBalance] },
+        { employee: { id: 'employee-2', name: '김철수' }, balances: [] },
+      ])
+      expect(mockPrisma.employee.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { companyId: COMPANY_ID, isActive: true },
+        }),
+      )
+    })
+
+    it('연도 필터가 잔액 조회 조건에 적용된다', async () => {
+      mockPrisma.employee.findMany.mockResolvedValue([])
+
+      await service.findCompanyBalances(COMPANY_ID, { year: YEAR })
+
+      expect(mockPrisma.employee.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
+            leaveBalances: expect.objectContaining({ where: { year: YEAR } }),
+          }),
+        }),
+      )
+    })
+
+    it('조직 필터가 직원 조회 조건에 적용된다', async () => {
+      mockPrisma.employee.findMany.mockResolvedValue([])
+
+      await service.findCompanyBalances(COMPANY_ID, { organizationId: 'org-1' })
+
+      expect(mockPrisma.employee.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            companyId: COMPANY_ID,
+            isActive: true,
+            organizations: { some: { organizationId: 'org-1' } },
+          },
+        }),
+      )
+    })
+  })
+
   // ── validateBalance ──────────────────────────────────────────────────────────
 
   describe('validateBalance', () => {

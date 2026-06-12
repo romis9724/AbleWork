@@ -26,12 +26,18 @@ import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
+import CalendarViewWeekOutlinedIcon from '@mui/icons-material/CalendarViewWeekOutlined'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListIcon from '@mui/icons-material/FilterList'
+import LockOpenIcon from '@mui/icons-material/LockOpen'
+import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
+import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import { useSnackbar } from '@/hooks/useSnackbar'
@@ -42,10 +48,15 @@ import {
   useCreateShift,
   useUpdateShift,
   useConfirmShift,
+  useUnconfirmShift,
   type Shift,
 } from '@/lib/query/shifts'
 import { useEmployees } from '@/lib/query/employees'
 import { useOrganizations } from '@/lib/query/organizations'
+import { useAuthStore } from '@/stores/auth.store'
+import { ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
+import WeeklyCalendar, { addDays, getMonday, toLocalDateStr } from './WeeklyCalendar'
+import BulkCreateDialog from './BulkCreateDialog'
 
 const STATUS_LABEL: Record<string, string> = {
   confirmed: '확정', pending: '미확정', draft: '임시',
@@ -99,20 +110,31 @@ interface DialogState {
   editing: Shift | null
 }
 
+type ViewMode = 'calendar' | 'list'
+
 export default function ShiftsPage() {
+  const [view, setView] = useState<ViewMode>('list')
+  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
   const [startDate, setStartDate] = useState(today)
   const [endDate, setEndDate] = useState(weekLater)
   const [orgFilter, setOrgFilter] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const [dialog, setDialog] = useState<DialogState>({ open: false, editing: null })
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
 
+  const { user } = useAuthStore()
+  const canUnconfirm =
+    !!user &&
+    ACCESS_LEVEL_HIERARCHY[user.accessLevel] >= ACCESS_LEVEL_HIERARCHY.GENERAL_ADMIN
+
   // BE ShiftFilterDto는 startAt/endAt (YYYY-MM-DD) 파라미터를 사용
+  // 달력 뷰는 현재 주(월~일), 목록 뷰는 필터의 기간을 따른다
   const shiftsParams: Record<string, string | undefined> = {
-    startAt: startDate,
-    endAt: endDate,
+    startAt: view === 'calendar' ? toLocalDateStr(weekStart) : startDate,
+    endAt: view === 'calendar' ? toLocalDateStr(addDays(weekStart, 6)) : endDate,
     ...(orgFilter ? { organizationId: orgFilter } : {}),
   }
 
@@ -123,9 +145,17 @@ export default function ShiftsPage() {
   const employees = employeeData?.items ?? []
   const { data: organizations = [] } = useOrganizations()
 
+  // 달력 행: 조직 필터가 있으면 해당 조직 소속 직원만 표시
+  const calendarEmployees = orgFilter
+    ? employees.filter((e) =>
+        e.organizations?.some((o) => o.organization.id === orgFilter),
+      )
+    : employees
+
   const createMutation = useCreateShift()
   const updateMutation = useUpdateShift()
   const confirmMutation = useConfirmShift()
+  const unconfirmMutation = useUnconfirmShift()
 
   const { control, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<ShiftFormValues>({
     resolver: zodResolver(shiftSchema),
@@ -144,6 +174,18 @@ export default function ShiftsPage() {
 
   const openCreate = () => {
     reset({ employeeId: '', organizationId: '', date: today, templateId: '', startTime: '', endTime: '', shiftTypeId: '' })
+    setDialog({ open: true, editing: null })
+  }
+
+  /** 달력 셀 클릭 — 직원/날짜 프리필 생성 (직원의 대표 조직 자동 선택) */
+  const openCreateAt = (employeeId: string, date: string) => {
+    const employee = employees.find((e) => e.id === employeeId)
+    const primaryOrgId =
+      employee?.organizations?.find((o) => o.isPrimary)?.organization.id ??
+      employee?.organizations?.[0]?.organization.id ??
+      orgFilter ??
+      ''
+    reset({ employeeId, organizationId: primaryOrgId, date, templateId: '', startTime: '', endTime: '', shiftTypeId: '' })
     setDialog({ open: true, editing: null })
   }
 
@@ -215,6 +257,15 @@ export default function ShiftsPage() {
     }
   }
 
+  const handleUnconfirm = async (shift: Shift) => {
+    try {
+      await unconfirmMutation.mutateAsync(shift.id)
+      showSnackbar('확정이 해제되었습니다.')
+    } catch {
+      showSnackbar('확정 해제 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -241,9 +292,14 @@ export default function ShiftsPage() {
         title="근무일정 관리"
         subtitle="직원별 근무일정을 조회하고 관리합니다."
         actions={
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-            근무일정 추가
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button variant="outlined" startIcon={<PlaylistAddIcon />} onClick={() => setBulkOpen(true)}>
+              일괄 생성
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+              근무일정 추가
+            </Button>
+          </Box>
         }
       />
 
@@ -253,24 +309,28 @@ export default function ShiftsPage() {
         sx={{ border: '1px solid', borderColor: 'divider', p: 2, mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}
       >
         <FilterListIcon sx={{ color: 'text.secondary' }} />
-        <TextField
-          label="시작일"
-          type="date"
-          size="small"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-          InputLabelProps={{ shrink: true }}
-          sx={{ width: 160 }}
-        />
-        <TextField
-          label="종료일"
-          type="date"
-          size="small"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-          InputLabelProps={{ shrink: true }}
-          sx={{ width: 160 }}
-        />
+        {view === 'list' && (
+          <>
+            <TextField
+              label="시작일"
+              type="date"
+              size="small"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ width: 160 }}
+            />
+            <TextField
+              label="종료일"
+              type="date"
+              size="small"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ width: 160 }}
+            />
+          </>
+        )}
         <Autocomplete
           size="small"
           options={organizations}
@@ -281,10 +341,29 @@ export default function ShiftsPage() {
           sx={{ width: 200 }}
           clearOnEscape
         />
+        <Box sx={{ flexGrow: 1 }} />
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={view}
+          onChange={(_, next: ViewMode | null) => {
+            if (next) setView(next)
+          }}
+          aria-label="보기 전환"
+        >
+          <ToggleButton value="calendar" aria-label="주간 달력">
+            <CalendarViewWeekOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />
+            주간 달력
+          </ToggleButton>
+          <ToggleButton value="list" aria-label="목록">
+            <TableRowsOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />
+            목록
+          </ToggleButton>
+        </ToggleButtonGroup>
       </Paper>
 
       {/* Bulk action bar */}
-      {selected.size > 0 && (
+      {view === 'list' && selected.size > 0 && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, px: 1 }}>
           <Typography variant="body2" color="text.secondary">
             {selected.size}건 선택됨
@@ -309,7 +388,25 @@ export default function ShiftsPage() {
         </Box>
       )}
 
-      {loadingShifts ? (
+      {view === 'calendar' ? (
+        loadingShifts ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <WeeklyCalendar
+            weekStart={weekStart}
+            shifts={shifts as Shift[]}
+            employees={calendarEmployees}
+            canUnconfirm={canUnconfirm}
+            isUnconfirming={unconfirmMutation.isPending}
+            onWeekChange={setWeekStart}
+            onCellClick={openCreateAt}
+            onShiftClick={openEdit}
+            onUnconfirm={handleUnconfirm}
+          />
+        )
+      ) : loadingShifts ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
           <CircularProgress />
         </Box>
@@ -395,6 +492,20 @@ export default function ShiftsPage() {
                     />
                   </TableCell>
                   <TableCell align="right">
+                    {shift.status === 'confirmed' && canUnconfirm && (
+                      <Tooltip title="확정 해제">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="warning"
+                            onClick={() => handleUnconfirm(shift)}
+                            disabled={unconfirmMutation.isPending}
+                          >
+                            <LockOpenIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
                     <IconButton size="small" onClick={() => openEdit(shift)}>
                       <EditOutlinedIcon fontSize="small" />
                     </IconButton>
@@ -587,6 +698,17 @@ export default function ShiftsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* 일괄 생성 다이얼로그 */}
+      <BulkCreateDialog
+        open={bulkOpen}
+        templates={templates}
+        organizations={organizations}
+        defaultStartDate={view === 'calendar' ? toLocalDateStr(weekStart) : startDate}
+        defaultEndDate={view === 'calendar' ? toLocalDateStr(addDays(weekStart, 6)) : endDate}
+        onClose={() => setBulkOpen(false)}
+        onResult={showSnackbar}
+      />
 
       <Snackbar
         open={snackbar.open}

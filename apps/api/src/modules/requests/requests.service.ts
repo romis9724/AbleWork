@@ -190,13 +190,76 @@ export class RequestsService {
               submittedAt: true,
             },
           },
-          approvals: { orderBy: { createdAt: 'desc' }, take: 1 },
+          approvals: { orderBy: [{ round: 'asc' }, { createdAt: 'asc' }] },
         },
       }),
       this.prisma.request.count({ where }),
     ])
 
-    return { items, total, page, limit }
+    // approvals.approverId → 승인자 이름 enrich (RequestApproval에 relation이 없어 별도 조회)
+    const approverIds = Array.from(
+      new Set(
+        items.flatMap((item: { approvals?: Array<{ approverId: string }> }) =>
+          (item.approvals ?? []).map((a) => a.approverId),
+        ),
+      ),
+    )
+    const approverNameMap = new Map<string, string>()
+    if (approverIds.length > 0) {
+      const approvers = await this.prisma.employee.findMany({
+        where: { id: { in: approverIds }, companyId },
+        select: { id: true, name: true },
+      })
+      for (const approver of approvers) {
+        approverNameMap.set(approver.id, approver.name)
+      }
+    }
+
+    const enrichedItems = items.map(
+      (item: { approvals?: Array<{ approverId: string }> }) =>
+        item.approvals?.length
+          ? {
+              ...item,
+              approvals: item.approvals.map((a) => ({
+                ...a,
+                approverName: approverNameMap.get(a.approverId) ?? null,
+              })),
+            }
+          : item,
+    )
+
+    return { items: enrichedItems, total, page, limit }
+  }
+
+  // ── HR-07-10 요청 취소 (본인의 PENDING 요청만) ──────────────────────────────
+
+  async cancel(companyId: string, requestId: string, requester: JwtPayload) {
+    const request = await this.assertRequestBelongsToCompany(companyId, requestId)
+
+    if (request.requesterId !== requester.employeeId) {
+      throw new ForbiddenException({
+        code: 'REQUEST_CANCEL_FORBIDDEN',
+        message: '본인의 요청만 취소할 수 있습니다.',
+      })
+    }
+    this.assertRequestPending(request)
+
+    return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (tx: any) => {
+      const updatedRequest = await tx.request.update({
+        where: { id: requestId },
+        data: { status: 'CANCELLED' },
+      })
+
+      if (request.documentId) {
+        await tx.document.update({
+          where: { id: request.documentId },
+          data: { status: 'CANCELLED' },
+        })
+      }
+
+      return updatedRequest
+    })
   }
 
   // ── HR-07-02 요청 생성 ($transaction) ────────────────────────────────────────

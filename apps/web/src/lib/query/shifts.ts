@@ -149,3 +149,36 @@ export const useConfirmShift = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: SHIFTS_KEY }),
   })
 }
+
+/** 확정 해제 — GENERAL_ADMIN 이상 (BE: POST /shifts/:id/unconfirm) */
+export const useUnconfirmShift = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient.post(`/shifts/${id}/unconfirm`) as Promise<Shift>,
+    onSuccess: () => qc.invalidateQueries({ queryKey: SHIFTS_KEY }),
+  })
+}
+
+/** 일괄 생성 입력 — BE BulkCreateShiftSchema와 동일 구조 */
+export interface BulkCreateShiftInput {
+  templateId: string
+  organizationId: string
+  employeeIds: string[]
+  startDate: string // YYYY-MM-DD
+  endDate: string // YYYY-MM-DD
+}
+
+export interface BulkCreateShiftResult {
+  created: number
+  warnings?: string[]
+}
+
+export const useBulkCreateShifts = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: BulkCreateShiftInput) =>
+      apiClient.post('/shifts/bulk', data) as Promise<BulkCreateShiftResult>,
+    onSuccess: () => qc.invalidateQueries({ queryKey: SHIFTS_KEY }),
+  })
+}

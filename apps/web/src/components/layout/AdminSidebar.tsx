@@ -75,6 +75,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: '유형 관리', path: '/admin/leave/types' },
       { label: '발생 규칙', path: '/admin/leave/accrual-rules' },
       { label: '휴가 현황', path: '/admin/leave/status' },
+      { label: '휴가 목록', path: '/admin/leave/list' },
       { label: '보상휴가', path: '/admin/leave/compensation' },
     ],
   },

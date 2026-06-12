@@ -194,6 +194,17 @@ export class EmployeesService {
         },
       })
 
+      // 이름/전화번호 변경 시 연결된 User 계정 정보도 동기화 (프로필 일관성)
+      if (existing.userId && (rest.name !== undefined || rest.phone !== undefined)) {
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: {
+            ...(rest.name !== undefined && { name: rest.name }),
+            ...(rest.phone !== undefined && { phone: rest.phone }),
+          },
+        })
+      }
+
       if (organizationIds) {
         await this.validateOrganizationsBelongToCompany(companyId, organizationIds)
         await tx.employeeOrganization.deleteMany({ where: { employeeId: id } })
@@ -243,6 +254,29 @@ export class EmployeesService {
       data: {
         isActive: false,
         resignedAt: resignedAt ? new Date(resignedAt) : new Date(),
+      },
+    })
+  }
+
+  // ── 재활성화 ────────────────────────────────────────────────────────────────
+
+  async activate(companyId: string, id: string, requester: JwtPayload) {
+    const existing = await this.assertEmployee(companyId, id)
+    await this.guardOrgScope(requester, existing)
+    await this.guardOrgAdminManagePermission(requester)
+
+    if (existing.isActive) {
+      throw new BadRequestException({
+        code: 'EMPLOYEE_ALREADY_ACTIVE',
+        message: '이미 재직 중인 직원입니다.',
+      })
+    }
+
+    return this.prisma.employee.update({
+      where: { id },
+      data: {
+        isActive: true,
+        resignedAt: null,
       },
     })
   }

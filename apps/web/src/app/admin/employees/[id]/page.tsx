@@ -1,8 +1,9 @@
 'use client'
-import { useState } from 'react'
-import { useForm, Controller } from 'react-hook-form'
+import { useEffect, useState } from 'react'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import Alert from '@mui/material/Alert'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -41,18 +42,38 @@ import {
   useEmployee,
   useUpdateEmployee,
   useDeactivateEmployee,
+  useActivateEmployee,
   useResetDevice,
   useWageInfos,
   useCreateWageInfo,
 } from '@/lib/query/employees'
+import { useOrganizations, type Organization } from '@/lib/query/organizations'
+import { usePositions } from '@/lib/query/positions'
 
 interface EmployeeFormValues {
   name: string
+  phone: string
   employeeNumber: string
   joinedAt: string
   resignedAt: string
   employmentType: string
   accessLevel: string
+  organizationIds: string[]
+  primaryOrganizationId: string
+  positionIds: string[]
+}
+
+interface OrgOption {
+  id: string
+  name: string
+  depth: number
+}
+
+function flattenOrgs(orgs: Organization[], depth = 0): OrgOption[] {
+  return orgs.flatMap((o) => [
+    { id: o.id, name: o.name, depth },
+    ...(o.children ? flattenOrgs(o.children, depth + 1) : []),
+  ])
 }
 
 interface WageInfoForm {
@@ -115,6 +136,7 @@ export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [tab, setTab] = useState(0)
   const [deactivateOpen, setDeactivateOpen] = useState(false)
+  const [activateOpen, setActivateOpen] = useState(false)
   const [resetDeviceOpen, setResetDeviceOpen] = useState(false)
   const [addWageOpen, setAddWageOpen] = useState(false)
   const [wageForm, setWageForm] = useState<WageInfoForm>({
@@ -133,36 +155,79 @@ export default function EmployeeDetailPage() {
   const { data: employee, isLoading } = useEmployee(id)
   const updateMutation = useUpdateEmployee()
   const deactivateMutation = useDeactivateEmployee()
+  const activateMutation = useActivateEmployee()
   const resetDeviceMutation = useResetDevice()
   const { data: wageInfosRaw } = useWageInfos(id)
   const createWageInfoMutation = useCreateWageInfo(id)
+  const { data: orgsRaw = [] } = useOrganizations()
+  const { data: positions = [] } = usePositions()
+  const orgOptions = flattenOrgs(orgsRaw)
 
   const wageInfos: WageInfo[] = Array.isArray(wageInfosRaw)
     ? (wageInfosRaw as WageInfo[])
     : ((wageInfosRaw as { items?: WageInfo[] })?.items ?? [])
 
-  const { control, handleSubmit, formState: { isDirty } } = useForm<EmployeeFormValues>({
+  const { control, handleSubmit, setValue, formState: { isDirty, errors } } = useForm<EmployeeFormValues>({
     values: {
       name: employee?.name ?? '',
+      phone: employee?.phone ?? '',
       employeeNumber: employee?.employeeNumber ?? '',
       joinedAt: employee?.joinedAt?.slice(0, 10) ?? '',
       resignedAt: employee?.resignedAt?.slice(0, 10) ?? '',
       employmentType: employee?.employmentType ?? 'regular',
       accessLevel: employee?.accessLevel ?? 'EMPLOYEE',
+      organizationIds: employee?.organizations?.map((o) => o.organization.id) ?? [],
+      primaryOrganizationId:
+        employee?.organizations?.find((o) => o.isPrimary)?.organization.id ??
+        employee?.organizations?.[0]?.organization.id ??
+        '',
+      positionIds: employee?.positions?.map((p) => p.position.id) ?? [],
     },
   })
 
+  const organizationIds = useWatch({ control, name: 'organizationIds' })
+  const primaryOrganizationId = useWatch({ control, name: 'primaryOrganizationId' })
+
+  // 선택 조직이 바뀌면 본조직 값을 항상 유효하게 유지한다
+  useEffect(() => {
+    if (organizationIds.length === 0) {
+      if (primaryOrganizationId) setValue('primaryOrganizationId', '', { shouldDirty: true })
+      return
+    }
+    if (!organizationIds.includes(primaryOrganizationId)) {
+      setValue('primaryOrganizationId', organizationIds[0], { shouldDirty: true })
+    }
+  }, [organizationIds, primaryOrganizationId, setValue])
+
   async function onSaveBasic(values: EmployeeFormValues) {
     try {
+      const { organizationIds: orgIds, primaryOrganizationId: primaryId, positionIds, phone, ...rest } = values
       await updateMutation.mutateAsync({
         id,
-        ...values,
+        ...rest,
+        phone: phone || null,
         resignedAt: values.resignedAt || undefined,
         employeeNumber: values.employeeNumber || undefined,
+        // UpdateEmployeeSchema: organizationIds는 min(1) — 비어 있으면 전송하지 않는다
+        ...(orgIds.length > 0 && {
+          organizationIds: orgIds,
+          primaryOrganizationId: orgIds.includes(primaryId) ? primaryId : orgIds[0],
+        }),
+        positionIds,
       })
       setSnack({ open: true, message: '저장되었습니다.', severity: 'success' })
     } catch {
       setSnack({ open: true, message: '저장에 실패했습니다.', severity: 'error' })
+    }
+  }
+
+  async function handleActivate() {
+    try {
+      await activateMutation.mutateAsync(id)
+      setActivateOpen(false)
+      setSnack({ open: true, message: '직원이 재활성화되었습니다.', severity: 'success' })
+    } catch {
+      setSnack({ open: true, message: '재활성화에 실패했습니다.', severity: 'error' })
     }
   }
 
@@ -285,7 +350,101 @@ export default function EmployeeDetailPage() {
                     />
                   )}
                 />
+                <Controller
+                  name="phone"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      label="전화번호"
+                      size="small"
+                      placeholder="010-0000-0000"
+                      sx={{ flex: 1, minWidth: 160 }}
+                    />
+                  )}
+                />
               </Box>
+
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Controller
+                  name="organizationIds"
+                  control={control}
+                  rules={{ validate: (v) => v.length > 0 || '소속 조직을 하나 이상 선택해 주세요.' }}
+                  render={({ field }) => (
+                    <Autocomplete
+                      multiple
+                      size="small"
+                      options={orgOptions}
+                      getOptionLabel={(o) => o.name}
+                      isOptionEqualToValue={(o, v) => o.id === v.id}
+                      value={orgOptions.filter((o) => field.value.includes(o.id))}
+                      onChange={(_, selected) => field.onChange(selected.map((o) => o.id))}
+                      renderOption={(props, option) => (
+                        <Box
+                          component="li"
+                          {...props}
+                          key={option.id}
+                          sx={{ pl: `${16 + option.depth * 16}px !important` }}
+                        >
+                          {option.name}
+                        </Box>
+                      )}
+                      renderTags={(value, getTagProps) =>
+                        value.map((option, index) => (
+                          <Chip {...getTagProps({ index })} key={option.id} label={option.name} size="small" />
+                        ))
+                      }
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="소속 조직"
+                          error={!!errors.organizationIds}
+                          helperText={errors.organizationIds?.message}
+                        />
+                      )}
+                      sx={{ flex: 2, minWidth: 280 }}
+                    />
+                  )}
+                />
+                <Controller
+                  name="primaryOrganizationId"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl size="small" sx={{ flex: 1, minWidth: 180 }} disabled={organizationIds.length === 0}>
+                      <InputLabel>본조직</InputLabel>
+                      <Select {...field} label="본조직">
+                        {orgOptions
+                          .filter((o) => organizationIds.includes(o.id))
+                          .map((o) => (
+                            <MenuItem key={o.id} value={o.id}>{o.name}</MenuItem>
+                          ))}
+                      </Select>
+                    </FormControl>
+                  )}
+                />
+              </Box>
+
+              <Controller
+                name="positionIds"
+                control={control}
+                render={({ field }) => (
+                  <Autocomplete
+                    multiple
+                    size="small"
+                    options={positions}
+                    getOptionLabel={(p) => p.name}
+                    isOptionEqualToValue={(o, v) => o.id === v.id}
+                    value={positions.filter((p) => field.value.includes(p.id))}
+                    onChange={(_, selected) => field.onChange(selected.map((p) => p.id))}
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => (
+                        <Chip {...getTagProps({ index })} key={option.id} label={option.name} size="small" />
+                      ))
+                    }
+                    renderInput={(params) => <TextField {...params} label="직무" />}
+                  />
+                )}
+              />
 
               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <Controller
@@ -358,7 +517,7 @@ export default function EmployeeDetailPage() {
                 >
                   저장
                 </Button>
-                {employee.isActive && (
+                {employee.isActive ? (
                   <Button
                     variant="outlined"
                     color="error"
@@ -366,6 +525,15 @@ export default function EmployeeDetailPage() {
                     disabled={deactivateMutation.isPending}
                   >
                     비활성화
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outlined"
+                    color="success"
+                    onClick={() => setActivateOpen(true)}
+                    disabled={activateMutation.isPending}
+                  >
+                    재활성화
                   </Button>
                 )}
               </Box>
@@ -464,6 +632,18 @@ export default function EmployeeDetailPage() {
         loading={deactivateMutation.isPending}
         onConfirm={handleDeactivate}
         onCancel={() => setDeactivateOpen(false)}
+      />
+
+      {/* 재활성화 ConfirmDialog */}
+      <ConfirmDialog
+        open={activateOpen}
+        title="직원 재활성화"
+        message={`${employee.name} 직원을 재활성화하시겠습니까? 재직 상태로 전환되고 퇴사일이 초기화됩니다.`}
+        confirmLabel="재활성화"
+        confirmColor="primary"
+        loading={activateMutation.isPending}
+        onConfirm={handleActivate}
+        onCancel={() => setActivateOpen(false)}
       />
 
       {/* 기기 초기화 ConfirmDialog */}

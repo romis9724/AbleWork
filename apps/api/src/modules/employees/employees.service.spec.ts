@@ -71,6 +71,7 @@ const mockPrisma = {
   user: {
     findUnique: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
   },
   $transaction: jest.fn(),
 }
@@ -223,6 +224,42 @@ describe('EmployeesService', () => {
     })
   })
 
+  // ── activate ─────────────────────────────────────────────────────────────────
+
+  describe('activate', () => {
+    it('퇴사한 직원을 재활성화한다 (isActive=true, resignedAt=null)', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        ...baseEmployee,
+        isActive: false,
+        resignedAt: new Date('2024-12-31'),
+      })
+      mockPrisma.employee.update.mockResolvedValue({
+        ...baseEmployee,
+        isActive: true,
+        resignedAt: null,
+      })
+
+      const result = await service.activate(COMPANY_ID, EMPLOYEE_ID, requester)
+      expect(result.isActive).toBe(true)
+      expect(result.resignedAt).toBeNull()
+      expect(mockPrisma.employee.update).toHaveBeenCalledWith({
+        where: { id: EMPLOYEE_ID },
+        data: { isActive: true, resignedAt: null },
+      })
+    })
+
+    it('이미 재직 중인 직원은 EMPLOYEE_ALREADY_ACTIVE 에러를 던진다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee) // isActive: true
+
+      await expect(service.activate(COMPANY_ID, EMPLOYEE_ID, requester)).rejects.toThrow(
+        BadRequestException,
+      )
+      expect(mockPrisma.employee.update).not.toHaveBeenCalled()
+    })
+  })
+
   // ── update (권한 설정 enforcement) ──────────────────────────────────────────
 
   describe('update — 권한 설정 enforcement', () => {
@@ -250,6 +287,45 @@ describe('EmployeesService', () => {
       const result = await service.update(COMPANY_ID, EMPLOYEE_ID, { name: '새이름' }, requester)
       expect(result.name).toBe('새이름')
       mockSettings.get.mockResolvedValue(true) // 기본값 복원
+    })
+
+    it('이름/전화번호 변경 시 연결된 User.name/phone도 같은 트랜잭션에서 동기화한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma),
+      )
+      mockPrisma.employee.update.mockResolvedValue({
+        ...baseEmployee,
+        name: '김새이름',
+        phone: '010-9999-0000',
+      })
+      mockPrisma.user.update.mockResolvedValue({})
+
+      await service.update(
+        COMPANY_ID,
+        EMPLOYEE_ID,
+        { name: '김새이름', phone: '010-9999-0000' },
+        requester,
+      )
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: baseEmployee.userId },
+        data: { name: '김새이름', phone: '010-9999-0000' },
+      })
+    })
+
+    it('이름/전화번호가 아닌 필드만 변경하면 User 동기화를 호출하지 않는다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma),
+      )
+      mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, employeeNumber: 'E002' })
+
+      await service.update(COMPANY_ID, EMPLOYEE_ID, { employeeNumber: 'E002' }, requester)
+
+      expect(mockPrisma.user.update).not.toHaveBeenCalled()
     })
   })
 

@@ -547,6 +547,63 @@ describe('RequestsService', () => {
     })
   })
 
+  // ── cancel ───────────────────────────────────────────────────────────────────
+
+  describe('cancel', () => {
+    it('본인의 PENDING 요청을 취소하면 CANCELLED가 되고 document도 CANCELLED 처리된다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+
+      mockPrisma.request.findFirst.mockResolvedValue(basePendingRequest)
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.request.update.mockResolvedValue({
+        ...basePendingRequest,
+        status: 'CANCELLED',
+      })
+      mockPrisma.document.update.mockResolvedValue({})
+
+      const result = await service.cancel(COMPANY_ID, REQUEST_ID, requester)
+
+      expect(result.status).toBe('CANCELLED')
+      expect(mockPrisma.request.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: REQUEST_ID },
+          data: { status: 'CANCELLED' },
+        }),
+      )
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: DOCUMENT_ID },
+          data: { status: 'CANCELLED' },
+        }),
+      )
+    })
+
+    it('타인의 요청을 취소하면 ForbiddenException을 던진다', async () => {
+      const otherEmployee = makeRequester(AccessLevel.EMPLOYEE, 'employee-2')
+
+      mockPrisma.request.findFirst.mockResolvedValue(basePendingRequest)
+
+      await expect(service.cancel(COMPANY_ID, REQUEST_ID, otherEmployee)).rejects.toThrow(
+        ForbiddenException,
+      )
+      expect(mockPrisma.request.update).not.toHaveBeenCalled()
+    })
+
+    it('PENDING이 아닌 요청은 BadRequestException을 던진다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      mockPrisma.request.findFirst.mockResolvedValue({
+        ...basePendingRequest,
+        status: 'APPROVED',
+      })
+
+      await expect(service.cancel(COMPANY_ID, REQUEST_ID, requester)).rejects.toThrow(
+        BadRequestException,
+      )
+    })
+  })
+
   // ── findAll ──────────────────────────────────────────────────────────────────
 
   describe('updateApprovalRule', () => {

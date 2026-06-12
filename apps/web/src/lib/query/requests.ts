@@ -2,22 +2,51 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/lib/api-client'
 
+export interface RequestApproval {
+  id: string
+  round: number
+  approverId: string
+  approverName?: string | null
+  status: string
+  comment?: string | null
+  actedAt?: string | null
+  createdAt: string
+}
+
 export interface Request {
   id: string
   type: string
   status: string
+  requesterId?: string
   payload: Record<string, unknown>
   createdAt: string
   requester?: { name: string }
   document?: { id: string; status: string }
+  approvals?: RequestApproval[]
+}
+
+export interface ApprovalRuleDetail {
+  id?: string
+  tag?: string | null
+  round: number
+  requiredCount: number
+  approverPositionId?: string | null
+  isForbidden?: boolean
+  sortOrder: number
 }
 
 export interface ApprovalRule {
   id: string
   name: string
   requestType: string
+  customTypeId?: string | null
+  customType?: { id: string; name: string } | null
+  priority?: number
+  scopeOrgIds?: string[] | null
+  scopePositionIds?: string[] | null
   maxApprovalRounds: number
   isAutoApprove: boolean
+  details?: ApprovalRuleDetail[]
 }
 
 const QUERY_KEY = ['requests']
@@ -36,6 +65,14 @@ export const useCreateRequest = () => {
   return useMutation({
     mutationFn: (data: { type: string; payload: Record<string, unknown> }) =>
       apiClient.post('/requests', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useCancelRequest = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post(`/requests/${id}/cancel`),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }

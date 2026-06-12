@@ -19,6 +19,7 @@ import {
   UnconfirmAttendancesDto,
 } from './dto/attendance-filter.dto'
 import { UpdateAttendanceDto } from './dto/update-attendance.dto'
+import { CreateAttendanceDto, UpdateBreaksDto } from './dto/create-attendance.dto'
 
 /** 출근 상태 판정에 필요한 회사 설정 키 */
 const LATE_GRACE_MINUTES_KEY = 'late_grace_minutes'
@@ -72,13 +73,15 @@ export class AttendancesService {
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
 
   async findAll(companyId: string, filter: AttendanceFilterDto) {
-    const { startDate, endDate, organizationId, employeeId, status, page, limit } = filter
+    const { startDate, endDate, organizationId, employeeId, status, missingClockOut, page, limit } =
+      filter
     const skip = (page - 1) * limit
 
     const where: Record<string, unknown> = {
       employee: { companyId },
       ...(employeeId && { employeeId }),
       ...(status && { status }),
+      ...(missingClockOut && { clockOutAt: null }),
       ...(organizationId && {
         employee: {
           companyId,
@@ -120,6 +123,58 @@ export class AttendancesService {
     ])
 
     return { items, total, page, limit }
+  }
+
+  // ── 수기 추가 (관리자) ──────────────────────────────────────────────────────
+
+  /**
+   * 관리자가 출퇴근 기록을 수기로 추가한다 (ORG_ADMIN 이상).
+   *
+   * - 직원의 회사 소속 검증 (멀티테넌시)
+   * - 출근 일자의 Shift를 자동 연결 (이미 다른 기록에 연결된 Shift는 제외 — shiftId unique)
+   * - status 미지정 시 determineStatus로 자동 판정
+   */
+  async createManual(companyId: string, dto: CreateAttendanceDto) {
+    await this.assertEmployee(companyId, dto.employeeId)
+
+    const clockInAt = new Date(dto.clockInAt)
+    const clockOutAt = dto.clockOutAt ? new Date(dto.clockOutAt) : null
+
+    // 당일 Shift 자동 연결 (clockIn과 동일 로직 재사용)
+    const shift = await this.findShiftForClockIn(dto.employeeId, clockInAt)
+    let shiftId = shift?.id ?? null
+    if (shiftId) {
+      // attendances.shift_id는 unique — 이미 연결된 기록이 있으면 연결하지 않음
+      const taken = await this.prisma.attendance.findFirst({ where: { shiftId } })
+      if (taken) {
+        shiftId = null
+      }
+    }
+
+    // status 미지정 시 자동 판정
+    let status: string | undefined = dto.status
+    let isOncall = false
+    if (status) {
+      isOncall = status === 'oncall'
+    } else {
+      const judged = await this.determineStatus(companyId, dto.employeeId, clockInAt, shift)
+      status = judged.status
+      isOncall = judged.isOncall
+    }
+
+    return this.prisma.attendance.create({
+      data: {
+        employeeId: dto.employeeId,
+        shiftId,
+        clockInAt,
+        clockOutAt,
+        clockInMethod: 'manual',
+        ...(clockOutAt && { clockOutMethod: 'manual' }),
+        status,
+        isOncall,
+        note: dto.note ?? null,
+      },
+    })
   }
 
   // ── 출근 기록 ───────────────────────────────────────────────────────────────
@@ -309,6 +364,38 @@ export class AttendancesService {
     })
   }
 
+  // ── 휴게 전체 교체 (관리자) ──────────────────────────────────────────────────
+
+  /**
+   * 휴게 기록을 전달된 목록으로 전체 교체한다 (ORG_ADMIN 이상, $transaction).
+   * 확정된 기록은 수정할 수 없다.
+   */
+  async updateBreaks(companyId: string, id: string, dto: UpdateBreaksDto) {
+    const attendance = await this.assertAttendance(companyId, id)
+    this.assertNotConfirmed(attendance)
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.attendanceBreak.deleteMany({ where: { attendanceId: id } })
+
+      if (dto.breaks.length > 0) {
+        await tx.attendanceBreak.createMany({
+          data: dto.breaks.map((b) => ({
+            attendanceId: id,
+            breakType: b.breakType,
+            startAt: new Date(b.startAt),
+            endAt: b.endAt ? new Date(b.endAt) : null,
+            isManual: true,
+          })),
+        })
+      }
+
+      return tx.attendanceBreak.findMany({
+        where: { attendanceId: id },
+        orderBy: { startAt: 'asc' },
+      })
+    })
+  }
+
   // ── 삭제 (관리자) ────────────────────────────────────────────────────────────
 
   async remove(companyId: string, id: string) {
@@ -316,6 +403,32 @@ export class AttendancesService {
     this.assertNotConfirmed(attendance)
 
     return this.prisma.attendance.delete({ where: { id } })
+  }
+
+  // ── 내 오늘 출근 상태 ────────────────────────────────────────────────────────
+
+  /**
+   * 직원 본인의 현재 출근 상태를 반환한다 (me/home 새로고침 시 상태 복원용).
+   *
+   * - attendance: 미퇴근(clockOutAt null) 레코드 (없으면 null)
+   * - openBreak: 진행 중(endAt null)인 휴게 (없으면 null)
+   */
+  async getMyToday(companyId: string, employeeId: string) {
+    const attendance = await this.prisma.attendance.findFirst({
+      where: { employeeId, employee: { companyId }, clockOutAt: null },
+      orderBy: { clockInAt: 'desc' },
+      include: { breaks: { orderBy: { startAt: 'asc' } } },
+    })
+
+    if (!attendance) {
+      return { attendance: null, openBreak: null }
+    }
+
+    type BreakRecord = (typeof attendance.breaks)[number]
+    const openBreak =
+      attendance.breaks.find((b: BreakRecord) => b.endAt === null) ?? null
+
+    return { attendance, openBreak }
   }
 
   // ── 현재 근무 현황 ───────────────────────────────────────────────────────────
@@ -390,14 +503,14 @@ export class AttendancesService {
   async confirmPeriod(companyId: string, dto: ConfirmPeriodDto, confirmedById: string) {
     const where: Record<string, unknown> = {
       employee: { companyId },
-      clockInAt: { gte: new Date(dto.startDate) },
-      ...(dto.endDate && {
+      isConfirmed: false,
+      ...(dto.attendanceIds?.length && { id: { in: dto.attendanceIds } }),
+      ...(dto.startDate && {
         clockInAt: {
           gte: new Date(dto.startDate),
-          lte: new Date(`${dto.endDate}T23:59:59.999Z`),
+          ...(dto.endDate && { lte: new Date(`${dto.endDate}T23:59:59.999Z`) }),
         },
       }),
-      isConfirmed: false,
       ...(dto.employeeIds && { employeeId: { in: dto.employeeIds } }),
     }
 

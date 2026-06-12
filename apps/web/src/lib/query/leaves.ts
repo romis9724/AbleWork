@@ -14,8 +14,13 @@ export interface LeaveType {
   id: string
   name: string
   displayName?: string
+  code?: string | null
   timeOption: string
+  paidHours?: number | null
   deductionDays: number
+  specialOption?: string | null
+  minConsecutiveDays?: number | null
+  maxConsecutiveDays?: number | null
   isActive: boolean
   group?: LeaveGroup
 }
@@ -98,6 +103,59 @@ export const useLeaveBalance = (employeeId: string) =>
     enabled: !!employeeId,
   })
 
+export interface CompanyBalanceEntry {
+  employee: { id: string; name: string }
+  balances: LeaveBalance[]
+}
+
+export interface CompanyBalanceFilter {
+  year?: number
+  organizationId?: string
+}
+
+export const useCompanyLeaveBalances = (params?: CompanyBalanceFilter) =>
+  useQuery({
+    queryKey: ['leave-balances', params],
+    queryFn: () =>
+      apiClient.get('/leaves/balances', { params }) as Promise<CompanyBalanceEntry[]>,
+    staleTime: 30_000,
+  })
+
+export interface Leave {
+  id: string
+  employeeId: string
+  leaveTypeId: string
+  startDate: string
+  endDate: string
+  daysUsed: number
+  status: string
+  reason?: string | null
+  employee?: { id: string; name: string }
+  leaveType?: { id: string; name: string; displayName?: string | null }
+}
+
+export interface LeaveListFilter {
+  employeeId?: string
+  leaveTypeId?: string
+  startDate?: string
+  endDate?: string
+  page?: number
+  limit?: number
+}
+
+export interface LeaveListResponse {
+  items: Leave[]
+  total: number
+  page: number
+  limit: number
+}
+
+export const useLeaves = (params?: LeaveListFilter) =>
+  useQuery({
+    queryKey: ['leaves', params],
+    queryFn: () => apiClient.get('/leaves', { params }) as Promise<LeaveListResponse>,
+  })
+
 export const useAccrualRules = () =>
   useQuery({
     queryKey: RULES_KEY,
@@ -172,7 +230,10 @@ export const useManualAccrual = () => {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: ManualAccrualPayload) => apiClient.post('/leaves/accrual', data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['leave-balance'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['leave-balance'] })
+      qc.invalidateQueries({ queryKey: ['leave-balances'] })
+    },
   })
 }
 
@@ -190,7 +251,10 @@ export const useCompensationAccrual = () => {
   return useMutation({
     mutationFn: (data: CompensationAccrualPayload) =>
       apiClient.post('/leaves/compensation', data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['leave-balance'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['leave-balance'] })
+      qc.invalidateQueries({ queryKey: ['leave-balances'] })
+    },
   })
 }
 
@@ -208,6 +272,7 @@ export const useCreateLeave = () => {
     mutationFn: (data: CreateLeavePayload) => apiClient.post('/leaves', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['leave-balance'] })
+      qc.invalidateQueries({ queryKey: ['leave-balances'] })
       qc.invalidateQueries({ queryKey: ['leaves'] })
     },
   })
@@ -218,6 +283,9 @@ export const useRunAccrualRule = () => {
   return useMutation({
     mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
       apiClient.post(`/leaves/accrual-rules/${id}/run`, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['leave-balance'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['leave-balance'] })
+      qc.invalidateQueries({ queryKey: ['leave-balances'] })
+    },
   })
 }

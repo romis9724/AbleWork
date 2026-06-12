@@ -56,7 +56,10 @@ const mockPrisma = {
   attendanceBreak: {
     create: jest.fn(),
     findFirst: jest.fn(),
+    findMany: jest.fn(),
     update: jest.fn(),
+    deleteMany: jest.fn(),
+    createMany: jest.fn(),
   },
   employee: {
     findFirst: jest.fn(),
@@ -67,7 +70,13 @@ const mockPrisma = {
   timeclockArea: {
     findFirst: jest.fn(),
   },
+  $transaction: jest.fn(),
 }
+
+// $transaction 콜백에 mockPrisma 자신을 tx로 전달
+mockPrisma.$transaction.mockImplementation(
+  (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+)
 
 const mockEvents = { emit: jest.fn() }
 
@@ -661,6 +670,120 @@ describe('AttendancesService', () => {
         ),
       ).rejects.toThrow(ForbiddenException)
       expect(mockPrisma.attendance.updateMany).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── createManual (관리자 수기 추가) ─────────────────────────────────────────
+
+  describe('createManual', () => {
+    it('status 미지정 시 determineStatus로 자동 판정하여 수기 기록을 생성한다', async () => {
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.shift.findFirst.mockResolvedValue(null) // 당일 Shift 없음 → oncall
+      mockPrisma.attendance.create.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve({ ...baseAttendance, ...data }),
+      )
+
+      const result = await service.createManual(COMPANY_ID, {
+        employeeId: EMPLOYEE_ID,
+        clockInAt: '2024-06-10T09:00:00.000Z',
+        clockOutAt: '2024-06-10T18:00:00.000Z',
+        note: '수기 등록',
+      })
+
+      expect(result.status).toBe('oncall')
+      expect(mockPrisma.attendance.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            employeeId: EMPLOYEE_ID,
+            clockInMethod: 'manual',
+            clockOutMethod: 'manual',
+            status: 'oncall',
+            isOncall: true,
+            note: '수기 등록',
+          }),
+        }),
+      )
+    })
+
+    it('직원이 회사 소속이 아니면 NotFoundException(EMPLOYEE_NOT_FOUND)을 던진다', async () => {
+      mockPrisma.employee.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.createManual(COMPANY_ID, {
+          employeeId: 'other-company-emp',
+          clockInAt: '2024-06-10T09:00:00.000Z',
+        }),
+      ).rejects.toThrow(NotFoundException)
+      expect(mockPrisma.attendance.create).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── updateBreaks (휴게 전체 교체) ───────────────────────────────────────────
+
+  describe('updateBreaks', () => {
+    it('$transaction으로 휴게 기록을 전체 교체한다 (확정 기록은 차단)', async () => {
+      // 미확정 기록 → 교체 수행
+      mockPrisma.attendance.findFirst.mockResolvedValue(baseAttendance)
+      mockPrisma.attendanceBreak.deleteMany.mockResolvedValue({ count: 1 })
+      mockPrisma.attendanceBreak.createMany.mockResolvedValue({ count: 2 })
+      const replaced = [
+        { id: 'brk-1', attendanceId: ATTENDANCE_ID, breakType: 'rest' },
+        { id: 'brk-2', attendanceId: ATTENDANCE_ID, breakType: 'meal' },
+      ]
+      mockPrisma.attendanceBreak.findMany.mockResolvedValue(replaced)
+
+      const result = await service.updateBreaks(COMPANY_ID, ATTENDANCE_ID, {
+        breaks: [
+          { breakType: 'rest', startAt: '2024-06-10T12:00:00.000Z', endAt: '2024-06-10T13:00:00.000Z' },
+          { breakType: 'meal', startAt: '2024-06-10T15:00:00.000Z' },
+        ],
+      })
+
+      expect(result).toEqual(replaced)
+      expect(mockPrisma.attendanceBreak.deleteMany).toHaveBeenCalledWith({
+        where: { attendanceId: ATTENDANCE_ID },
+      })
+      expect(mockPrisma.attendanceBreak.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ breakType: 'rest', isManual: true }),
+            expect.objectContaining({ breakType: 'meal', endAt: null }),
+          ]),
+        }),
+      )
+
+      // 확정된 기록 → BadRequestException(ATTENDANCE_ALREADY_CONFIRMED)
+      mockPrisma.attendance.findFirst.mockResolvedValue({
+        ...baseAttendance,
+        isConfirmed: true,
+      })
+      await expect(
+        service.updateBreaks(COMPANY_ID, ATTENDANCE_ID, { breaks: [] }),
+      ).rejects.toThrow(BadRequestException)
+    })
+  })
+
+  // ── getMyToday (내 오늘 출근 상태) ──────────────────────────────────────────
+
+  describe('getMyToday', () => {
+    it('미퇴근 레코드와 열린 휴게를 반환하고, 출근 기록이 없으면 null을 반환한다', async () => {
+      const openBreak = { id: 'brk-1', attendanceId: ATTENDANCE_ID, endAt: null }
+      mockPrisma.attendance.findFirst.mockResolvedValue({
+        ...baseAttendance,
+        breaks: [
+          { id: 'brk-0', attendanceId: ATTENDANCE_ID, endAt: new Date() },
+          openBreak,
+        ],
+      })
+
+      const withRecord = await service.getMyToday(COMPANY_ID, EMPLOYEE_ID)
+      expect(withRecord.attendance?.id).toBe(ATTENDANCE_ID)
+      expect(withRecord.openBreak).toEqual(openBreak)
+
+      mockPrisma.attendance.findFirst.mockResolvedValue(null)
+      const empty = await service.getMyToday(COMPANY_ID, EMPLOYEE_ID)
+      expect(empty).toEqual({ attendance: null, openBreak: null })
     })
   })
 })

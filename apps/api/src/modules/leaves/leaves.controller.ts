@@ -49,6 +49,8 @@ import {
   CompensationLeaveSchema,
   LeaveFilterDto,
   LeaveFilterSchema,
+  CompanyBalanceFilterDto,
+  CompanyBalanceFilterSchema,
 } from './dto/create-leave.dto'
 
 @ApiTags('leaves')
@@ -199,6 +201,17 @@ export class LeavesController {
     @Body(new ZodValidationPipe(RunAccrualRuleSchema)) dto: RunAccrualRuleDto,
   ) {
     return this.leavesService.runAccrualRule(companyId, id, dto)
+  }
+
+  // 잔여 휴가 일괄 조회 (회사 전체 / 조직 필터) — N+1 제거용
+  @Get('balances')
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '회사 전체 잔여 휴가 일괄 조회 (year/organizationId 필터)' })
+  getCompanyBalances(
+    @CompanyId() companyId: string,
+    @Query(new ZodValidationPipe(CompanyBalanceFilterSchema)) filter: CompanyBalanceFilterDto,
+  ) {
+    return this.leavesService.findCompanyBalances(companyId, filter)
   }
 
   // HR-06-09 잔여 휴가 조회

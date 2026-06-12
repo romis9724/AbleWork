@@ -22,16 +22,16 @@ import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import EventAvailableIcon from '@mui/icons-material/EventAvailable'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
+import CreateLeaveDialog from '@/components/leave/CreateLeaveDialog'
 import {
-  useLeaveBalance,
+  useCompanyLeaveBalances,
   useLeaveTypes,
   useManualAccrual,
-  useCreateLeave,
+  type CompanyBalanceEntry,
   type LeaveBalance,
   type LeaveType,
 } from '@/lib/query/leaves'
@@ -42,41 +42,6 @@ import { useOrganizations, type Organization } from '@/lib/query/organizations'
 
 function flattenOrgs(orgs: Organization[]): Organization[] {
   return orgs.flatMap((o) => [o, ...flattenOrgs(o.children ?? [])])
-}
-
-// ── Single employee balance loader ────────────────────────────────────────────
-
-function EmployeeBalanceRows({
-  employee,
-  orgFilter,
-}: {
-  employee: Employee
-  orgFilter: string
-}) {
-  // 훅은 항상 최상단에서 호출 (조건부 early return 이전)
-  const { data: balances = [] } = useLeaveBalance(employee.id)
-
-  const orgIds = employee.organizations?.map((o) => o.organization.id) ?? []
-  if (orgFilter && !orgIds.includes(orgFilter)) return null
-
-  return (
-    <>
-      {balances.map((b: LeaveBalance) => (
-        <TableRow key={b.id} hover>
-          <TableCell sx={{ fontWeight: 500 }}>{employee.name}</TableCell>
-          <TableCell>{b.leaveType?.name ?? '—'}</TableCell>
-          <TableCell align="right">{b.accruedDays}일</TableCell>
-          <TableCell align="right">{b.usedDays}일</TableCell>
-          <TableCell align="right" sx={{ fontWeight: 600 }}>
-            {b.remainingDays}일
-          </TableCell>
-          <TableCell sx={{ color: 'text.secondary' }}>
-            {b.expiresAt ? new Date(b.expiresAt).toLocaleDateString('ko-KR') : '—'}
-          </TableCell>
-        </TableRow>
-      ))}
-    </>
-  )
 }
 
 // ── Accrual form ──────────────────────────────────────────────────────────────
@@ -95,24 +60,6 @@ const defaultAccrualForm: AccrualForm = {
   note: '',
 }
 
-// ── Leave create form (관리자 휴가 직접 추가) ─────────────────────────────────
-
-interface LeaveForm {
-  employee: Employee | null
-  leaveTypeId: string
-  startDate: string
-  endDate: string
-  reason: string
-}
-
-const defaultLeaveForm: LeaveForm = {
-  employee: null,
-  leaveTypeId: '',
-  startDate: '',
-  endDate: '',
-  reason: '',
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function LeaveStatusPage() {
@@ -124,19 +71,22 @@ export default function LeaveStatusPage() {
 
   const { data: leaveTypes = [] } = useLeaveTypes()
   const manualAccrualMutation = useManualAccrual()
-  const createLeaveMutation = useCreateLeave()
 
   // Filters
   const [orgFilter, setOrgFilter] = useState('')
   const [employeeFilter, setEmployeeFilter] = useState<Employee | null>(null)
 
+  // 일괄 잔액 조회 (직원 수만큼 호출하던 N+1 구조 제거)
+  const { data: balanceEntries = [], isLoading: balancesLoading } = useCompanyLeaveBalances({
+    organizationId: orgFilter || undefined,
+  })
+
   // Dialog
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<AccrualForm>(defaultAccrualForm)
 
-  // Leave create dialog
+  // Leave create dialog (공용 컴포넌트)
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false)
-  const [leaveForm, setLeaveForm] = useState<LeaveForm>(defaultLeaveForm)
 
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
@@ -169,33 +119,10 @@ export default function LeaveStatusPage() {
     }
   }
 
-  function openLeaveDialog() {
-    setLeaveForm(defaultLeaveForm)
-    setLeaveDialogOpen(true)
-  }
-
-  async function handleCreateLeave() {
-    if (!leaveForm.employee || !leaveForm.leaveTypeId || !leaveForm.startDate || !leaveForm.endDate)
-      return
-    try {
-      await createLeaveMutation.mutateAsync({
-        employeeId: leaveForm.employee.id,
-        leaveTypeId: leaveForm.leaveTypeId,
-        startDate: leaveForm.startDate,
-        endDate: leaveForm.endDate,
-        reason: leaveForm.reason.trim() || undefined,
-      })
-      setLeaveDialogOpen(false)
-      showSnack(`${leaveForm.employee.name}님의 휴가가 추가되었습니다.`)
-    } catch {
-      showSnack('휴가 추가에 실패했습니다. 잔액과 유효기간을 확인하세요.', 'error')
-    }
-  }
-
-  // Determine which employees to show in table
-  const displayEmployees = employeeFilter
-    ? employees.filter((e) => e.id === employeeFilter.id)
-    : employees
+  // 직원 필터 (클라이언트 측) — 조직 필터는 일괄 API에서 처리
+  const displayEntries: CompanyBalanceEntry[] = employeeFilter
+    ? balanceEntries.filter((entry) => entry.employee.id === employeeFilter.id)
+    : balanceEntries
 
   return (
     <>
@@ -203,7 +130,11 @@ export default function LeaveStatusPage() {
         title="휴가 현황"
         actions={
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button variant="outlined" startIcon={<EventAvailableIcon />} onClick={openLeaveDialog}>
+            <Button
+              variant="outlined"
+              startIcon={<EventAvailableIcon />}
+              onClick={() => setLeaveDialogOpen(true)}
+            >
               휴가 추가
             </Button>
             <Button variant="contained" startIcon={<AddIcon />} onClick={openDialog}>
@@ -242,7 +173,11 @@ export default function LeaveStatusPage() {
         />
       </Box>
 
-      {employees.length === 0 ? (
+      {balancesLoading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
+          <CircularProgress />
+        </Box>
+      ) : displayEntries.length === 0 ? (
         <EmptyState message="등록된 직원이 없습니다." />
       ) : (
         <TableContainer
@@ -262,13 +197,22 @@ export default function LeaveStatusPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {displayEmployees.map((emp) => (
-                <EmployeeBalanceRows
-                  key={emp.id}
-                  employee={emp}
-                  orgFilter={orgFilter}
-                />
-              ))}
+              {displayEntries.flatMap((entry) =>
+                entry.balances.map((b: LeaveBalance) => (
+                  <TableRow key={b.id} hover>
+                    <TableCell sx={{ fontWeight: 500 }}>{entry.employee.name}</TableCell>
+                    <TableCell>{b.leaveType?.displayName ?? b.leaveType?.name ?? '—'}</TableCell>
+                    <TableCell align="right">{b.accruedDays}일</TableCell>
+                    <TableCell align="right">{b.usedDays}일</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>
+                      {b.remainingDays}일
+                    </TableCell>
+                    <TableCell sx={{ color: 'text.secondary' }}>
+                      {b.expiresAt ? new Date(b.expiresAt).toLocaleDateString('ko-KR') : '—'}
+                    </TableCell>
+                  </TableRow>
+                )),
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -337,83 +281,12 @@ export default function LeaveStatusPage() {
         </DialogActions>
       </Dialog>
 
-      {/* ── Create Leave Dialog (관리자 휴가 직접 추가) ───────────────────────── */}
-      <Dialog open={leaveDialogOpen} onClose={() => setLeaveDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>휴가 추가</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-          <Autocomplete
-            options={employees}
-            getOptionLabel={(e) => e.name}
-            value={leaveForm.employee}
-            onChange={(_, v) => setLeaveForm((f) => ({ ...f, employee: v }))}
-            renderInput={(params) => <TextField {...params} label="직원 선택" required />}
-          />
-          <FormControl fullWidth required>
-            <InputLabel>휴가 유형</InputLabel>
-            <Select
-              value={leaveForm.leaveTypeId}
-              label="휴가 유형"
-              onChange={(e) => setLeaveForm((f) => ({ ...f, leaveTypeId: e.target.value }))}
-            >
-              {(leaveTypes as LeaveType[])
-                .filter((t) => t.isActive)
-                .map((t) => (
-                  <MenuItem key={t.id} value={t.id}>
-                    {t.displayName ?? t.name}
-                  </MenuItem>
-                ))}
-            </Select>
-          </FormControl>
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <TextField
-              label="시작일"
-              type="date"
-              required
-              value={leaveForm.startDate}
-              onChange={(e) => setLeaveForm((f) => ({ ...f, startDate: e.target.value }))}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-            <TextField
-              label="종료일"
-              type="date"
-              required
-              value={leaveForm.endDate}
-              onChange={(e) => setLeaveForm((f) => ({ ...f, endDate: e.target.value }))}
-              InputLabelProps={{ shrink: true }}
-              inputProps={{ min: leaveForm.startDate || undefined }}
-              fullWidth
-            />
-          </Box>
-          <TextField
-            label="사유 (선택)"
-            value={leaveForm.reason}
-            onChange={(e) => setLeaveForm((f) => ({ ...f, reason: e.target.value }))}
-            fullWidth
-            multiline
-            rows={2}
-          />
-          <Typography variant="caption" color="text.secondary">
-            기간 일수 × 유형별 차감 단위만큼 잔여 휴가에서 차감됩니다.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setLeaveDialogOpen(false)}>취소</Button>
-          <Button
-            variant="contained"
-            onClick={handleCreateLeave}
-            disabled={
-              createLeaveMutation.isPending ||
-              !leaveForm.employee ||
-              !leaveForm.leaveTypeId ||
-              !leaveForm.startDate ||
-              !leaveForm.endDate
-            }
-          >
-            추가
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* ── Create Leave Dialog (공용) ────────────────────────────────────────── */}
+      <CreateLeaveDialog
+        open={leaveDialogOpen}
+        onClose={() => setLeaveDialogOpen(false)}
+        onResult={showSnack}
+      />
 
       <Snackbar
         open={snack.open}

@@ -2,6 +2,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/lib/api-client'
 
+export interface AttendanceBreak {
+  id: string
+  attendanceId: string
+  breakType: string
+  startAt: string
+  endAt?: string | null
+  isManual: boolean
+}
+
 export interface Attendance {
   id: string
   employeeId: string
@@ -11,6 +20,12 @@ export interface Attendance {
   isConfirmed: boolean
   note?: string
   employee?: { name: string }
+  breaks?: AttendanceBreak[]
+}
+
+export interface MyTodayAttendance {
+  attendance: (Attendance & { breaks: AttendanceBreak[] }) | null
+  openBreak: AttendanceBreak | null
 }
 
 export interface NowAtWork {
@@ -66,11 +81,56 @@ export const useClockOut = () => {
   })
 }
 
-export const useBreakStart = () =>
-  useMutation({ mutationFn: () => apiClient.post('/attendances/break-start') })
+export const useMyTodayAttendance = () =>
+  useQuery({
+    queryKey: [...QUERY_KEY, 'me', 'today'],
+    queryFn: () => apiClient.get('/attendances/me/today') as Promise<MyTodayAttendance>,
+    staleTime: 10_000,
+  })
 
-export const useBreakEnd = () =>
-  useMutation({ mutationFn: () => apiClient.post('/attendances/break-end') })
+export const useBreakStart = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiClient.post('/attendances/break-start'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useBreakEnd = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiClient.post('/attendances/break-end'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useCreateAttendance = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      employeeId: string
+      clockInAt: string
+      clockOutAt?: string
+      status?: string
+      note?: string
+    }) => apiClient.post('/attendances', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useUpdateAttendanceBreaks = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      breaks,
+    }: {
+      id: string
+      breaks: { id?: string; breakType: string; startAt: string; endAt?: string }[]
+    }) => apiClient.patch(`/attendances/${id}/breaks`, { breaks }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
 
 export const useUpdateAttendance = () => {
   const qc = useQueryClient()
@@ -92,8 +152,12 @@ export const useDeleteAttendance = () => {
 export const useConfirmPeriod = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { startDate: string; endDate: string; organizationId?: string }) =>
-      apiClient.post('/attendances/confirm-period', data),
+    mutationFn: (data: {
+      startDate?: string
+      endDate?: string
+      organizationId?: string
+      attendanceIds?: string[]
+    }) => apiClient.post('/attendances/confirm-period', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }
