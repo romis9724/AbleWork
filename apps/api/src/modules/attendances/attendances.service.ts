@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
+import { CompanySettingsService } from '../companies/company-settings.service'
+import { EVENTS } from '../../events/domain-events'
 import { ClockInDto } from './dto/clock-in.dto'
 import { ClockOutDto, BreakStartDto, BreakEndDto } from './dto/clock-out.dto'
 import { AttendanceFilterDto, ConfirmPeriodDto } from './dto/attendance-filter.dto'
@@ -31,6 +33,7 @@ export class AttendancesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly settingsService: CompanySettingsService,
   ) {}
 
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
@@ -93,6 +96,11 @@ export class AttendancesService {
 
     await this.assertEmployee(companyId, employeeId)
 
+    // 출퇴근 장소가 지정된 경우 자사 소속인지 검증 (멀티테넌시)
+    if (timeclockAreaId) {
+      await this.assertTimeclockAreaBelongsToCompany(companyId, timeclockAreaId)
+    }
+
     // 이미 진행 중인 출근 기록 확인
     const openAttendance = await this.prisma.attendance.findFirst({
       where: { employeeId, clockOutAt: null },
@@ -133,7 +141,7 @@ export class AttendancesService {
     })
 
     // 이벤트 발행
-    this.eventEmitter.emit('attendance.clock_in', {
+    this.eventEmitter.emit(EVENTS.ATTENDANCE_CLOCK_IN, {
       companyId,
       employeeId,
       timestamp: attendance.clockInAt,
@@ -141,7 +149,7 @@ export class AttendancesService {
     })
 
     if (status === 'late') {
-      this.eventEmitter.emit('attendance.late', {
+      this.eventEmitter.emit(EVENTS.ATTENDANCE_LATE, {
         companyId,
         employeeId,
         timestamp: attendance.clockInAt,
@@ -382,8 +390,8 @@ export class AttendancesService {
     }
 
     const [lateGrace, clockinBefore] = await Promise.all([
-      this.getSettingNumber(companyId, 'attendance', LATE_GRACE_MINUTES_KEY, 10),
-      this.getSettingNumber(companyId, 'attendance', CLOCKIN_BEFORE_SHIFT_MINUTES_KEY, 30),
+      this.settingsService.getNumber(companyId, 'attendance', LATE_GRACE_MINUTES_KEY, 10),
+      this.settingsService.getNumber(companyId, 'attendance', CLOCKIN_BEFORE_SHIFT_MINUTES_KEY, 30),
     ])
 
     const shiftStartMs = shift.startAt.getTime()
@@ -471,21 +479,17 @@ export class AttendancesService {
     })
   }
 
-  private async getSettingNumber(
-    companyId: string,
-    section: string,
-    key: string,
-    defaultValue: number,
-  ): Promise<number> {
-    const setting = await this.prisma.companySetting.findUnique({
-      where: { companyId_section_key: { companyId, section, key } },
+  private async assertTimeclockAreaBelongsToCompany(companyId: string, timeclockAreaId: string) {
+    const area = await this.prisma.timeclockArea.findFirst({
+      where: { id: timeclockAreaId, isActive: true, organization: { companyId } },
+      select: { id: true },
     })
-    if (!setting) return defaultValue
-    const val = setting.value
-    if (typeof val === 'number') return val
-    if (typeof val === 'object' && val !== null && 'value' in val) {
-      return Number((val as { value: unknown }).value) || defaultValue
+    if (!area) {
+      throw new NotFoundException({
+        code: 'TIMECLOCK_AREA_NOT_FOUND',
+        message: '출퇴근 장소를 찾을 수 없습니다.',
+      })
     }
-    return defaultValue
+    return area
   }
 }

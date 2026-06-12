@@ -8,11 +8,12 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
-import { AccessLevel } from '@ablework/shared-constants'
+import { AccessLevel, ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
 import { CreateEmployeeDto } from './dto/create-employee.dto'
 import { UpdateEmployeeDto } from './dto/update-employee.dto'
 import { EmployeeFilterDto } from './dto/employee-filter.dto'
 import { CreateWageInfoDto } from '../wage-info/dto/create-wage-info.dto'
+import { EVENTS } from '../../events/domain-events'
 
 @Injectable()
 export class EmployeesService {
@@ -153,7 +154,7 @@ export class EmployeesService {
       }
 
       // 합류코드 이메일 이벤트 emit
-      this.events.emit('employee.created', {
+      this.events.emit(EVENTS.EMPLOYEE_CREATED, {
         employeeId: employee.id,
         email,
         name: rest.name,
@@ -169,6 +170,7 @@ export class EmployeesService {
   async update(companyId: string, id: string, dto: UpdateEmployeeDto, requester: JwtPayload) {
     const existing = await this.assertEmployee(companyId, id)
     await this.guardOrgScope(requester, existing)
+    this.guardUpdatePermission(requester, id, dto)
 
     const { organizationIds, primaryOrganizationId, positionIds, ...rest } = dto
 
@@ -279,6 +281,53 @@ export class EmployeesService {
   }
 
   // ── 내부 헬퍼 ───────────────────────────────────────────────────────────────
+
+  /**
+   * 직원 수정 권한 검증 (보안):
+   * - 본인: 이름/전화번호만 수정 가능
+   * - 타인: ORG_ADMIN 이상만 수정 가능
+   * - accessLevel 변경: GENERAL_ADMIN 이상 + 본인 권한 변경 금지 + 자신과 같거나 높은 권한 부여 금지
+   */
+  private guardUpdatePermission(requester: JwtPayload, targetId: string, dto: UpdateEmployeeDto) {
+    const requesterLevel = ACCESS_LEVEL_HIERARCHY[requester.accessLevel]
+    const isSelf = requester.employeeId === targetId
+
+    if (isSelf) {
+      const SELF_EDITABLE_FIELDS = new Set(['name', 'phone'])
+      const forbidden = Object.entries(dto)
+        .filter(([key, value]) => value !== undefined && !SELF_EDITABLE_FIELDS.has(key))
+        .map(([key]) => key)
+      if (forbidden.length > 0) {
+        throw new ForbiddenException({
+          code: 'EMPLOYEE_SELF_UPDATE_FORBIDDEN',
+          message: `본인은 이름/전화번호만 수정할 수 있습니다. (불가 필드: ${forbidden.join(', ')})`,
+        })
+      }
+      return
+    }
+
+    if (requesterLevel < ACCESS_LEVEL_HIERARCHY[AccessLevel.ORG_ADMIN]) {
+      throw new ForbiddenException({
+        code: 'EMPLOYEE_UPDATE_FORBIDDEN',
+        message: '직원 정보 수정 권한이 없습니다.',
+      })
+    }
+
+    if (dto.accessLevel !== undefined) {
+      if (requesterLevel < ACCESS_LEVEL_HIERARCHY[AccessLevel.GENERAL_ADMIN]) {
+        throw new ForbiddenException({
+          code: 'EMPLOYEE_ACCESS_LEVEL_FORBIDDEN',
+          message: '권한 변경은 GENERAL_ADMIN 이상만 가능합니다.',
+        })
+      }
+      if (ACCESS_LEVEL_HIERARCHY[dto.accessLevel] >= requesterLevel) {
+        throw new ForbiddenException({
+          code: 'EMPLOYEE_ACCESS_LEVEL_ESCALATION',
+          message: '자신과 같거나 높은 권한은 부여할 수 없습니다.',
+        })
+      }
+    }
+  }
 
   private async assertEmployee(companyId: string, id: string) {
     const employee = await this.prisma.employee.findFirst({

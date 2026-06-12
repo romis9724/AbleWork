@@ -8,6 +8,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { AccessLevel } from '@ablework/shared-constants'
+import { EVENTS } from '../../events/domain-events'
 import {
   CreateRequestDto,
   CreateApprovalRuleDto,
@@ -32,24 +33,49 @@ const REQUEST_TYPE_CATEGORY_MAP: Record<string, string> = {
   CUSTOM: 'custom_request',
 }
 
+// 상신 시 emit할 이벤트 매핑 (NotificationListener 구독 이름과 일치해야 함)
+const REQUEST_TYPE_REQUESTED_EVENT: Record<string, string> = {
+  LEAVE_CREATE: EVENTS.LEAVE_REQUESTED,
+  LEAVE_MODIFY: EVENTS.LEAVE_REQUESTED,
+  LEAVE_DELETE: EVENTS.LEAVE_REQUESTED,
+  SHIFT_CREATE: EVENTS.SHIFT_REQUESTED,
+  SHIFT_MODIFY: EVENTS.SHIFT_REQUESTED,
+  SHIFT_DELETE: EVENTS.SHIFT_REQUESTED,
+  ATTENDANCE_EDIT: EVENTS.ATTENDANCE_REQUESTED,
+  ATTENDANCE_CREATE: EVENTS.ATTENDANCE_REQUESTED,
+  ATTENDANCE_DELETE: EVENTS.ATTENDANCE_REQUESTED,
+  DEVICE_CHANGE: EVENTS.DEVICE_CHANGE_REQUESTED,
+  OFFSITE_WORK: EVENTS.OFFSITE_WORK_REQUESTED,
+  CUSTOM: EVENTS.CUSTOM_REQUESTED,
+}
+
 // 승인 완료 후 emit할 이벤트 매핑
 const REQUEST_TYPE_APPROVED_EVENT: Record<string, string> = {
-  LEAVE_CREATE: 'leave.approved',
-  LEAVE_MODIFY: 'leave.approved',
-  LEAVE_DELETE: 'leave.approved',
-  SHIFT_CREATE: 'shift.approved',
-  SHIFT_MODIFY: 'shift.approved',
-  ATTENDANCE_EDIT: 'attendance.approved',
-  DEVICE_CHANGE: 'device.change_approved',
+  LEAVE_CREATE: EVENTS.LEAVE_APPROVED,
+  LEAVE_MODIFY: EVENTS.LEAVE_APPROVED,
+  LEAVE_DELETE: EVENTS.LEAVE_APPROVED,
+  SHIFT_CREATE: EVENTS.SHIFT_APPROVED,
+  SHIFT_MODIFY: EVENTS.SHIFT_APPROVED,
+  SHIFT_DELETE: EVENTS.SHIFT_APPROVED,
+  ATTENDANCE_EDIT: EVENTS.ATTENDANCE_APPROVED,
+  ATTENDANCE_CREATE: EVENTS.ATTENDANCE_APPROVED,
+  ATTENDANCE_DELETE: EVENTS.ATTENDANCE_APPROVED,
+  DEVICE_CHANGE: EVENTS.DEVICE_CHANGE_APPROVED,
+  OFFSITE_WORK: EVENTS.OFFSITE_WORK_APPROVED,
+  CUSTOM: EVENTS.CUSTOM_APPROVED,
 }
 
 const REQUEST_TYPE_REJECTED_EVENT: Record<string, string> = {
-  LEAVE_CREATE: 'leave.rejected',
-  LEAVE_MODIFY: 'leave.rejected',
-  LEAVE_DELETE: 'leave.rejected',
-  SHIFT_CREATE: 'shift.rejected',
-  SHIFT_MODIFY: 'shift.rejected',
-  ATTENDANCE_EDIT: 'attendance.rejected',
+  LEAVE_CREATE: EVENTS.LEAVE_REJECTED,
+  LEAVE_MODIFY: EVENTS.LEAVE_REJECTED,
+  LEAVE_DELETE: EVENTS.LEAVE_REJECTED,
+  SHIFT_CREATE: EVENTS.SHIFT_REJECTED,
+  SHIFT_MODIFY: EVENTS.SHIFT_REJECTED,
+  SHIFT_DELETE: EVENTS.SHIFT_REJECTED,
+  ATTENDANCE_EDIT: EVENTS.ATTENDANCE_REJECTED,
+  ATTENDANCE_CREATE: EVENTS.ATTENDANCE_REJECTED,
+  ATTENDANCE_DELETE: EVENTS.ATTENDANCE_REJECTED,
+  CUSTOM: EVENTS.CUSTOM_REJECTED,
 }
 
 @Injectable()
@@ -171,7 +197,7 @@ export class RequestsService {
 
       // 2. 승인 규칙 조회 (type 매칭, 조직/직무 범위 필터)
       const requesterEmployee = await tx.employee.findFirst({
-        where: { id: requesterId },
+        where: { id: requesterId, companyId },
         include: {
           organizations: { select: { organizationId: true } },
           positions: { select: { positionId: true } },
@@ -217,18 +243,21 @@ export class RequestsService {
         return orgMatch && posMatch
       })
 
-      // 3. 규칙 없으면 자동 승인
-      if (!applicableRule || applicableRule.isAutoApprove) {
+      // 3. 명시적으로 자동 승인이 설정된 규칙만 자동 승인.
+      //    규칙이 아예 없으면 아래의 기본 결재선(승인 필요)으로 진행한다 — 무규칙 자동승인 금지.
+      if (applicableRule?.isAutoApprove) {
         const updatedRequest = await tx.request.update({
           where: { id: request.id },
           data: { status: 'APPROVED' },
         })
 
-        const eventName = `${dto.type.toLowerCase()}.auto_approved`
+        const eventName =
+          REQUEST_TYPE_APPROVED_EVENT[dto.type] ?? `${dto.type.toLowerCase()}.approved`
         this.events.emit(eventName, {
           requestId: request.id,
           requesterId,
           companyId,
+          autoApproved: true,
           payload: dto.payload,
         })
 
@@ -277,14 +306,21 @@ export class RequestsService {
       })
 
       // round별 승인자 결정: ApprovalRuleDetail에서 approverPositionId 기준 직원 조회
+      const ruleDetails: Array<{ round: number; approverPositionId: string | null; sortOrder: number }> =
+        applicableRule?.details ?? []
       const stepsByRound = new Map<number, { positionId: string | null; sortOrder: number }[]>()
-      for (const detail of applicableRule.details) {
+      for (const detail of ruleDetails) {
         const existing = stepsByRound.get(detail.round) ?? []
         existing.push({
           positionId: detail.approverPositionId,
           sortOrder: detail.sortOrder,
         })
         stepsByRound.set(detail.round, existing)
+      }
+
+      // 규칙이 없거나 상세 결재선이 비어 있으면 기본 결재선(1차 — 관리자 1명) 적용
+      if (stepsByRound.size === 0) {
+        stepsByRound.set(1, [{ positionId: null, sortOrder: 0 }])
       }
 
       for (const [round, details] of stepsByRound) {
@@ -308,17 +344,21 @@ export class RequestsService {
             assigneeId = approverEmployee?.id ?? null
           }
 
-          // 승인자를 못 찾으면 회사 SUPER_ADMIN으로 fallback
+          // 승인자를 못 찾으면 회사 관리자(GENERAL_ADMIN 이상, 본인 제외)로 fallback
           if (!assigneeId) {
-            const superAdmin = await tx.employee.findFirst({
+            const adminApprover = await tx.employee.findFirst({
               where: {
                 companyId,
                 isActive: true,
-                accessLevel: AccessLevel.SUPER_ADMIN,
+                id: { not: requesterId },
+                accessLevel: {
+                  in: [AccessLevel.GENERAL_ADMIN, AccessLevel.SUPER_ADMIN],
+                },
               },
+              orderBy: { createdAt: 'asc' },
               select: { id: true },
             })
-            assigneeId = superAdmin?.id ?? requesterId
+            assigneeId = adminApprover?.id ?? requesterId
           }
 
           await tx.approvalStep.create({
@@ -341,7 +381,8 @@ export class RequestsService {
       })
 
       // 8. 이벤트 emit
-      const eventName = `${dto.type.toLowerCase()}.requested`
+      const eventName =
+        REQUEST_TYPE_REQUESTED_EVENT[dto.type] ?? `${dto.type.toLowerCase()}.requested`
       this.events.emit(eventName, {
         requestId: request.id,
         documentId: document.id,

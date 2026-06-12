@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
+import { EVENTS } from '../../events/domain-events'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { CreateLeaveGroupDto } from './dto/create-leave-group.dto'
 import { CreateLeaveTypeDto, UpdateLeaveTypeDto } from './dto/create-leave-type.dto'
@@ -262,7 +263,7 @@ export class LeavesService {
       },
     })
 
-    this.events.emit('leave.accrued', {
+    this.events.emit(EVENTS.LEAVE_ACCRUED, {
       employeeId: dto.employeeId,
       leaveTypeId: dto.leaveTypeId,
       year: dto.year,
@@ -337,7 +338,7 @@ export class LeavesService {
       },
     })
 
-    this.events.emit('leave.compensation.accrued', {
+    this.events.emit(EVENTS.LEAVE_COMPENSATION_ACCRUED, {
       employeeId: dto.employeeId,
       leaveTypeId: dto.leaveTypeId,
       year: dto.year,

@@ -30,7 +30,7 @@ import TableRow from '@mui/material/TableRow'
 import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import PageHeader from '@/components/common/PageHeader'
 import {
@@ -79,9 +79,9 @@ const ACCESS_LEVEL_LABEL: Record<string, string> = {
   SUPER_ADMIN: '최고관리자',
 }
 
-export default function EmployeeDetailPage({ params }: { params: { id: string } }) {
+export default function EmployeeDetailPage() {
   const router = useRouter()
-  const { id } = params
+  const { id } = useParams<{ id: string }>()
   const [tab, setTab] = useState(0)
   const [deactivateOpen, setDeactivateOpen] = useState(false)
   const [resetDeviceOpen, setResetDeviceOpen] = useState(false)

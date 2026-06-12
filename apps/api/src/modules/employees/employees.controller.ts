@@ -96,7 +96,8 @@ export class EmployeesController {
   // HR-03-05 퇴사 처리
   @Post(':id/deactivate')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '직원 퇴사 처리' })
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '직원 퇴사 처리 (ORG_ADMIN 이상)' })
   @ApiParam({ name: 'id', type: String })
   deactivate(
     @CompanyId() companyId: string,

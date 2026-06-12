@@ -7,7 +7,8 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { AttendancesService } from './attendances.service'
 import { PrismaService } from '../../prisma/prisma.service'
-import { Prisma } from '@prisma/client'
+import { CompanySettingsService } from '../companies/company-settings.service'
+import { EVENTS } from '../../events/domain-events'
 
 // ── 픽스처 ───────────────────────────────────────────────────────────────────
 
@@ -37,12 +38,6 @@ const baseAttendance = {
   updatedAt: new Date(),
 }
 
-const shiftAt9 = {
-  id: 'shift-1',
-  startAt: new Date('2024-06-10T09:00:00.000Z'),
-  endAt: new Date('2024-06-10T18:00:00.000Z'),
-}
-
 // ── 목 ──────────────────────────────────────────────────────────────────────
 
 const mockPrisma = {
@@ -66,12 +61,18 @@ const mockPrisma = {
   shift: {
     findFirst: jest.fn(),
   },
-  companySetting: {
-    findUnique: jest.fn(),
+  timeclockArea: {
+    findFirst: jest.fn(),
   },
 }
 
 const mockEvents = { emit: jest.fn() }
+
+const mockSettings = {
+  get: jest.fn(),
+  getNumber: jest.fn(),
+  invalidate: jest.fn(),
+}
 
 // ── 테스트 ───────────────────────────────────────────────────────────────────
 
@@ -84,14 +85,18 @@ describe('AttendancesService', () => {
         AttendancesService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
+        { provide: CompanySettingsService, useValue: mockSettings },
       ],
     }).compile()
 
     service = module.get<AttendancesService>(AttendancesService)
     jest.clearAllMocks()
 
-    // 기본 설정: 지각 유예 10분, 사전 출근 30분
-    mockPrisma.companySetting.findUnique.mockResolvedValue(null) // 기본값 사용
+    // 기본 설정: 지각 유예 10분, 사전 출근 30분 (defaultValue 그대로 반환)
+    mockSettings.getNumber.mockImplementation(
+      (_companyId: string, _section: string, _key: string, defaultValue: number) =>
+        Promise.resolve(defaultValue),
+    )
   })
 
   // ── determineStatus ──────────────────────────────────────────────────────
@@ -106,7 +111,7 @@ describe('AttendancesService', () => {
 
     it('출근 시각이 Shift 시작 + 유예시간 이내면 normal로 판정한다', async () => {
       // Shift 09:00, clockIn 09:05 (유예 10분 이내)
-      const shift = { startAt: new Date('2024-06-10T09:00:00.000Z'), id: 'shift-1', endAt: new Date() }
+      const shift = { startAt: new Date('2024-06-10T09:00:00.000Z') }
       const clockInAt = new Date('2024-06-10T09:05:00.000Z')
 
       const result = await service.determineStatus(COMPANY_ID, EMPLOYEE_ID, clockInAt, shift)
@@ -116,7 +121,7 @@ describe('AttendancesService', () => {
 
     it('출근 시각이 Shift 시작 + 유예시간 초과면 late로 판정한다', async () => {
       // Shift 09:00, clockIn 09:11 (유예 10분 초과)
-      const shift = { startAt: new Date('2024-06-10T09:00:00.000Z'), id: 'shift-1', endAt: new Date() }
+      const shift = { startAt: new Date('2024-06-10T09:00:00.000Z') }
       const clockInAt = new Date('2024-06-10T09:11:00.000Z')
 
       const result = await service.determineStatus(COMPANY_ID, EMPLOYEE_ID, clockInAt, shift)
@@ -126,7 +131,7 @@ describe('AttendancesService', () => {
 
     it('출근 시각이 Shift 시작 - 사전 허용 시간보다 이르면 oncall로 판정한다', async () => {
       // Shift 09:00, clockIn 08:00 (사전 허용 30분보다 60분 이른 출근)
-      const shift = { startAt: new Date('2024-06-10T09:00:00.000Z'), id: 'shift-1', endAt: new Date() }
+      const shift = { startAt: new Date('2024-06-10T09:00:00.000Z') }
       const clockInAt = new Date('2024-06-10T08:00:00.000Z')
 
       const result = await service.determineStatus(COMPANY_ID, EMPLOYEE_ID, clockInAt, shift)
@@ -136,7 +141,7 @@ describe('AttendancesService', () => {
 
     it('출근 시각이 Shift 시작 - 사전 허용 시간 이내면 normal로 판정한다', async () => {
       // Shift 09:00, clockIn 08:40 (사전 허용 30분 이내 = 08:30 이후)
-      const shift = { startAt: new Date('2024-06-10T09:00:00.000Z'), id: 'shift-1', endAt: new Date() }
+      const shift = { startAt: new Date('2024-06-10T09:00:00.000Z') }
       const clockInAt = new Date('2024-06-10T08:40:00.000Z')
 
       const result = await service.determineStatus(COMPANY_ID, EMPLOYEE_ID, clockInAt, shift)
@@ -146,17 +151,13 @@ describe('AttendancesService', () => {
 
     it('회사 설정에서 유예 시간을 읽어 판정한다', async () => {
       // 유예 시간 5분으로 설정
-      mockPrisma.companySetting.findUnique.mockImplementation(
-        ({ where }: { where: { companyId_section_key: { key: string } } }) => {
-          if (where.companyId_section_key.key === 'late_grace_minutes') {
-            return Promise.resolve({ value: 5 })
-          }
-          return Promise.resolve(null)
-        },
+      mockSettings.getNumber.mockImplementation(
+        (_companyId: string, _section: string, key: string, defaultValue: number) =>
+          Promise.resolve(key === 'late_grace_minutes' ? 5 : defaultValue),
       )
 
       // Shift 09:00, clockIn 09:06 (유예 5분 초과)
-      const shift = { startAt: new Date('2024-06-10T09:00:00.000Z'), id: 'shift-1', endAt: new Date() }
+      const shift = { startAt: new Date('2024-06-10T09:00:00.000Z') }
       const clockInAt = new Date('2024-06-10T09:06:00.000Z')
 
       const result = await service.determineStatus(COMPANY_ID, EMPLOYEE_ID, clockInAt, shift)
@@ -167,47 +168,44 @@ describe('AttendancesService', () => {
   // ── clockIn ──────────────────────────────────────────────────────────────
 
   describe('clockIn', () => {
-    const dto = {
-      employeeId: EMPLOYEE_ID,
-      clockInAt: '2024-06-10T09:05:00.000Z',
-    }
-
     beforeEach(() => {
       mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
       mockPrisma.attendance.findFirst.mockResolvedValue(null) // 진행 중 없음
-      mockPrisma.shift.findFirst.mockResolvedValue(shiftAt9)
+      mockPrisma.shift.findFirst.mockResolvedValue(null) // 무일정
       mockPrisma.attendance.create.mockResolvedValue({
         ...baseAttendance,
-        clockInAt: new Date(dto.clockInAt),
-        status: 'normal',
+        status: 'oncall',
+        isOncall: true,
       })
     })
 
     it('출근 기록을 생성하고 attendance.clock_in 이벤트를 발행한다', async () => {
-      const result = await service.clockIn(COMPANY_ID, dto)
+      const result = await service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })
 
-      expect(result.status).toBe('normal')
+      expect(result).toBeDefined()
       expect(mockEvents.emit).toHaveBeenCalledWith(
-        'attendance.clock_in',
+        EVENTS.ATTENDANCE_CLOCK_IN,
         expect.objectContaining({ companyId: COMPANY_ID, employeeId: EMPLOYEE_ID }),
       )
     })
 
     it('지각이면 attendance.late 이벤트도 추가로 발행한다', async () => {
-      // 09:15 출근 → 09:10 이후라 지각
+      // 1시간 전에 시작한 shift → 유예 10분 초과 → late
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+      mockPrisma.shift.findFirst.mockResolvedValue({
+        id: 'shift-1',
+        startAt: oneHourAgo,
+        endAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
+      })
       mockPrisma.attendance.create.mockResolvedValue({
         ...baseAttendance,
-        clockInAt: new Date('2024-06-10T09:15:00.000Z'),
         status: 'late',
       })
 
-      await service.clockIn(COMPANY_ID, {
-        ...dto,
-        clockInAt: '2024-06-10T09:15:00.000Z',
-      })
+      await service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })
 
       expect(mockEvents.emit).toHaveBeenCalledWith(
-        'attendance.late',
+        EVENTS.ATTENDANCE_LATE,
         expect.objectContaining({ companyId: COMPANY_ID, employeeId: EMPLOYEE_ID }),
       )
     })
@@ -215,33 +213,41 @@ describe('AttendancesService', () => {
     it('이미 출근 중이면 ConflictException(ATTENDANCE_ALREADY_CLOCKED_IN)을 던진다', async () => {
       mockPrisma.attendance.findFirst.mockResolvedValue(baseAttendance) // 진행 중 있음
 
-      await expect(service.clockIn(COMPANY_ID, dto)).rejects.toThrow(ConflictException)
+      await expect(service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })).rejects.toThrow(
+        ConflictException,
+      )
     })
 
     it('직원이 없으면 NotFoundException(EMPLOYEE_NOT_FOUND)을 던진다', async () => {
       mockPrisma.employee.findFirst.mockResolvedValue(null)
 
-      await expect(service.clockIn(COMPANY_ID, dto)).rejects.toThrow(NotFoundException)
+      await expect(service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })).rejects.toThrow(
+        NotFoundException,
+      )
+    })
+
+    it('타사 출퇴근 장소 ID를 보내면 NotFoundException(TIMECLOCK_AREA_NOT_FOUND)을 던진다', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'gps', timeclockAreaId: 'other-company-area' }),
+      ).rejects.toThrow(NotFoundException)
     })
   })
 
   // ── clockOut ─────────────────────────────────────────────────────────────
 
   describe('clockOut', () => {
-    const dto = {
-      attendanceId: ATTENDANCE_ID,
-      clockOutAt: '2024-06-10T18:00:00.000Z',
-    }
-
     it('퇴근 기록을 업데이트한다', async () => {
+      const clockOutAt = new Date()
       mockPrisma.attendance.findFirst.mockResolvedValue(baseAttendance)
       mockPrisma.attendance.update.mockResolvedValue({
         ...baseAttendance,
-        clockOutAt: new Date(dto.clockOutAt),
+        clockOutAt,
       })
 
-      const result = await service.clockOut(COMPANY_ID, dto)
-      expect(result.clockOutAt).toEqual(new Date(dto.clockOutAt))
+      const result = await service.clockOut(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })
+      expect(result.clockOutAt).toEqual(clockOutAt)
     })
 
     it('확정된 기록이면 BadRequestException(ATTENDANCE_ALREADY_CONFIRMED)을 던진다', async () => {
@@ -250,7 +256,9 @@ describe('AttendancesService', () => {
         isConfirmed: true,
       })
 
-      await expect(service.clockOut(COMPANY_ID, dto)).rejects.toThrow(BadRequestException)
+      await expect(service.clockOut(COMPANY_ID, EMPLOYEE_ID, { method: 'web' })).rejects.toThrow(
+        BadRequestException,
+      )
     })
   })
 

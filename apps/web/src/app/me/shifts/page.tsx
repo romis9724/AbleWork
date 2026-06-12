@@ -11,6 +11,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import EmptyState from '@/components/common/EmptyState'
 import { useShifts } from '@/lib/query/shifts'
+import { useAuthStore } from '@/stores/auth.store'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -26,11 +27,14 @@ export default function ShiftsPage() {
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth()) // 0-indexed
   const [selectedDate, setSelectedDate] = useState<string>(toLocalDateStr(today))
+  const employeeId = useAuthStore((s) => s.user?.employeeId)
 
   const firstDay = new Date(viewYear, viewMonth, 1)
   const lastDay = new Date(viewYear, viewMonth + 1, 0)
 
+  // 본인 일정만 조회 — employeeId 필터 누락 시 전 직원 일정이 노출됨
   const { data: shifts = [], isLoading } = useShifts({
+    employeeId,
     startAt: toLocalDateStr(firstDay),
     endAt: toLocalDateStr(lastDay),
   })

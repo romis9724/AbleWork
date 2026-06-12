@@ -1,0 +1,43 @@
+/**
+ * 도메인 이벤트 상수 (CLAUDE.md §8)
+ *
+ * 발행: 서비스 레이어에서 `this.events.emit(EVENTS.xxx, payload)`
+ * 구독: NotificationListener 등에서 `@OnEvent(EVENTS.xxx)`
+ *
+ * 이벤트 이름을 문자열 리터럴로 직접 쓰지 말 것 — 발행↔구독 이름 불일치(고아 이벤트)의 원인.
+ */
+export const EVENTS = {
+  // 출퇴근
+  ATTENDANCE_CLOCK_IN: 'attendance.clock_in',
+  ATTENDANCE_CLOCK_OUT: 'attendance.clock_out',
+  ATTENDANCE_LATE: 'attendance.late',
+
+  // HR 요청 — 상신
+  LEAVE_REQUESTED: 'leave.requested',
+  SHIFT_REQUESTED: 'shift.requested',
+  ATTENDANCE_REQUESTED: 'attendance.requested',
+  DEVICE_CHANGE_REQUESTED: 'device.change_requested',
+  OFFSITE_WORK_REQUESTED: 'offsite.requested',
+  CUSTOM_REQUESTED: 'custom.requested',
+
+  // HR 요청 — 승인/거절
+  LEAVE_APPROVED: 'leave.approved',
+  LEAVE_REJECTED: 'leave.rejected',
+  SHIFT_APPROVED: 'shift.approved',
+  SHIFT_REJECTED: 'shift.rejected',
+  ATTENDANCE_APPROVED: 'attendance.approved',
+  ATTENDANCE_REJECTED: 'attendance.rejected',
+  DEVICE_CHANGE_APPROVED: 'device.change_approved',
+  OFFSITE_WORK_APPROVED: 'offsite.approved',
+  CUSTOM_APPROVED: 'custom.approved',
+  CUSTOM_REJECTED: 'custom.rejected',
+
+  // 휴가 발생
+  LEAVE_ACCRUED: 'leave.accrued',
+  LEAVE_COMPENSATION_ACCRUED: 'leave.compensation.accrued',
+
+  // 직원
+  EMPLOYEE_CREATED: 'employee.created',
+} as const
+
+export type DomainEvent = (typeof EVENTS)[keyof typeof EVENTS]

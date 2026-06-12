@@ -151,13 +151,19 @@ async function main() {
   })
   console.log('✅ LeaveGroup:', leaveGroup.name)
 
-  // 8. 회사 기본 설정
+  // 8. 회사 기본 설정 (키/기본값은 company-settings.service.ts SETTING_DEFAULTS와 일치 유지)
   const defaultSettings = [
-    { section: 'attendance', key: 'late_grace_minutes', value: 0 },
+    { section: 'attendance', key: 'late_grace_minutes', value: 10 },
     { section: 'attendance', key: 'clockin_before_shift_minutes', value: 30 },
-    { section: 'attendance', key: 'oncall_policy', value: 'if_no_shift' },
+    { section: 'attendance', key: 'allow_unscheduled', value: 'if_no_shift' },
+    { section: 'attendance', key: 'pc_timeclock_enabled', value: true },
+    { section: 'attendance', key: 'enable_confirmation', value: true },
     { section: 'shift', key: 'enable_confirmation', value: true },
-    { section: 'general', key: 'week_start_day', value: 1 },
+    { section: 'shift', key: 'template_code_enabled', value: false },
+    { section: 'shift', key: 'deemed_work_enabled', value: false },
+    { section: 'break', key: 'auto_break_enabled', value: false },
+    { section: 'break', key: 'shift_break_enabled', value: false },
+    { section: 'general', key: 'week_start_day', value: 'monday' },
     { section: 'general', key: 'time_format', value: '24h' },
     { section: 'general', key: 'night_work_start', value: '22:00' },
     { section: 'general', key: 'night_work_end', value: '06:00' },
@@ -166,11 +172,65 @@ async function main() {
   for (const s of defaultSettings) {
     await prisma.companySetting.upsert({
       where: { companyId_section_key: { companyId: company.id, section: s.section, key: s.key } },
-      update: {},
+      update: { value: s.value },
       create: { companyId: company.id, section: s.section, key: s.key, value: s.value },
     })
   }
   console.log('✅ Company settings seeded')
+
+  // 8-1. 기안 양식 (요청 → 전자결재 자동 연동의 전제 — REQUEST_TYPE_CATEGORY_MAP과 일치)
+  const documentForms = [
+    { id: 'seed-form-leave', name: '휴가 신청서', category: 'leave_request' },
+    { id: 'seed-form-shift', name: '근무일정 변경 신청서', category: 'shift_change_request' },
+    { id: 'seed-form-attendance', name: '출퇴근 정정 신청서', category: 'attendance_correction_request' },
+    { id: 'seed-form-device', name: '기기 변경 신청서', category: 'device_change_request' },
+    { id: 'seed-form-offsite', name: '근무지 외 근무 신청서', category: 'offsite_work_request' },
+    { id: 'seed-form-custom', name: '일반 기안서', category: 'custom_request' },
+  ]
+
+  for (const f of documentForms) {
+    await prisma.documentForm.upsert({
+      where: { id: f.id },
+      update: { name: f.name, category: f.category, isActive: true },
+      create: {
+        id: f.id,
+        companyId: company.id,
+        name: f.name,
+        category: f.category,
+        fieldsSchema: {},
+        isActive: true,
+      },
+    })
+  }
+  console.log('✅ Document forms seeded:', documentForms.length)
+
+  // 8-2. 기본 승인 규칙 (1차 결재 — 승인자 직무 미지정 시 관리자 fallback)
+  const approvalRules = [
+    { id: 'seed-rule-leave-create', name: '휴가 신청 기본 결재', requestType: 'LEAVE_CREATE' },
+    { id: 'seed-rule-shift-create', name: '근무일정 신청 기본 결재', requestType: 'SHIFT_CREATE' },
+    { id: 'seed-rule-attendance-edit', name: '출퇴근 정정 기본 결재', requestType: 'ATTENDANCE_EDIT' },
+  ]
+
+  for (const r of approvalRules) {
+    await prisma.approvalRule.upsert({
+      where: { id: r.id },
+      update: { isActive: true },
+      create: {
+        id: r.id,
+        companyId: company.id,
+        name: r.name,
+        requestType: r.requestType,
+        priority: 0,
+        maxApprovalRounds: 1,
+        isAutoApprove: false,
+        isActive: true,
+        details: {
+          create: [{ round: 1, requiredCount: 1, sortOrder: 0 }],
+        },
+      },
+    })
+  }
+  console.log('✅ Approval rules seeded:', approvalRules.length)
 
   // 9. 기본 알림 규칙 (Discord mock URL)
   await prisma.notificationRule.upsert({

@@ -35,7 +35,7 @@ const basePendingRequest = {
   id: REQUEST_ID,
   companyId: COMPANY_ID,
   requesterId: EMPLOYEE_ID,
-  type: 'LEAVE',
+  type: 'LEAVE_CREATE',
   payload: { leaveTypeId: 'lt-1', daysUsed: 1 },
   status: 'PENDING',
   documentId: DOCUMENT_ID,
@@ -47,7 +47,7 @@ const baseApprovalRule = {
   id: 'rule-1',
   companyId: COMPANY_ID,
   name: '연차 승인 규칙',
-  requestType: 'LEAVE',
+  requestType: 'LEAVE_CREATE',
   maxApprovalRounds: 1,
   isAutoApprove: false,
   priority: 0,
@@ -122,14 +122,12 @@ describe('RequestsService', () => {
   // ── createRequest ────────────────────────────────────────────────────────────
 
   describe('createRequest', () => {
-    it('승인 규칙 없으면 자동 승인 처리되고 이벤트를 emit한다', async () => {
+    it('승인 규칙이 없으면 자동승인하지 않고 기본 결재선으로 PENDING 문서를 생성한다', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
-      const dto = { type: 'LEAVE' as const, payload: { leaveTypeId: 'lt-1', daysUsed: 1 } }
+      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', daysUsed: 1 } }
 
       const createdRequest = { ...basePendingRequest, documentId: null }
-      const autoApprovedRequest = { ...createdRequest, status: 'APPROVED' }
 
-      // $transaction 콜백을 실행하도록 mock
       mockPrisma.$transaction.mockImplementation(
         async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => {
           return callback(mockPrisma)
@@ -144,32 +142,66 @@ describe('RequestsService', () => {
         organizations: [{ organizationId: 'org-1' }],
         positions: [],
       })
-      // 승인 규칙 없음
+      // 승인 규칙 없음 → 기본 결재선
       mockPrisma.approvalRule.findMany.mockResolvedValue([])
-      mockPrisma.request.update.mockResolvedValue(autoApprovedRequest)
+      mockPrisma.documentForm.findFirst.mockResolvedValue({
+        id: 'form-1',
+        companyId: COMPANY_ID,
+        category: 'leave_request',
+      })
+      mockPrisma.document.create.mockResolvedValue({ id: DOCUMENT_ID, companyId: COMPANY_ID })
+      mockPrisma.approvalLine.create.mockResolvedValue({ id: 'line-1', documentId: DOCUMENT_ID })
+      mockPrisma.approvalStep.create.mockResolvedValue({})
+      mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest })
 
       const result = await service.createRequest(COMPANY_ID, dto, requester)
 
-      expect(mockPrisma.request.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            companyId: COMPANY_ID,
-            requesterId: EMPLOYEE_ID,
-            type: 'LEAVE',
-            status: 'PENDING',
-          }),
-        }),
+      expect(result.status).toBe('PENDING')
+      expect(mockPrisma.document.create).toHaveBeenCalled()
+      expect(mockPrisma.approvalStep.create).toHaveBeenCalled()
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'leave.requested',
+        expect.objectContaining({ requestId: REQUEST_ID }),
       )
+    })
+
+    it('isAutoApprove 규칙이면 자동 승인되고 leave.approved 이벤트를 emit한다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', daysUsed: 1 } }
+
+      const createdRequest = { ...basePendingRequest, documentId: null }
+
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => {
+          return callback(mockPrisma)
+        },
+      )
+
+      mockPrisma.request.create.mockResolvedValue(createdRequest)
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        id: EMPLOYEE_ID,
+        companyId: COMPANY_ID,
+        name: '홍길동',
+        organizations: [{ organizationId: 'org-1' }],
+        positions: [],
+      })
+      mockPrisma.approvalRule.findMany.mockResolvedValue([
+        { ...baseApprovalRule, isAutoApprove: true },
+      ])
+      mockPrisma.request.update.mockResolvedValue({ ...createdRequest, status: 'APPROVED' })
+
+      const result = await service.createRequest(COMPANY_ID, dto, requester)
+
       expect(result.status).toBe('APPROVED')
       expect(mockEvents.emit).toHaveBeenCalledWith(
-        'leave.auto_approved',
-        expect.objectContaining({ requestId: REQUEST_ID }),
+        'leave.approved',
+        expect.objectContaining({ requestId: REQUEST_ID, autoApproved: true }),
       )
     })
 
     it('승인 규칙 있으면 Document + ApprovalLine + ApprovalStep을 생성하고 이벤트를 emit한다', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
-      const dto = { type: 'LEAVE' as const, payload: { leaveTypeId: 'lt-1', daysUsed: 1 } }
+      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', daysUsed: 1 } }
 
       const createdRequest = { ...basePendingRequest, documentId: null }
       const createdDocument = { id: DOCUMENT_ID, companyId: COMPANY_ID }
@@ -221,9 +253,9 @@ describe('RequestsService', () => {
       expect(result).toEqual(finalRequest)
     })
 
-    it('DocumentForm이 없으면 BadRequestException을 던진다', async () => {
+    it('DocumentForm이 없으면 Document 없이 PENDING 요청만 생성된다', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
-      const dto = { type: 'LEAVE' as const, payload: {} }
+      const dto = { type: 'LEAVE_CREATE' as const, payload: {} }
 
       mockPrisma.$transaction.mockImplementation(
         async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => {
@@ -231,7 +263,7 @@ describe('RequestsService', () => {
         },
       )
 
-      mockPrisma.request.create.mockResolvedValue(basePendingRequest)
+      mockPrisma.request.create.mockResolvedValue({ ...basePendingRequest, documentId: null })
       mockPrisma.employee.findFirst.mockResolvedValue({
         id: EMPLOYEE_ID,
         companyId: COMPANY_ID,
@@ -241,10 +273,12 @@ describe('RequestsService', () => {
       })
       mockPrisma.approvalRule.findMany.mockResolvedValue([baseApprovalRule])
       mockPrisma.documentForm.findFirst.mockResolvedValue(null)
+      mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest, documentId: null })
 
-      await expect(service.createRequest(COMPANY_ID, dto, requester)).rejects.toThrow(
-        BadRequestException,
-      )
+      const result = await service.createRequest(COMPANY_ID, dto, requester)
+
+      expect(result.status).toBe('PENDING')
+      expect(mockPrisma.document.create).not.toHaveBeenCalled()
     })
   })
 
