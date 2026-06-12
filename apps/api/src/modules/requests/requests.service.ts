@@ -7,8 +7,9 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
-import { AccessLevel, ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
+import { AccessLevel, ACCESS_LEVEL_HIERARCHY, ShiftStatus } from '@ablework/shared-constants'
 import { EVENTS } from '../../events/domain-events'
+import { LeavesService } from '../leaves/leaves.service'
 import {
   CreateRequestDto,
   CreateApprovalRuleDto,
@@ -83,6 +84,7 @@ export class RequestsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly leavesService: LeavesService,
   ) {}
 
   // ── HR-07-01 요청 목록 ───────────────────────────────────────────────────────
@@ -201,6 +203,11 @@ export class RequestsService {
   async createRequest(companyId: string, dto: CreateRequestDto, requester: JwtPayload) {
     const requesterId = requester.employeeId
 
+    // 휴가 신청은 접수 전에 잔액/유효기간 사전 검증 (CLAUDE.md §6)
+    if (dto.type === 'LEAVE_CREATE') {
+      await this.validateLeaveCreatePayload(requesterId, dto.payload)
+    }
+
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
       // 1. Request 레코드 생성
@@ -269,6 +276,9 @@ export class RequestsService {
           where: { id: request.id },
           data: { status: 'APPROVED' },
         })
+
+        // 자동 승인도 실데이터 반영 (잔액 차감/Shift 생성 등) — 동일 트랜잭션 내 원자 처리
+        await this.applyApprovedRequest(tx, companyId, updatedRequest)
 
         const eventName =
           REQUEST_TYPE_APPROVED_EVENT[dto.type] ?? `${dto.type.toLowerCase()}.approved`
@@ -485,6 +495,9 @@ export class RequestsService {
           data: { status: 'APPROVED' },
         })
 
+        // 승인 결과를 실데이터에 반영 (휴가 잔액 차감, Shift 생성 등) — 동일 트랜잭션 (CLAUDE.md §7)
+        await this.applyApprovedRequest(tx, companyId, updatedRequest)
+
         if (request.documentId) {
           await tx.document.update({
             where: { id: request.documentId },
@@ -606,6 +619,9 @@ export class RequestsService {
         data: { status: 'APPROVED' },
       })
 
+      // 강제 승인도 실데이터 반영 — 동일 트랜잭션
+      await this.applyApprovedRequest(tx, companyId, updatedRequest)
+
       if (request.documentId) {
         await tx.document.update({
           where: { id: request.documentId },
@@ -695,6 +711,491 @@ export class RequestsService {
     }
 
     return { results }
+  }
+
+  // ── 승인 → 실데이터 반영 파이프라인 ─────────────────────────────────────────
+
+  /**
+   * 최종 승인된 요청을 실데이터에 반영한다 (CLAUDE.md §7 — 승인 $transaction 내 원자 처리).
+   * 여기서 던지는 예외는 승인 트랜잭션 전체를 롤백시킨다 (예: 잔액 부족 시 승인 자체가 실패).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async applyApprovedRequest(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    companyId: string,
+    request: { id: string; requesterId: string; type: string; payload: unknown },
+  ): Promise<void> {
+    const payload = (request.payload ?? {}) as Record<string, unknown>
+    const employeeId = request.requesterId
+
+    switch (request.type) {
+      case 'LEAVE_CREATE':
+        await this.applyLeaveCreate(tx, employeeId, payload)
+        break
+      case 'LEAVE_MODIFY':
+        await this.applyLeaveModify(tx, companyId, employeeId, payload)
+        break
+      case 'LEAVE_DELETE':
+        await this.applyLeaveDelete(tx, companyId, payload)
+        break
+      case 'SHIFT_CREATE':
+        await this.applyShiftCreate(tx, companyId, employeeId, payload)
+        break
+      case 'SHIFT_MODIFY':
+        await this.applyShiftModify(tx, companyId, payload)
+        break
+      case 'SHIFT_DELETE':
+        await this.applyShiftDelete(tx, companyId, payload)
+        break
+      case 'ATTENDANCE_EDIT':
+      case 'ATTENDANCE_CREATE':
+        await this.applyAttendanceUpsert(tx, companyId, employeeId, payload)
+        break
+      case 'ATTENDANCE_DELETE':
+        await this.applyAttendanceDelete(tx, companyId, payload)
+        break
+      case 'DEVICE_CHANGE':
+        await tx.employee.update({
+          where: { id: employeeId },
+          data: { deviceId: null, deviceBoundAt: null },
+        })
+        break
+      // OFFSITE_WORK / CUSTOM: Phase 1에서는 데이터 반영 없음 (기록·결재만)
+      default:
+        break
+    }
+  }
+
+  /** 휴가 신청 접수 전 사전 검증 — 잔액/유효기간 (createRequest에서 호출) */
+  private async validateLeaveCreatePayload(
+    employeeId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const { leaveTypeId, startDate, endDate } = payload as {
+      leaveTypeId?: string
+      startDate?: string
+      endDate?: string
+    }
+    if (!leaveTypeId || !startDate || !endDate) {
+      throw new BadRequestException({
+        code: 'REQUEST_PAYLOAD_INVALID',
+        message: '휴가 유형과 기간을 입력해 주세요.',
+      })
+    }
+
+    const leaveType = await this.prisma.leaveType.findFirst({ where: { id: leaveTypeId } })
+    if (!leaveType) {
+      throw new BadRequestException({
+        code: 'LEAVE_TYPE_NOT_FOUND',
+        message: '휴가 유형을 찾을 수 없습니다.',
+      })
+    }
+
+    const start = new Date(startDate)
+    const daysUsed = this.calcLeaveDaysUsed(startDate, endDate, Number(leaveType.deductionDays))
+
+    await this.leavesService.validateBalance({
+      employeeId,
+      leaveTypeId,
+      daysUsed,
+      startDate: start,
+      year: start.getFullYear(),
+    })
+  }
+
+  /** 휴가 차감 일수 계산: 기간 일수(양 끝 포함) × 유형별 차감 단위 */
+  private calcLeaveDaysUsed(startDate: string, endDate: string, deductionDays: number): number {
+    const MS_PER_DAY = 24 * 60 * 60 * 1000
+    const start = new Date(`${startDate.slice(0, 10)}T00:00:00.000Z`)
+    const end = new Date(`${endDate.slice(0, 10)}T00:00:00.000Z`)
+    const calendarDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / MS_PER_DAY) + 1)
+    return calendarDays * (deductionDays > 0 ? deductionDays : 1)
+  }
+
+  /** LEAVE_CREATE 승인 → Leave 생성 + 잔액 차감 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async applyLeaveCreate(tx: any, employeeId: string, payload: Record<string, unknown>) {
+    const { leaveTypeId, startDate, endDate, reason } = payload as {
+      leaveTypeId: string
+      startDate: string
+      endDate: string
+      reason?: string
+    }
+
+    const leaveType = await tx.leaveType.findFirst({ where: { id: leaveTypeId } })
+    if (!leaveType) {
+      throw new BadRequestException({
+        code: 'LEAVE_TYPE_NOT_FOUND',
+        message: '휴가 유형을 찾을 수 없습니다.',
+      })
+    }
+
+    const daysUsed = this.calcLeaveDaysUsed(startDate, endDate, Number(leaveType.deductionDays))
+    const year = new Date(startDate).getFullYear()
+
+    // 잔액 재검증 (신청~승인 사이 잔액 변동 가능) — 부족하면 승인 트랜잭션 롤백
+    const balance = await tx.leaveBalance.findUnique({
+      where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } },
+    })
+    if (!balance) {
+      throw new BadRequestException({
+        code: 'LEAVE_BALANCE_NOT_FOUND',
+        message: '해당 연도에 휴가 잔액이 없습니다.',
+      })
+    }
+    if (Number(balance.remainingDays) < daysUsed) {
+      throw new BadRequestException({
+        code: 'LEAVE_BALANCE_INSUFFICIENT',
+        message: `잔여 휴가일이 부족합니다. (잔여: ${balance.remainingDays}일, 필요: ${daysUsed}일)`,
+      })
+    }
+    if (balance.expiresAt && balance.expiresAt < new Date(startDate)) {
+      throw new BadRequestException({
+        code: 'LEAVE_BALANCE_EXPIRED',
+        message: '휴가 유효기간이 만료되었습니다.',
+      })
+    }
+
+    await tx.leave.create({
+      data: {
+        employeeId,
+        leaveTypeId,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        daysUsed,
+        status: 'APPROVED',
+        reason: (reason as string) ?? null,
+      },
+    })
+
+    await tx.leaveBalance.update({
+      where: { id: balance.id },
+      data: {
+        usedDays: { increment: daysUsed },
+        remainingDays: { decrement: daysUsed },
+      },
+    })
+  }
+
+  /** LEAVE_MODIFY 승인 → 기간 수정 + 잔액 차액 반영 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async applyLeaveModify(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    companyId: string,
+    employeeId: string,
+    payload: Record<string, unknown>,
+  ) {
+    const { leaveId, startDate, endDate, reason } = payload as {
+      leaveId: string
+      startDate?: string
+      endDate?: string
+      reason?: string
+    }
+
+    const leave = await tx.leave.findFirst({
+      where: { id: leaveId, employee: { companyId } },
+      include: { leaveType: { select: { deductionDays: true } } },
+    })
+    if (!leave) {
+      throw new NotFoundException({ code: 'LEAVE_NOT_FOUND', message: '휴가를 찾을 수 없습니다.' })
+    }
+
+    const newStart = startDate ?? leave.startDate.toISOString()
+    const newEnd = endDate ?? leave.endDate.toISOString()
+    const newDaysUsed = this.calcLeaveDaysUsed(
+      newStart,
+      newEnd,
+      Number(leave.leaveType.deductionDays),
+    )
+    const delta = newDaysUsed - Number(leave.daysUsed)
+
+    await tx.leave.update({
+      where: { id: leaveId },
+      data: {
+        startDate: new Date(newStart),
+        endDate: new Date(newEnd),
+        daysUsed: newDaysUsed,
+        ...(reason !== undefined && { reason }),
+      },
+    })
+
+    if (delta !== 0) {
+      const year = leave.startDate.getFullYear()
+      await tx.leaveBalance.updateMany({
+        where: { employeeId, leaveTypeId: leave.leaveTypeId, year },
+        data: {
+          usedDays: { increment: delta },
+          remainingDays: { decrement: delta },
+        },
+      })
+    }
+  }
+
+  /** LEAVE_DELETE 승인 → 휴가 삭제 + 잔액 복원 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async applyLeaveDelete(tx: any, companyId: string, payload: Record<string, unknown>) {
+    const { leaveId } = payload as { leaveId: string }
+
+    const leave = await tx.leave.findFirst({
+      where: { id: leaveId, employee: { companyId } },
+    })
+    if (!leave) {
+      throw new NotFoundException({ code: 'LEAVE_NOT_FOUND', message: '휴가를 찾을 수 없습니다.' })
+    }
+
+    await tx.leave.delete({ where: { id: leaveId } })
+
+    const restored = Number(leave.daysUsed)
+    await tx.leaveBalance.updateMany({
+      where: {
+        employeeId: leave.employeeId,
+        leaveTypeId: leave.leaveTypeId,
+        year: leave.startDate.getFullYear(),
+      },
+      data: {
+        usedDays: { decrement: restored },
+        remainingDays: { increment: restored },
+      },
+    })
+  }
+
+  /** SHIFT_CREATE 승인 → Shift 생성 (승인됨 = 확정 상태) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async applyShiftCreate(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    companyId: string,
+    employeeId: string,
+    payload: Record<string, unknown>,
+  ) {
+    const { date, templateId, startTime, endTime } = payload as {
+      date: string
+      templateId?: string
+      startTime?: string
+      endTime?: string
+    }
+
+    // 본조직(또는 첫 소속 조직) 결정
+    const employeeOrg = await tx.employeeOrganization.findFirst({
+      where: { employeeId, organization: { companyId } },
+      orderBy: [{ isPrimary: 'desc' }],
+    })
+    if (!employeeOrg) {
+      throw new BadRequestException({
+        code: 'EMPLOYEE_ORGANIZATION_NOT_FOUND',
+        message: '직원의 소속 조직이 없어 근무일정을 생성할 수 없습니다.',
+      })
+    }
+
+    let shiftTypeId: string
+    let startAt: Date
+    let endAt: Date
+    let resolvedTemplateId: string | null = null
+
+    if (templateId) {
+      const template = await tx.shiftTemplate.findFirst({
+        where: { id: templateId, companyId, isActive: true },
+      })
+      if (!template) {
+        throw new BadRequestException({
+          code: 'SHIFT_TEMPLATE_NOT_FOUND',
+          message: '근무 템플릿을 찾을 수 없습니다.',
+        })
+      }
+      shiftTypeId = template.shiftTypeId
+      resolvedTemplateId = template.id
+      startAt = this.combineDateAndTime(date, template.startTime)
+      endAt = this.combineDateAndTime(date, template.endTime)
+    } else {
+      const defaultType = await tx.shiftType.findFirst({
+        where: { companyId, isActive: true },
+        orderBy: { createdAt: 'asc' },
+      })
+      if (!defaultType) {
+        throw new BadRequestException({
+          code: 'SHIFT_TYPE_NOT_FOUND',
+          message: '근무일정 유형이 없어 일정을 생성할 수 없습니다.',
+        })
+      }
+      shiftTypeId = defaultType.id
+      // 시간 미지정 시 09:00~18:00 기본 (과거 요청 호환)
+      startAt = new Date(`${date}T${(startTime ?? '09:00').padStart(5, '0')}:00`)
+      endAt = new Date(`${date}T${(endTime ?? '18:00').padStart(5, '0')}:00`)
+    }
+
+    // 야간 근무: 종료가 시작보다 이르면 익일 처리
+    if (endAt <= startAt) {
+      endAt = new Date(endAt.getTime() + 24 * 60 * 60 * 1000)
+    }
+
+    await tx.shift.create({
+      data: {
+        employeeId,
+        organizationId: employeeOrg.organizationId,
+        shiftTypeId,
+        templateId: resolvedTemplateId,
+        startAt,
+        endAt,
+        status: ShiftStatus.CONFIRMED,
+        confirmedAt: new Date(),
+        createdBy: employeeId,
+      },
+    })
+  }
+
+  /** SHIFT_MODIFY 승인 → Shift 시간 수정 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async applyShiftModify(tx: any, companyId: string, payload: Record<string, unknown>) {
+    const { shiftId, date, startTime, endTime } = payload as {
+      shiftId: string
+      date?: string
+      startTime?: string
+      endTime?: string
+    }
+
+    const shift = await tx.shift.findFirst({
+      where: { id: shiftId, organization: { companyId } },
+    })
+    if (!shift) {
+      throw new NotFoundException({ code: 'SHIFT_NOT_FOUND', message: '근무일정을 찾을 수 없습니다.' })
+    }
+
+    const baseDate = date ?? shift.startAt.toISOString().slice(0, 10)
+    const newStart = startTime ? new Date(`${baseDate}T${startTime}:00`) : shift.startAt
+    let newEnd = endTime ? new Date(`${baseDate}T${endTime}:00`) : shift.endAt
+    if (newEnd <= newStart) {
+      newEnd = new Date(newEnd.getTime() + 24 * 60 * 60 * 1000)
+    }
+
+    await tx.shift.update({
+      where: { id: shiftId },
+      data: { startAt: newStart, endAt: newEnd },
+    })
+  }
+
+  /** SHIFT_DELETE 승인 → Shift 삭제 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async applyShiftDelete(tx: any, companyId: string, payload: Record<string, unknown>) {
+    const { shiftId } = payload as { shiftId: string }
+
+    const shift = await tx.shift.findFirst({
+      where: { id: shiftId, organization: { companyId } },
+    })
+    if (!shift) {
+      throw new NotFoundException({ code: 'SHIFT_NOT_FOUND', message: '근무일정을 찾을 수 없습니다.' })
+    }
+
+    await tx.shift.delete({ where: { id: shiftId } })
+  }
+
+  /** ATTENDANCE_EDIT/CREATE 승인 → 출퇴근 기록 수정(없으면 생성) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async applyAttendanceUpsert(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    companyId: string,
+    employeeId: string,
+    payload: Record<string, unknown>,
+  ) {
+    const { attendanceId, date, clockInAt, clockOutAt, note } = payload as {
+      attendanceId?: string
+      date: string
+      clockInAt?: string // 'HH:MM'
+      clockOutAt?: string // 'HH:MM'
+      note?: string
+    }
+
+    const newClockIn = clockInAt ? new Date(`${date}T${clockInAt}:00`) : undefined
+    let newClockOut = clockOutAt ? new Date(`${date}T${clockOutAt}:00`) : undefined
+    if (newClockIn && newClockOut && newClockOut <= newClockIn) {
+      newClockOut = new Date(newClockOut.getTime() + 24 * 60 * 60 * 1000)
+    }
+
+    // 대상 기록: attendanceId 지정 시 해당 건, 아니면 해당 날짜의 첫 기록
+    const dayStart = new Date(`${date}T00:00:00`)
+    const dayEnd = new Date(`${date}T23:59:59.999`)
+    const existing = attendanceId
+      ? await tx.attendance.findFirst({
+          where: { id: attendanceId, employee: { companyId } },
+        })
+      : await tx.attendance.findFirst({
+          where: {
+            employeeId,
+            employee: { companyId },
+            clockInAt: { gte: dayStart, lte: dayEnd },
+          },
+          orderBy: { clockInAt: 'asc' },
+        })
+
+    if (existing) {
+      if (existing.isConfirmed) {
+        throw new BadRequestException({
+          code: 'ATTENDANCE_ALREADY_CONFIRMED',
+          message: '확정된 출퇴근 기록은 정정할 수 없습니다.',
+        })
+      }
+      await tx.attendance.update({
+        where: { id: existing.id },
+        data: {
+          ...(newClockIn && { clockInAt: newClockIn }),
+          ...(newClockOut && { clockOutAt: newClockOut }),
+          ...(note !== undefined && { note }),
+        },
+      })
+      return
+    }
+
+    // 기록이 없으면 신규 생성 (누락 기록 보정)
+    if (!newClockIn) {
+      throw new BadRequestException({
+        code: 'REQUEST_PAYLOAD_INVALID',
+        message: '출근 시각이 없어 출퇴근 기록을 생성할 수 없습니다.',
+      })
+    }
+    await tx.attendance.create({
+      data: {
+        employeeId,
+        clockInAt: newClockIn,
+        clockOutAt: newClockOut ?? null,
+        clockInMethod: 'manual',
+        status: 'normal',
+        isOncall: false,
+        note: note ?? '[요청 승인으로 생성]',
+      },
+    })
+  }
+
+  /** ATTENDANCE_DELETE 승인 → 출퇴근 기록 삭제 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async applyAttendanceDelete(tx: any, companyId: string, payload: Record<string, unknown>) {
+    const { attendanceId } = payload as { attendanceId: string }
+
+    const attendance = await tx.attendance.findFirst({
+      where: { id: attendanceId, employee: { companyId } },
+    })
+    if (!attendance) {
+      throw new NotFoundException({
+        code: 'ATTENDANCE_NOT_FOUND',
+        message: '출퇴근 기록을 찾을 수 없습니다.',
+      })
+    }
+    if (attendance.isConfirmed) {
+      throw new BadRequestException({
+        code: 'ATTENDANCE_ALREADY_CONFIRMED',
+        message: '확정된 출퇴근 기록은 삭제할 수 없습니다.',
+      })
+    }
+
+    await tx.attendance.delete({ where: { id: attendanceId } })
+  }
+
+  /** Prisma @db.Time(1970-01-01 기준) 값과 날짜 문자열을 합성 */
+  private combineDateAndTime(date: string, time: Date): Date {
+    const hh = String(time.getUTCHours()).padStart(2, '0')
+    const mm = String(time.getUTCMinutes()).padStart(2, '0')
+    return new Date(`${date}T${hh}:${mm}:00`)
   }
 
   // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────

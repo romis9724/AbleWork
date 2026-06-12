@@ -7,6 +7,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { RequestsService } from './requests.service'
 import { PrismaService } from '../../prisma/prisma.service'
+import { LeavesService } from '../leaves/leaves.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { AccessLevel } from '@ablework/shared-constants'
 
@@ -36,7 +37,7 @@ const basePendingRequest = {
   companyId: COMPANY_ID,
   requesterId: EMPLOYEE_ID,
   type: 'LEAVE_CREATE',
-  payload: { leaveTypeId: 'lt-1', daysUsed: 1 },
+  payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' },
   status: 'PENDING',
   documentId: DOCUMENT_ID,
   createdAt: new Date(),
@@ -95,11 +96,49 @@ const mockPrisma = {
   employee: {
     findFirst: jest.fn(),
     findMany: jest.fn(),
+    update: jest.fn(),
+  },
+  leaveType: {
+    findFirst: jest.fn(),
+  },
+  leaveBalance: {
+    findUnique: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  leave: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+  },
+  employeeOrganization: {
+    findFirst: jest.fn(),
+  },
+  shift: {
+    findFirst: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+  },
+  shiftTemplate: {
+    findFirst: jest.fn(),
+  },
+  shiftType: {
+    findFirst: jest.fn(),
+  },
+  attendance: {
+    findFirst: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
   },
   $transaction: jest.fn(),
 }
 
 const mockEvents = { emit: jest.fn() }
+
+const mockLeavesService = { validateBalance: jest.fn() }
 
 // ── 테스트 ────────────────────────────────────────────────────────────────────
 
@@ -112,11 +151,31 @@ describe('RequestsService', () => {
         RequestsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
+        { provide: LeavesService, useValue: mockLeavesService },
       ],
     }).compile()
 
     service = module.get<RequestsService>(RequestsService)
     jest.clearAllMocks()
+
+    // LEAVE_CREATE 적용 파이프라인 기본 mock: 잔액 충분
+    mockLeavesService.validateBalance.mockResolvedValue(undefined)
+    mockPrisma.leaveType.findFirst.mockResolvedValue({
+      id: 'lt-1',
+      groupId: 'lg-1',
+      deductionDays: 1,
+    })
+    mockPrisma.leaveBalance.findUnique.mockResolvedValue({
+      id: 'bal-1',
+      employeeId: EMPLOYEE_ID,
+      leaveTypeId: 'lt-1',
+      year: new Date().getFullYear(),
+      remainingDays: 10,
+      usedDays: 0,
+      expiresAt: null,
+    })
+    mockPrisma.leave.create.mockResolvedValue({ id: 'leave-1' })
+    mockPrisma.leaveBalance.update.mockResolvedValue({})
   })
 
   // ── createRequest ────────────────────────────────────────────────────────────
@@ -124,7 +183,7 @@ describe('RequestsService', () => {
   describe('createRequest', () => {
     it('승인 규칙이 없으면 자동승인하지 않고 기본 결재선으로 PENDING 문서를 생성한다', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
-      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', daysUsed: 1 } }
+      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' } }
 
       const createdRequest = { ...basePendingRequest, documentId: null }
 
@@ -167,7 +226,7 @@ describe('RequestsService', () => {
 
     it('isAutoApprove 규칙이면 자동 승인되고 leave.approved 이벤트를 emit한다', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
-      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', daysUsed: 1 } }
+      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' } }
 
       const createdRequest = { ...basePendingRequest, documentId: null }
 
@@ -201,7 +260,7 @@ describe('RequestsService', () => {
 
     it('승인 규칙 있으면 Document + ApprovalLine + ApprovalStep을 생성하고 이벤트를 emit한다', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
-      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', daysUsed: 1 } }
+      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' } }
 
       const createdRequest = { ...basePendingRequest, documentId: null }
       const createdDocument = { id: DOCUMENT_ID, companyId: COMPANY_ID }
@@ -255,7 +314,7 @@ describe('RequestsService', () => {
 
     it('DocumentForm이 없으면 Document 없이 PENDING 요청만 생성된다', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
-      const dto = { type: 'LEAVE_CREATE' as const, payload: {} }
+      const dto = { type: 'CUSTOM' as const, payload: {} }
 
       mockPrisma.$transaction.mockImplementation(
         async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => {

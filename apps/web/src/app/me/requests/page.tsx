@@ -74,6 +74,8 @@ export default function RequestsPage() {
 
   // Shift form state
   const [shiftDate, setShiftDate] = useState('')
+  const [shiftStartTime, setShiftStartTime] = useState('09:00')
+  const [shiftEndTime, setShiftEndTime] = useState('18:00')
   const [shiftReason, setShiftReason] = useState('')
 
   // Attendance form state
@@ -104,6 +106,8 @@ export default function RequestsPage() {
     setLeaveEndDate('')
     setLeaveReason('')
     setShiftDate('')
+    setShiftStartTime('09:00')
+    setShiftEndTime('18:00')
     setShiftReason('')
     setAttDate('')
     setAttClockIn('')
@@ -136,7 +140,12 @@ export default function RequestsPage() {
     try {
       await createRequest.mutateAsync({
         type: 'SHIFT_CREATE',
-        payload: { date: shiftDate, reason: shiftReason },
+        payload: {
+          date: shiftDate,
+          startTime: shiftStartTime,
+          endTime: shiftEndTime,
+          reason: shiftReason,
+        },
       })
       showSnack('근무일정 변경 요청이 완료됐습니다.', 'success')
       resetDialogs()
@@ -300,6 +309,26 @@ export default function RequestsPage() {
             required
             InputLabelProps={{ shrink: true }}
           />
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <TextField
+              label="시작 시간"
+              type="time"
+              value={shiftStartTime}
+              onChange={(e) => setShiftStartTime(e.target.value)}
+              fullWidth
+              required
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              label="종료 시간"
+              type="time"
+              value={shiftEndTime}
+              onChange={(e) => setShiftEndTime(e.target.value)}
+              fullWidth
+              required
+              InputLabelProps={{ shrink: true }}
+            />
+          </Box>
           <TextField
             label="사유"
             value={shiftReason}

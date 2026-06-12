@@ -151,6 +151,30 @@ async function main() {
   })
   console.log('✅ LeaveGroup:', leaveGroup.name)
 
+  // 7-1. 휴가 잔액 (현재 연도 — 연차 15일)
+  const currentYear = new Date().getFullYear()
+  for (const empId of ['seed-emp-001', 'seed-emp-admin']) {
+    await prisma.leaveBalance.upsert({
+      where: {
+        employeeId_leaveTypeId_year: {
+          employeeId: empId,
+          leaveTypeId: 'seed-leave-type-annual',
+          year: currentYear,
+        },
+      },
+      update: {},
+      create: {
+        employeeId: empId,
+        leaveTypeId: 'seed-leave-type-annual',
+        year: currentYear,
+        accruedDays: 15,
+        usedDays: 0,
+        remainingDays: 15,
+      },
+    })
+  }
+  console.log('✅ Leave balances seeded (연차 15일)')
+
   // 8. 회사 기본 설정 (키/기본값은 company-settings.service.ts SETTING_DEFAULTS와 일치 유지)
   const defaultSettings = [
     { section: 'attendance', key: 'late_grace_minutes', value: 10 },
