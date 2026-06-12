@@ -97,6 +97,100 @@ async function main() {
   })
   console.log('✅ Organization:', org.name)
 
+  // 4-1. 제2 조직 — 영업팀
+  const salesOrg = await prisma.organization.upsert({
+    where: { id: 'seed-org-sales' },
+    update: {},
+    create: {
+      id: 'seed-org-sales',
+      companyId: company.id,
+      name: '영업팀',
+      depth: 0,
+      sortOrder: 2,
+    },
+  })
+  console.log('✅ Organization:', salesOrg.name)
+
+  // 4-2. 조직관리자 (ORG_ADMIN) — 개발팀 소속 + 개발팀 결재자
+  const orgAdminHash = await bcrypt.hash('orgadmin1234!', 10)
+  const orgAdminUser = await prisma.user.upsert({
+    where: { email: 'orgadmin@ablework.io' },
+    update: {},
+    create: {
+      id: 'seed-user-orgadmin',
+      email: 'orgadmin@ablework.io',
+      passwordHash: orgAdminHash,
+      name: '김조직',
+      timezone: 'Asia/Seoul',
+    },
+  })
+
+  await prisma.employee.upsert({
+    where: { userId: orgAdminUser.id },
+    update: {},
+    create: {
+      id: 'seed-emp-orgadmin',
+      companyId: company.id,
+      userId: orgAdminUser.id,
+      name: '김조직',
+      joinedAt: new Date('2024-02-01'),
+      employmentType: 'regular',
+      accessLevel: 'ORG_ADMIN',
+    },
+  })
+
+  await prisma.employeeOrganization.upsert({
+    where: {
+      employeeId_organizationId: { employeeId: 'seed-emp-orgadmin', organizationId: org.id },
+    },
+    update: { isPrimary: true },
+    create: { employeeId: 'seed-emp-orgadmin', organizationId: org.id, isPrimary: true },
+  })
+
+  // 개발팀의 결재자(approverId)로 지정
+  await prisma.organization.update({
+    where: { id: org.id },
+    data: { approverId: 'seed-emp-orgadmin' },
+  })
+  console.log('✅ Org admin user:', orgAdminUser.email, '(개발팀 결재자)')
+
+  // 4-3. 영업팀 직원 (EMPLOYEE)
+  const salesHash = await bcrypt.hash('sales1234!', 10)
+  const salesUser = await prisma.user.upsert({
+    where: { email: 'sales@ablework.io' },
+    update: {},
+    create: {
+      id: 'seed-user-sales',
+      email: 'sales@ablework.io',
+      passwordHash: salesHash,
+      name: '박영업',
+      timezone: 'Asia/Seoul',
+    },
+  })
+
+  await prisma.employee.upsert({
+    where: { userId: salesUser.id },
+    update: {},
+    create: {
+      id: 'seed-emp-sales',
+      companyId: company.id,
+      userId: salesUser.id,
+      name: '박영업',
+      joinedAt: new Date('2024-04-01'),
+      employmentType: 'regular',
+      accessLevel: 'EMPLOYEE',
+    },
+  })
+
+  await prisma.employeeOrganization.upsert({
+    where: {
+      employeeId_organizationId: { employeeId: 'seed-emp-sales', organizationId: salesOrg.id },
+    },
+    update: { isPrimary: true },
+    create: { employeeId: 'seed-emp-sales', organizationId: salesOrg.id, isPrimary: true },
+  })
+  console.log('✅ Sales employee:', salesUser.email)
+
   // 5. 기본 근무일정 유형
   const shiftType = await prisma.shiftType.upsert({
     where: { id: 'seed-shift-type-regular' },
@@ -153,7 +247,7 @@ async function main() {
 
   // 7-1. 휴가 잔액 (현재 연도 — 연차 15일)
   const currentYear = new Date().getFullYear()
-  for (const empId of ['seed-emp-001', 'seed-emp-admin']) {
+  for (const empId of ['seed-emp-001', 'seed-emp-admin', 'seed-emp-orgadmin', 'seed-emp-sales']) {
     await prisma.leaveBalance.upsert({
       where: {
         employeeId_leaveTypeId_year: {
@@ -270,10 +364,34 @@ async function main() {
     },
   })
 
+  // 9-1. 전자결재 알림 규칙 (Discord mock URL — 개발 환경 비활성)
+  const documentNotificationRules = [
+    { id: 'seed-notif-doc-submitted', eventType: 'document.submitted' },
+    { id: 'seed-notif-doc-approved', eventType: 'document.approved' },
+  ]
+
+  for (const rule of documentNotificationRules) {
+    await prisma.notificationRule.upsert({
+      where: { id: rule.id },
+      update: {},
+      create: {
+        id: rule.id,
+        companyId: company.id,
+        eventType: rule.eventType,
+        channelType: 'discord',
+        webhookUrl: 'https://discord.com/api/webhooks/test/mock',
+        isActive: false, // 개발 환경에서는 비활성
+      },
+    })
+  }
+  console.log('✅ Document notification rules seeded:', documentNotificationRules.length)
+
   console.log('\n✅ Seed completed!')
   console.log('─────────────────────────────────')
-  console.log('관리자: admin@ablework.io / admin1234!')
-  console.log('직원:   employee@ablework.io / employee1234!')
+  console.log('관리자:     admin@ablework.io / admin1234!')
+  console.log('직원:       employee@ablework.io / employee1234!')
+  console.log('조직관리자: orgadmin@ablework.io / orgadmin1234! (개발팀)')
+  console.log('영업팀원:   sales@ablework.io / sales1234! (영업팀)')
 }
 
 main()

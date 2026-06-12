@@ -38,6 +38,13 @@ export const EVENTS = {
 
   // 직원
   EMPLOYEE_CREATED: 'employee.created',
+
+  // 전자결재 (Phase 2)
+  DOCUMENT_SUBMITTED: 'document.submitted',
+  DOCUMENT_APPROVED: 'document.approved',
+  DOCUMENT_REJECTED: 'document.rejected',
+  DOCUMENT_RECALLED: 'document.recalled',
+  DOCUMENT_STEP_PENDING: 'document.step_pending', // 다음 결재자 차례 알림
 } as const
 
 export type DomainEvent = (typeof EVENTS)[keyof typeof EVENTS]

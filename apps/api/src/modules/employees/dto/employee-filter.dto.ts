@@ -21,7 +21,7 @@ export const EmployeeFilterSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v ? parseInt(v, 10) : 20))
-    .pipe(z.number().int().min(1).max(100).default(20)),
+    .pipe(z.number().int().min(1).max(200).default(20)),
 })
 
 export type EmployeeFilterDto = z.infer<typeof EmployeeFilterSchema>

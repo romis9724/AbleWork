@@ -18,6 +18,7 @@ import { SchedulePatternsModule } from './modules/schedule-patterns/schedule-pat
 import { AttendancesModule } from './modules/attendances/attendances.module'
 import { LeavesModule } from './modules/leaves/leaves.module'
 import { RequestsModule } from './modules/requests/requests.module'
+import { DocumentsModule } from './modules/documents/documents.module'
 import { ReportsModule } from './modules/reports/reports.module'
 import { StandardizationRulesModule } from './modules/standardization-rules/standardization-rules.module'
 import { MessagesModule } from './modules/messages/messages.module'
@@ -56,6 +57,7 @@ import { MailModule } from './modules/mail/mail.module'
     AttendancesModule,
     LeavesModule,
     RequestsModule,
+    DocumentsModule,
     ReportsModule,
     StandardizationRulesModule,
     MessagesModule,

@@ -151,6 +151,38 @@ describe('EmployeesService', () => {
 
   // ── deactivate ───────────────────────────────────────────────────────────────
 
+  // ── findAll — ORG_ADMIN 조직 스코프 ─────────────────────────────────────────
+
+  describe('findAll — ORG_ADMIN 조직 스코프', () => {
+    it('ORG_ADMIN은 자신의 소속 조직 직원만 조회된다 (조직 필터 자동 적용)', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN, 'req-emp-org-admin')
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockPrisma.employee.findMany.mockResolvedValue([])
+      mockPrisma.employee.count.mockResolvedValue(0)
+
+      await service.findAll(COMPANY_ID, { page: 1, limit: 20 }, requester)
+
+      const whereArg = mockPrisma.employee.findMany.mock.calls[0][0].where
+      expect(whereArg.companyId).toBe(COMPANY_ID)
+      expect(whereArg.organizations).toEqual({
+        some: { organizationId: { in: ['org-1'] } },
+      })
+    })
+
+    it('GENERAL_ADMIN은 조직 스코프 조건 없이 회사 전체 직원을 조회한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findMany.mockResolvedValue([baseEmployee])
+      mockPrisma.employee.count.mockResolvedValue(1)
+
+      await service.findAll(COMPANY_ID, { page: 1, limit: 20 }, requester)
+
+      const whereArg = mockPrisma.employee.findMany.mock.calls[0][0].where
+      expect(whereArg.companyId).toBe(COMPANY_ID)
+      expect(whereArg.organizations).toBeUndefined()
+      expect(mockPrisma.employeeOrganization.findMany).not.toHaveBeenCalled()
+    })
+  })
+
   describe('deactivate', () => {
     it('활성 직원을 퇴사 처리한다', async () => {
       const requester = makeRequester(AccessLevel.GENERAL_ADMIN)

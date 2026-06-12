@@ -101,16 +101,29 @@ export class RequestsService {
       where = { ...where, type }
     }
 
-    // allEmployees=true는 GENERAL_ADMIN 이상만 적용 (미만이면 무시하고 본인 것만 조회)
+    // allEmployees=true 적용 범위:
+    // - GENERAL_ADMIN 이상: 회사 전체 요청
+    // - ORG_ADMIN: 자기 소속 조직 구성원의 요청까지
+    // - 그 외: 무시하고 본인 것만 조회
     const isCompanyAdmin =
       ACCESS_LEVEL_HIERARCHY[requester.accessLevel] >=
       ACCESS_LEVEL_HIERARCHY[AccessLevel.GENERAL_ADMIN]
-    const includeAllEmployees = allEmployees === true && isCompanyAdmin
+    const isOrgAdmin = requester.accessLevel === AccessLevel.ORG_ADMIN
+    const includeAllEmployees = allEmployees === true && (isCompanyAdmin || isOrgAdmin)
 
     switch (scope) {
       case 'mine':
         if (!includeAllEmployees) {
           where = { ...where, requesterId: requester.employeeId }
+        } else if (isOrgAdmin) {
+          // ORG_ADMIN — requesterId 조건 대신 요청자가 내 소속 조직 구성원인 조건
+          const orgIds = await this.getEmployeeOrgIds(companyId, requester.employeeId)
+          where = {
+            ...where,
+            requester: {
+              organizations: { some: { organizationId: { in: orgIds } } },
+            },
+          }
         }
         break
 
@@ -836,7 +849,6 @@ export class RequestsService {
    * 최종 승인된 요청을 실데이터에 반영한다 (CLAUDE.md §7 — 승인 $transaction 내 원자 처리).
    * 여기서 던지는 예외는 승인 트랜잭션 전체를 롤백시킨다 (예: 잔액 부족 시 승인 자체가 실패).
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async applyApprovedRequest(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tx: any,
@@ -996,7 +1008,6 @@ export class RequestsService {
   }
 
   /** LEAVE_MODIFY 승인 → 기간 수정 + 잔액 차액 반영 */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async applyLeaveModify(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tx: any,
@@ -1079,7 +1090,6 @@ export class RequestsService {
   }
 
   /** SHIFT_CREATE 승인 → Shift 생성 (승인됨 = 확정 상태) */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async applyShiftCreate(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tx: any,
@@ -1208,7 +1218,6 @@ export class RequestsService {
   }
 
   /** ATTENDANCE_EDIT/CREATE 승인 → 출퇴근 기록 수정(없으면 생성) */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async applyAttendanceUpsert(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tx: any,
@@ -1339,8 +1348,14 @@ export class RequestsService {
     }
   }
 
+  /**
+   * 결재 권한 검증:
+   * - SUPER_ADMIN / GENERAL_ADMIN: 무조건 허용
+   * - ORG_ADMIN: 요청자(requesterId)가 자신의 소속 조직 구성원이면 허용 (조직 교집합 검사)
+   * - 그 외: 해당 문서의 PENDING ApprovalStep assignee일 때만 허용
+   */
   private async assertIsApprover(
-    request: { id: string; documentId: string | null },
+    request: { id: string; companyId: string; requesterId: string; documentId: string | null },
     requester: JwtPayload,
   ) {
     if (
@@ -1348,6 +1363,20 @@ export class RequestsService {
       requester.accessLevel === AccessLevel.GENERAL_ADMIN
     ) {
       return
+    }
+
+    // ORG_ADMIN — 같은 조직 구성원의 요청이면 승인/거절 가능
+    if (requester.accessLevel === AccessLevel.ORG_ADMIN) {
+      const [approverOrgIds, requesterOrgIds] = await Promise.all([
+        this.getEmployeeOrgIds(request.companyId, requester.employeeId),
+        this.getEmployeeOrgIds(request.companyId, request.requesterId),
+      ])
+      const approverOrgSet = new Set(approverOrgIds)
+      const hasOverlap = requesterOrgIds.some((orgId) => approverOrgSet.has(orgId))
+      if (hasOverlap) {
+        return
+      }
+      // 타 조직 요청이면 아래 ApprovalStep assignee 검사로 위임 (지명 결재자는 허용)
     }
 
     if (!request.documentId) {
@@ -1367,6 +1396,15 @@ export class RequestsService {
     }
   }
 
+  /** 직원의 소속 조직 ID 목록 (companyId 조건 포함 — 멀티테넌시) */
+  private async getEmployeeOrgIds(companyId: string, employeeId: string): Promise<string[]> {
+    const orgs = await this.prisma.employeeOrganization.findMany({
+      where: { employeeId, organization: { companyId } },
+      select: { organizationId: true },
+    })
+    return orgs.map((o: { organizationId: string }) => o.organizationId)
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async getCurrentRound(tx: any, requestId: string): Promise<number> {
     const lastApproval = await tx.requestApproval.findFirst({
@@ -1384,8 +1422,8 @@ export class RequestsService {
     })
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async isRoundComplete(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tx: any,
     requestId: string,
     round: number,

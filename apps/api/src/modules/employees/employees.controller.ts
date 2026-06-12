@@ -9,7 +9,6 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  ParseUUIDPipe,
 } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger'
 import { EmployeesService } from './employees.service'

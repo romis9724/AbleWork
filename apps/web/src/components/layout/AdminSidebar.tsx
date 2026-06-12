@@ -92,8 +92,10 @@ const NAV_ITEMS: NavItem[] = [
     label: '전자결재',
     icon: <AssignmentIcon />,
     children: [
-      { label: '기안양식', path: '/admin/approval/forms' },
-      { label: '결재 현황', path: '/admin/approval/status' },
+      { label: '기안양식 관리', path: '/admin/approval/forms' },
+      { label: '공용 결재선', path: '/admin/approval/lines' },
+      { label: '문서대장', path: '/admin/approval/documents' },
+      { label: '내 문서함', path: '/admin/approval/inbox' },
     ],
   },
   {

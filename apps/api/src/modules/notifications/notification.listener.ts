@@ -40,6 +40,33 @@ export class NotificationListener {
     await this.handleEvent('leave.rejected', payload)
   }
 
+  // ── 전자결재 (Phase 2) ───────────────────────────────────────────────────────
+
+  @OnEvent(EVENTS.DOCUMENT_SUBMITTED)
+  async handleDocumentSubmitted(payload: { documentId: string; companyId: string; drafterId?: string }) {
+    await this.handleEvent(EVENTS.DOCUMENT_SUBMITTED, payload)
+  }
+
+  @OnEvent(EVENTS.DOCUMENT_APPROVED)
+  async handleDocumentApproved(payload: { documentId: string; companyId: string; drafterId?: string }) {
+    await this.handleEvent(EVENTS.DOCUMENT_APPROVED, payload)
+  }
+
+  @OnEvent(EVENTS.DOCUMENT_REJECTED)
+  async handleDocumentRejected(payload: { documentId: string; companyId: string; drafterId?: string }) {
+    await this.handleEvent(EVENTS.DOCUMENT_REJECTED, payload)
+  }
+
+  @OnEvent(EVENTS.DOCUMENT_RECALLED)
+  async handleDocumentRecalled(payload: { documentId: string; companyId: string; drafterId?: string }) {
+    await this.handleEvent(EVENTS.DOCUMENT_RECALLED, payload)
+  }
+
+  @OnEvent(EVENTS.DOCUMENT_STEP_PENDING)
+  async handleDocumentStepPending(payload: { documentId: string; companyId: string; assigneeId?: string }) {
+    await this.handleEvent(EVENTS.DOCUMENT_STEP_PENDING, payload)
+  }
+
   private async handleEvent(eventType: string, payload: Record<string, unknown>): Promise<void> {
     const companyId = payload.companyId as string
 

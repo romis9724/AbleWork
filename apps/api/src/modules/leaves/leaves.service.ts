@@ -6,7 +6,6 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
 import { EVENTS } from '../../events/domain-events'
-import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { CreateLeaveGroupDto, UpdateLeaveGroupDto } from './dto/create-leave-group.dto'
 import { CreateLeaveTypeDto, UpdateLeaveTypeDto } from './dto/create-leave-type.dto'
 import {

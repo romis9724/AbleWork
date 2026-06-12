@@ -118,6 +118,7 @@ const mockPrisma = {
   },
   employeeOrganization: {
     findFirst: jest.fn(),
+    findMany: jest.fn(),
   },
   shift: {
     findFirst: jest.fn(),
@@ -404,6 +405,107 @@ describe('RequestsService', () => {
       await expect(service.approve(COMPANY_ID, REQUEST_ID, {}, requester)).rejects.toThrow(
         NotFoundException,
       )
+    })
+  })
+
+  // ── ORG_ADMIN 조직 스코프 (CLAUDE.md 필수 통합 테스트: 타 조직 접근 → 403) ──
+
+  describe('approve — ORG_ADMIN 조직 스코프', () => {
+    const ORG_ADMIN_ID = 'org-admin-1'
+    const makeOrgAdmin = (): JwtPayload => makeRequester(AccessLevel.ORG_ADMIN, ORG_ADMIN_ID)
+
+    /** employeeId별 소속 조직 mock 설정 */
+    const mockOrgMembership = (membership: Record<string, string[]>) => {
+      mockPrisma.employeeOrganization.findMany.mockImplementation(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ({ where }: any) =>
+          Promise.resolve(
+            (membership[where.employeeId] ?? []).map((organizationId) => ({ organizationId })),
+          ),
+      )
+    }
+
+    it('ORG_ADMIN이 같은 조직 구성원의 요청을 승인하면 성공한다', async () => {
+      const orgAdmin = makeOrgAdmin()
+
+      mockPrisma.request.findFirst.mockResolvedValue(basePendingRequest)
+      // 조직 교집합 존재: ORG_ADMIN(org-1), 요청자(org-1)
+      mockOrgMembership({ [ORG_ADMIN_ID]: ['org-1'], [EMPLOYEE_ID]: ['org-1'] })
+
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.requestApproval.findFirst.mockResolvedValue(null) // round = 1
+      mockPrisma.requestApproval.create.mockResolvedValue({})
+      mockPrisma.approvalRule.findFirst.mockResolvedValue(baseApprovalRule)
+      mockPrisma.requestApproval.findMany.mockResolvedValue([{ status: 'APPROVED' }])
+      mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest, status: 'APPROVED' })
+      mockPrisma.document.update.mockResolvedValue({})
+
+      await service.approve(COMPANY_ID, REQUEST_ID, {}, orgAdmin)
+
+      expect(mockPrisma.request.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: REQUEST_ID },
+          data: expect.objectContaining({ status: 'APPROVED' }),
+        }),
+      )
+      // ApprovalStep assignee 검사 없이 조직 교집합만으로 통과
+      expect(mockPrisma.approvalStep.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('ORG_ADMIN이 타 조직 요청을 승인하면 ForbiddenException(403)을 던진다', async () => {
+      const orgAdmin = makeOrgAdmin()
+
+      mockPrisma.request.findFirst.mockResolvedValue(basePendingRequest)
+      // 조직 교집합 없음: ORG_ADMIN(org-1), 요청자(org-2)
+      mockOrgMembership({ [ORG_ADMIN_ID]: ['org-1'], [EMPLOYEE_ID]: ['org-2'] })
+      // 지명 결재자(ApprovalStep assignee)도 아님
+      mockPrisma.approvalStep.findFirst.mockResolvedValue(null)
+
+      await expect(service.approve(COMPANY_ID, REQUEST_ID, {}, orgAdmin)).rejects.toThrow(
+        ForbiddenException,
+      )
+      expect(mockPrisma.request.update).not.toHaveBeenCalled()
+    })
+
+    it('ORG_ADMIN이 타 조직 요청이라도 ApprovalStep 지명 결재자면 승인할 수 있다', async () => {
+      const orgAdmin = makeOrgAdmin()
+
+      mockPrisma.request.findFirst.mockResolvedValue(basePendingRequest)
+      mockOrgMembership({ [ORG_ADMIN_ID]: ['org-1'], [EMPLOYEE_ID]: ['org-2'] })
+      // 지명 결재자
+      mockPrisma.approvalStep.findFirst.mockResolvedValue({ id: 'step-1', status: 'PENDING' })
+
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.requestApproval.findFirst.mockResolvedValue(null)
+      mockPrisma.requestApproval.create.mockResolvedValue({})
+      mockPrisma.approvalRule.findFirst.mockResolvedValue(baseApprovalRule)
+      mockPrisma.requestApproval.findMany.mockResolvedValue([{ status: 'APPROVED' }])
+      mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest, status: 'APPROVED' })
+      mockPrisma.document.update.mockResolvedValue({})
+
+      await service.approve(COMPANY_ID, REQUEST_ID, {}, orgAdmin)
+
+      expect(mockPrisma.request.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'APPROVED' }),
+        }),
+      )
+    })
+
+    it('ORG_ADMIN이 타 조직 요청을 거절해도 ForbiddenException(403)을 던진다', async () => {
+      const orgAdmin = makeOrgAdmin()
+
+      mockPrisma.request.findFirst.mockResolvedValue(basePendingRequest)
+      mockOrgMembership({ [ORG_ADMIN_ID]: ['org-1'], [EMPLOYEE_ID]: ['org-2'] })
+      mockPrisma.approvalStep.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.reject(COMPANY_ID, REQUEST_ID, { comment: 'x' }, orgAdmin),
+      ).rejects.toThrow(ForbiddenException)
     })
   })
 
@@ -714,6 +816,63 @@ describe('RequestsService', () => {
           where: expect.objectContaining({ status: 'PENDING' }),
         }),
       )
+    })
+
+    it('allEmployees=true + ORG_ADMIN이면 requesterId 대신 내 조직 구성원 조건으로 조회한다', async () => {
+      const orgAdmin = makeRequester(AccessLevel.ORG_ADMIN, 'org-admin-1')
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([
+        { organizationId: 'org-1' },
+        { organizationId: 'org-2' },
+      ])
+      mockPrisma.request.findMany.mockResolvedValue([])
+      mockPrisma.request.count.mockResolvedValue(0)
+
+      await service.findAll(
+        COMPANY_ID,
+        { scope: 'mine', allEmployees: true, page: 1, limit: 20 },
+        orgAdmin,
+      )
+
+      const whereArg = mockPrisma.request.findMany.mock.calls[0][0].where
+      expect(whereArg.requesterId).toBeUndefined()
+      expect(whereArg.requester).toEqual({
+        organizations: { some: { organizationId: { in: ['org-1', 'org-2'] } } },
+      })
+    })
+
+    it('allEmployees=true라도 EMPLOYEE는 무시되고 본인 요청만 조회한다', async () => {
+      const employee = makeRequester(AccessLevel.EMPLOYEE)
+      mockPrisma.request.findMany.mockResolvedValue([])
+      mockPrisma.request.count.mockResolvedValue(0)
+
+      await service.findAll(
+        COMPANY_ID,
+        { scope: 'mine', allEmployees: true, page: 1, limit: 20 },
+        employee,
+      )
+
+      expect(mockPrisma.request.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ requesterId: EMPLOYEE_ID }),
+        }),
+      )
+    })
+
+    it('allEmployees=true + GENERAL_ADMIN이면 회사 전체 요청을 조회한다 (requester 조건 없음)', async () => {
+      const generalAdmin = makeApprover()
+      mockPrisma.request.findMany.mockResolvedValue([])
+      mockPrisma.request.count.mockResolvedValue(0)
+
+      await service.findAll(
+        COMPANY_ID,
+        { scope: 'mine', allEmployees: true, page: 1, limit: 20 },
+        generalAdmin,
+      )
+
+      const whereArg = mockPrisma.request.findMany.mock.calls[0][0].where
+      expect(whereArg.requesterId).toBeUndefined()
+      expect(whereArg.requester).toBeUndefined()
+      expect(whereArg.companyId).toBe(COMPANY_ID)
     })
   })
 })
