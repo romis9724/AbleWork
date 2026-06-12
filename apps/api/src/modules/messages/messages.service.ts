@@ -74,13 +74,17 @@ export class MessagesService {
 
     await this.assertEmployeesBelongToCompany(companyId, recipientEmployeeIds)
 
-    const message = await this.prisma.message.create({
+    // TODO(다음 Wave): sendEmail=true인 경우 Nodemailer로 이메일 실발송 처리.
+    //   현재는 발송 옵션을 레코드에 기록하고 수신함(in-app) 발송만 수행한다.
+    return this.prisma.message.create({
       data: {
         companyId,
         type: 'manual',
         title,
         content,
         senderId,
+        templateId: templateId ?? null,
+        sendEmail,
         recipients: {
           create: recipientEmployeeIds.map((recipientId) => ({ recipientId })),
         },
@@ -89,14 +93,6 @@ export class MessagesService {
         recipients: true,
       },
     })
-
-    // TODO(다음 Wave): Message 모델에 templateId/sendEmail 컬럼 마이그레이션 추가 후
-    //   발송 메시지 레코드에 templateId·sendEmail(현재 값: sendEmail 변수)을 기록하고,
-    //   sendEmail=true인 경우 Nodemailer로 이메일 실발송 처리.
-    //   현재는 수신함(in-app) 발송만 수행한다.
-    void sendEmail
-
-    return message
   }
 
   // ── MSG-06 수신 메시지 목록 ───────────────────────────────────────────────────

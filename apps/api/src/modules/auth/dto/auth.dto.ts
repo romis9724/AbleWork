@@ -29,3 +29,26 @@ export const ChangePasswordSchema = z
   })
 
 export type ChangePasswordDto = z.infer<typeof ChangePasswordSchema>
+
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email('유효한 이메일을 입력하세요.'),
+})
+
+export type ForgotPasswordDto = z.infer<typeof ForgotPasswordSchema>
+
+export const ResetPasswordSchema = z
+  .object({
+    token: z.string().min(1, '토큰이 필요합니다.'),
+    newPassword: z
+      .string()
+      .min(8, '새 비밀번호는 8자 이상이어야 합니다.')
+      .regex(/[A-Za-z]/, '비밀번호에 영문자를 포함하세요.')
+      .regex(/[0-9]/, '비밀번호에 숫자를 포함하세요.'),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: '새 비밀번호가 일치하지 않습니다.',
+    path: ['confirmPassword'],
+  })
+
+export type ResetPasswordDto = z.infer<typeof ResetPasswordSchema>

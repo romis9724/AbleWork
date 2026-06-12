@@ -29,6 +29,7 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
+import ConfirmDialog from '@/components/common/ConfirmDialog'
 import apiClient from '@/lib/api-client'
 
 interface CustomField { fieldName: string; fieldType: string; isRequired: boolean }
@@ -45,6 +46,7 @@ export default function CustomRequestTypesPage() {
   const [name, setName] = useState('')
   const [enablePdf, setEnablePdf] = useState(false)
   const [fields, setFields] = useState<CustomField[]>([])
+  const [deleteTarget, setDeleteTarget] = useState<CustomRequestType | null>(null)
   const [snack, setSnack] = useState<{ open: boolean; msg: string; sev: 'success' | 'error' }>({ open: false, msg: '', sev: 'success' })
 
   const { data: types = [], isLoading } = useQuery<CustomRequestType[]>({
@@ -57,6 +59,18 @@ export default function CustomRequestTypesPage() {
     mutationFn: (d: unknown) => apiClient.post('/requests/custom-types', d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['custom-request-types'] }); setOpen(false); setSnack({ open: true, msg: '추가됐습니다.', sev: 'success' }) },
     onError: () => setSnack({ open: true, msg: '저장에 실패했습니다.', sev: 'error' }),
+  })
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => apiClient.patch(`/requests/custom-types/${id}`, { isActive }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['custom-request-types'] }); setSnack({ open: true, msg: '변경됐습니다.', sev: 'success' }) },
+    onError: () => setSnack({ open: true, msg: '변경에 실패했습니다.', sev: 'error' }),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/requests/custom-types/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['custom-request-types'] }); setDeleteTarget(null); setSnack({ open: true, msg: '삭제됐습니다.', sev: 'success' }) },
+    onError: () => setSnack({ open: true, msg: '삭제에 실패했습니다.', sev: 'error' }),
   })
 
   function addField() { setFields(f => [...f, { fieldName: '', fieldType: 'text', isRequired: false }]) }
@@ -78,13 +92,17 @@ export default function CustomRequestTypesPage() {
       {types.length === 0 ? <EmptyState message="커스텀 요청 유형이 없습니다." action={<Button variant="outlined" onClick={openAdd}>유형 추가</Button>} /> : (
         <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
           <Table>
-            <TableHead><TableRow sx={{ bgcolor: 'background.default' }}><TableCell>유형명</TableCell><TableCell>PDF</TableCell><TableCell>상태</TableCell></TableRow></TableHead>
+            <TableHead><TableRow sx={{ bgcolor: 'background.default' }}><TableCell>유형명</TableCell><TableCell>PDF</TableCell><TableCell>상태</TableCell><TableCell align="right">관리</TableCell></TableRow></TableHead>
             <TableBody>
               {types.map(t => (
                 <TableRow key={t.id} hover>
                   <TableCell sx={{ fontWeight: 600 }}>{t.name}</TableCell>
                   <TableCell>{t.enablePdf ? <Chip label="PDF 가능" size="small" color="info" /> : '—'}</TableCell>
                   <TableCell><Chip label={t.isActive ? '활성' : '비활성'} color={t.isActive ? 'success' : 'default'} size="small" variant="outlined" /></TableCell>
+                  <TableCell align="right">
+                    <Switch size="small" checked={t.isActive} onChange={e => toggleMutation.mutate({ id: t.id, isActive: e.target.checked })} inputProps={{ 'aria-label': `${t.name} 활성화 토글` }} />
+                    <IconButton size="small" color="error" onClick={() => setDeleteTarget(t)} aria-label={`${t.name} 삭제`}><DeleteIcon fontSize="small" /></IconButton>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -117,6 +135,7 @@ export default function CustomRequestTypesPage() {
           <Button onClick={handleSave} variant="contained" disabled={createMutation.isPending}>추가</Button>
         </DialogActions>
       </Dialog>
+      <ConfirmDialog open={!!deleteTarget} title="커스텀 요청 유형 삭제" message={`'${deleteTarget?.name ?? ''}' 유형을 삭제(비활성화)하시겠습니까?`} confirmLabel="삭제" onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)} onCancel={() => setDeleteTarget(null)} />
       <Snackbar open={snack.open} autoHideDuration={4000} onClose={() => setSnack(s => ({ ...s, open: false }))}><Alert severity={snack.sev}>{snack.msg}</Alert></Snackbar>
     </>
   )

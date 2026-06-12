@@ -63,6 +63,7 @@ const mockPrisma = {
   leaveGroup: {
     findMany: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
     findFirst: jest.fn(),
   },
   leaveType: {
@@ -74,13 +75,20 @@ const mockPrisma = {
   leaveAccrualRule: {
     findMany: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
     findFirst: jest.fn(),
+  },
+  leaveAccrualRuleItem: {
+    deleteMany: jest.fn(),
+    createMany: jest.fn(),
   },
   leaveBalance: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
     upsert: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
   },
   leave: {
     findMany: jest.fn(),
@@ -186,6 +194,210 @@ describe('LeavesService', () => {
       }
 
       await expect(service.createType(COMPANY_ID, dto)).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  // ── updateGroup / deleteGroup ────────────────────────────────────────────────
+
+  describe('updateGroup', () => {
+    it('회사에 속한 그룹을 수정한다', async () => {
+      mockPrisma.leaveGroup.findFirst.mockResolvedValue(baseGroup)
+      mockPrisma.leaveGroup.update.mockResolvedValue({ ...baseGroup, name: '연차(수정)' })
+
+      const result = await service.updateGroup(COMPANY_ID, GROUP_ID, { name: '연차(수정)' })
+
+      expect(result.name).toBe('연차(수정)')
+      expect(mockPrisma.leaveGroup.update).toHaveBeenCalledWith({
+        where: { id: GROUP_ID },
+        data: { name: '연차(수정)' },
+      })
+    })
+
+    it('타 회사 그룹이면 NotFoundException을 던진다', async () => {
+      mockPrisma.leaveGroup.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.updateGroup(COMPANY_ID, 'other-group', { name: 'x' }),
+      ).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  describe('deleteGroup', () => {
+    it('소프트 삭제 — isActive를 false로 변경한다', async () => {
+      mockPrisma.leaveGroup.findFirst.mockResolvedValue(baseGroup)
+      mockPrisma.leaveGroup.update.mockResolvedValue({ ...baseGroup, isActive: false })
+
+      const result = await service.deleteGroup(COMPANY_ID, GROUP_ID)
+
+      expect(result.isActive).toBe(false)
+      expect(mockPrisma.leaveGroup.update).toHaveBeenCalledWith({
+        where: { id: GROUP_ID },
+        data: { isActive: false },
+      })
+    })
+  })
+
+  // ── deleteType ───────────────────────────────────────────────────────────────
+
+  describe('deleteType', () => {
+    it('소프트 삭제 — isActive를 false로 변경한다', async () => {
+      mockPrisma.leaveType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.leaveType.update.mockResolvedValue({ ...baseType, isActive: false })
+
+      const result = await service.deleteType(COMPANY_ID, TYPE_ID)
+
+      expect(result.isActive).toBe(false)
+      expect(mockPrisma.leaveType.update).toHaveBeenCalledWith({
+        where: { id: TYPE_ID },
+        data: { isActive: false },
+      })
+    })
+
+    it('타 회사 유형이면 NotFoundException을 던진다', async () => {
+      mockPrisma.leaveType.findFirst.mockResolvedValue(null)
+
+      await expect(service.deleteType(COMPANY_ID, 'other-type')).rejects.toThrow(
+        NotFoundException,
+      )
+    })
+  })
+
+  // ── updateAccrualRule / deleteAccrualRule ────────────────────────────────────
+
+  describe('updateAccrualRule', () => {
+    const baseRule = {
+      id: 'rule-1',
+      companyId: COMPANY_ID,
+      leaveGroupId: GROUP_ID,
+      name: '연차 발생',
+      isActive: true,
+    }
+
+    it('items 제공 시 전체 교체 후 규칙을 수정한다', async () => {
+      mockPrisma.leaveAccrualRule.findFirst.mockResolvedValue(baseRule)
+      mockPrisma.leaveAccrualRule.update.mockResolvedValue({ ...baseRule, name: '수정됨' })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma))
+
+      const items = [
+        { accrualBasis: 'yearly' as const, tenureYears: 1, accrualDays: 15, sortOrder: 0 },
+      ]
+      const result = await service.updateAccrualRule(COMPANY_ID, 'rule-1', {
+        name: '수정됨',
+        items,
+      })
+
+      expect(mockPrisma.leaveAccrualRuleItem.deleteMany).toHaveBeenCalledWith({
+        where: { ruleId: 'rule-1' },
+      })
+      expect(mockPrisma.leaveAccrualRuleItem.createMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ ruleId: 'rule-1', accrualDays: 15 })],
+      })
+      expect(result.name).toBe('수정됨')
+    })
+
+    it('items 미제공 시 규칙 필드만 수정한다', async () => {
+      mockPrisma.leaveAccrualRule.findFirst.mockResolvedValue(baseRule)
+      mockPrisma.leaveAccrualRule.update.mockResolvedValue({ ...baseRule, isActive: false })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma))
+
+      await service.updateAccrualRule(COMPANY_ID, 'rule-1', { isActive: false })
+
+      expect(mockPrisma.leaveAccrualRuleItem.deleteMany).not.toHaveBeenCalled()
+    })
+
+    it('존재하지 않는 규칙이면 NotFoundException을 던진다', async () => {
+      mockPrisma.leaveAccrualRule.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.updateAccrualRule(COMPANY_ID, 'nonexistent', { name: 'x' }),
+      ).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  describe('deleteAccrualRule', () => {
+    it('규칙을 하드 삭제한다', async () => {
+      mockPrisma.leaveAccrualRule.findFirst.mockResolvedValue({
+        id: 'rule-1',
+        companyId: COMPANY_ID,
+      })
+      mockPrisma.leaveAccrualRule.delete.mockResolvedValue({ id: 'rule-1' })
+
+      await service.deleteAccrualRule(COMPANY_ID, 'rule-1')
+
+      expect(mockPrisma.leaveAccrualRule.delete).toHaveBeenCalledWith({
+        where: { id: 'rule-1' },
+      })
+    })
+
+    it('존재하지 않는 규칙이면 NotFoundException을 던진다', async () => {
+      mockPrisma.leaveAccrualRule.findFirst.mockResolvedValue(null)
+
+      await expect(service.deleteAccrualRule(COMPANY_ID, 'nonexistent')).rejects.toThrow(
+        NotFoundException,
+      )
+    })
+  })
+
+  // ── createLeave (관리자 직접 추가) ───────────────────────────────────────────
+
+  describe('createLeave', () => {
+    const dto = {
+      employeeId: EMPLOYEE_ID,
+      leaveTypeId: TYPE_ID,
+      startDate: '2024-06-03',
+      endDate: '2024-06-05',
+      daysUsed: 1,
+    }
+
+    it('잔액 검증 후 Leave 생성 + 잔액을 차감한다 (daysUsed = 기간일수 × deductionDays)', async () => {
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.leaveType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.leaveBalance.findUnique.mockResolvedValue(baseBalance)
+      mockPrisma.leave.create.mockResolvedValue({ id: 'leave-1', daysUsed: 3 })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma))
+
+      const result = await service.createLeave(COMPANY_ID, dto)
+
+      // 6/3~6/5 = 3일 × deductionDays(1) = 3
+      expect(mockPrisma.leave.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            employeeId: EMPLOYEE_ID,
+            daysUsed: 3,
+            status: 'APPROVED',
+          }),
+        }),
+      )
+      expect(mockPrisma.leaveBalance.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            usedDays: { increment: 3 },
+            remainingDays: { decrement: 3 },
+          },
+        }),
+      )
+      expect(result).toEqual({ id: 'leave-1', daysUsed: 3 })
+    })
+
+    it('잔액이 부족하면 BadRequestException을 던지고 Leave를 생성하지 않는다', async () => {
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.leaveType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.leaveBalance.findUnique.mockResolvedValue({
+        ...baseBalance,
+        remainingDays: Number(1),
+      })
+
+      await expect(service.createLeave(COMPANY_ID, dto)).rejects.toThrow(BadRequestException)
+      expect(mockPrisma.leave.create).not.toHaveBeenCalled()
+    })
+
+    it('타 회사 직원이면 NotFoundException을 던진다', async () => {
+      mockPrisma.employee.findFirst.mockResolvedValue(null)
+
+      await expect(service.createLeave(COMPANY_ID, dto)).rejects.toThrow(NotFoundException)
     })
   })
 

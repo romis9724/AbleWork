@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -25,6 +27,8 @@ import {
   CreateRequestSchema,
   CreateApprovalRuleDto,
   CreateApprovalRuleSchema,
+  UpdateApprovalRuleDto,
+  UpdateApprovalRuleSchema,
   ApproveRejectDto,
   ApproveRejectSchema,
   BulkApproveDto,
@@ -78,6 +82,33 @@ export class RequestsController {
     @Body(new ZodValidationPipe(CreateApprovalRuleSchema)) dto: CreateApprovalRuleDto,
   ) {
     return this.requestsService.createApprovalRule(companyId, dto)
+  }
+
+  // HR-07-04b 승인 규칙 수정
+  // NOTE: ':id' 단일 세그먼트 라우트보다 앞에 선언해 라우트 충돌 방지 (NestJS는 선언 순서 우선)
+  @Patch('approval-rules/:id')
+  @Roles(AccessLevel.SUPER_ADMIN)
+  @ApiOperation({ summary: '승인 규칙 수정 (SUPER_ADMIN, details 전체 교체)' })
+  @ApiParam({ name: 'id', type: String })
+  updateApprovalRule(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(UpdateApprovalRuleSchema)) dto: UpdateApprovalRuleDto,
+  ) {
+    return this.requestsService.updateApprovalRule(companyId, id, dto)
+  }
+
+  // HR-07-04c 승인 규칙 삭제 (소프트)
+  @Delete('approval-rules/:id')
+  @Roles(AccessLevel.SUPER_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '승인 규칙 삭제 (SUPER_ADMIN, isActive=false 소프트 삭제)' })
+  @ApiParam({ name: 'id', type: String })
+  deleteApprovalRule(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.requestsService.deleteApprovalRule(companyId, id)
   }
 
   // HR-07-05 승인

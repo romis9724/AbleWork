@@ -7,6 +7,7 @@ export interface LeaveGroup {
   name: string
   code?: string
   overageLimitDays: number
+  isActive?: boolean
 }
 
 export interface LeaveType {
@@ -45,6 +46,23 @@ export const useCreateLeaveGroup = () => {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: unknown) => apiClient.post('/leaves/groups', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: GROUPS_KEY }),
+  })
+}
+
+export const useUpdateLeaveGroup = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
+      apiClient.patch(`/leaves/groups/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: GROUPS_KEY }),
+  })
+}
+
+export const useDeleteLeaveGroup = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/leaves/groups/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: GROUPS_KEY }),
   })
 }
@@ -91,6 +109,23 @@ export const useCreateAccrualRule = () => {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: unknown) => apiClient.post('/leaves/accrual-rules', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: RULES_KEY }),
+  })
+}
+
+export const useUpdateAccrualRule = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
+      apiClient.patch(`/leaves/accrual-rules/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: RULES_KEY }),
+  })
+}
+
+export const useDeleteAccrualRule = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/leaves/accrual-rules/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: RULES_KEY }),
   })
 }
@@ -156,6 +191,25 @@ export const useCompensationAccrual = () => {
     mutationFn: (data: CompensationAccrualPayload) =>
       apiClient.post('/leaves/compensation', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['leave-balance'] }),
+  })
+}
+
+export interface CreateLeavePayload {
+  employeeId: string
+  leaveTypeId: string
+  startDate: string
+  endDate: string
+  reason?: string
+}
+
+export const useCreateLeave = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: CreateLeavePayload) => apiClient.post('/leaves', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['leave-balance'] })
+      qc.invalidateQueries({ queryKey: ['leaves'] })
+    },
   })
 }
 

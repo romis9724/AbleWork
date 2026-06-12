@@ -8,6 +8,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
+import { CompanySettingsService } from '../companies/company-settings.service'
 import { AccessLevel, ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
 import { CreateEmployeeDto } from './dto/create-employee.dto'
 import { UpdateEmployeeDto } from './dto/update-employee.dto'
@@ -20,6 +21,7 @@ export class EmployeesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly settingsService: CompanySettingsService,
   ) {}
 
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
@@ -172,6 +174,11 @@ export class EmployeesService {
     await this.guardOrgScope(requester, existing)
     this.guardUpdatePermission(requester, id, dto)
 
+    // 본인 수정(이름/전화번호)은 권한 설정의 영향을 받지 않는다
+    if (requester.employeeId !== id) {
+      await this.guardOrgAdminManagePermission(requester)
+    }
+
     const { organizationIds, primaryOrganizationId, positionIds, joinedAt, resignedAt, ...rest } = dto
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -222,6 +229,7 @@ export class EmployeesService {
   ) {
     const existing = await this.assertEmployee(companyId, id)
     await this.guardOrgScope(requester, existing)
+    await this.guardOrgAdminManagePermission(requester)
 
     if (!existing.isActive) {
       throw new BadRequestException({
@@ -333,6 +341,28 @@ export class EmployeesService {
           message: '자신과 같거나 높은 권한은 부여할 수 없습니다.',
         })
       }
+    }
+  }
+
+  /**
+   * 권한 설정(permission.org_admin_can_manage_employees, 기본 true)이 꺼져 있으면
+   * ORG_ADMIN의 직원 추가/수정/퇴사 처리를 차단한다.
+   */
+  private async guardOrgAdminManagePermission(requester: JwtPayload) {
+    if (requester.accessLevel !== AccessLevel.ORG_ADMIN) return
+
+    const canManage = await this.settingsService.get<boolean>(
+      requester.companyId,
+      'permission',
+      'org_admin_can_manage_employees',
+      true,
+    )
+
+    if (canManage === false) {
+      throw new ForbiddenException({
+        code: 'EMPLOYEE_MANAGE_PERMISSION_DENIED',
+        message: '조직관리자의 직원 관리 권한이 비활성화되어 있습니다.',
+      })
     }
   }
 

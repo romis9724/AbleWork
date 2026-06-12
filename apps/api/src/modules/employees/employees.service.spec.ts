@@ -7,6 +7,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { EmployeesService } from './employees.service'
 import { PrismaService } from '../../prisma/prisma.service'
+import { CompanySettingsService } from '../companies/company-settings.service'
 import { AccessLevel } from '@ablework/shared-constants'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 
@@ -76,6 +77,9 @@ const mockPrisma = {
 
 const mockEvents = { emit: jest.fn() }
 
+// 기본값: org_admin_can_manage_employees = true (권한 허용)
+const mockSettings = { get: jest.fn().mockResolvedValue(true) }
+
 // ── 테스트 ────────────────────────────────────────────────────────────────────
 
 describe('EmployeesService', () => {
@@ -87,6 +91,7 @@ describe('EmployeesService', () => {
         EmployeesService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
+        { provide: CompanySettingsService, useValue: mockSettings },
       ],
     }).compile()
 
@@ -177,6 +182,74 @@ describe('EmployeesService', () => {
       await expect(
         service.deactivate(COMPANY_ID, 'nonexistent', undefined, requester),
       ).rejects.toThrow(NotFoundException)
+    })
+
+    it('권한 설정이 꺼져 있으면 ORG_ADMIN의 퇴사 처리를 차단한다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockSettings.get.mockResolvedValueOnce(false) // org_admin_can_manage_employees = false
+
+      await expect(
+        service.deactivate(COMPANY_ID, EMPLOYEE_ID, undefined, requester),
+      ).rejects.toThrow(ForbiddenException)
+      expect(mockSettings.get).toHaveBeenCalledWith(
+        COMPANY_ID,
+        'permission',
+        'org_admin_can_manage_employees',
+        true,
+      )
+    })
+
+    it('권한 설정이 켜져 있으면 ORG_ADMIN도 퇴사 처리가 가능하다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, isActive: false })
+
+      const result = await service.deactivate(COMPANY_ID, EMPLOYEE_ID, undefined, requester)
+      expect(result.isActive).toBe(false)
+    })
+
+    it('GENERAL_ADMIN은 권한 설정과 무관하게 퇴사 처리가 가능하다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, isActive: false })
+      mockSettings.get.mockResolvedValue(false)
+
+      const result = await service.deactivate(COMPANY_ID, EMPLOYEE_ID, undefined, requester)
+      expect(result.isActive).toBe(false)
+      mockSettings.get.mockResolvedValue(true) // 기본값 복원
+    })
+  })
+
+  // ── update (권한 설정 enforcement) ──────────────────────────────────────────
+
+  describe('update — 권한 설정 enforcement', () => {
+    it('권한 설정이 꺼져 있으면 ORG_ADMIN의 타인 수정은 차단된다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockSettings.get.mockResolvedValueOnce(false)
+
+      await expect(
+        service.update(COMPANY_ID, EMPLOYEE_ID, { name: '새이름' }, requester),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('권한 설정이 꺼져 있어도 본인 이름/전화번호 수정은 허용된다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN, EMPLOYEE_ID)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockSettings.get.mockResolvedValue(false)
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma),
+      )
+      mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, name: '새이름' })
+
+      const result = await service.update(COMPANY_ID, EMPLOYEE_ID, { name: '새이름' }, requester)
+      expect(result.name).toBe('새이름')
+      mockSettings.get.mockResolvedValue(true) // 기본값 복원
     })
   })
 

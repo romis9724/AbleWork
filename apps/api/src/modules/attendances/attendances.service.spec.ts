@@ -3,12 +3,15 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
+import { AccessLevel } from '@ablework/shared-constants'
 import { AttendancesService } from './attendances.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
 import { EVENTS } from '../../events/domain-events'
+import { JwtPayload } from '../../common/types/jwt-payload.type'
 
 // ── 픽스처 ───────────────────────────────────────────────────────────────────
 
@@ -329,6 +332,69 @@ describe('AttendancesService', () => {
           data: expect.objectContaining({ isConfirmed: true }),
         }),
       )
+    })
+  })
+
+  // ── unconfirm ────────────────────────────────────────────────────────────
+
+  describe('unconfirm', () => {
+    const makeRequester = (accessLevel: AccessLevel): JwtPayload => ({
+      sub: 'user-1',
+      employeeId: 'req-emp-1',
+      companyId: COMPANY_ID,
+      accessLevel,
+    })
+
+    it('GENERAL_ADMIN이 ID 목록으로 확정을 해제한다', async () => {
+      mockPrisma.attendance.updateMany.mockResolvedValue({ count: 2 })
+
+      const result = await service.unconfirm(
+        COMPANY_ID,
+        { attendanceIds: ['11111111-1111-1111-1111-111111111111'] },
+        makeRequester(AccessLevel.GENERAL_ADMIN),
+      )
+
+      expect(result.unconfirmed).toBe(2)
+      expect(mockPrisma.attendance.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            employee: { companyId: COMPANY_ID },
+            isConfirmed: true,
+          }),
+          data: { isConfirmed: false, confirmedBy: null, confirmedAt: null },
+        }),
+      )
+    })
+
+    it('기간(startDate/endDate)으로 확정을 해제한다', async () => {
+      mockPrisma.attendance.updateMany.mockResolvedValue({ count: 3 })
+
+      const result = await service.unconfirm(
+        COMPANY_ID,
+        { startDate: '2024-06-01', endDate: '2024-06-30' },
+        makeRequester(AccessLevel.SUPER_ADMIN),
+      )
+
+      expect(result.unconfirmed).toBe(3)
+      expect(mockPrisma.attendance.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            isConfirmed: true,
+            clockInAt: expect.any(Object),
+          }),
+        }),
+      )
+    })
+
+    it('ORG_ADMIN이 확정 해제를 시도하면 ForbiddenException을 던진다', async () => {
+      await expect(
+        service.unconfirm(
+          COMPANY_ID,
+          { startDate: '2024-06-01', endDate: '2024-06-30' },
+          makeRequester(AccessLevel.ORG_ADMIN),
+        ),
+      ).rejects.toThrow(ForbiddenException)
+      expect(mockPrisma.attendance.updateMany).not.toHaveBeenCalled()
     })
   })
 })

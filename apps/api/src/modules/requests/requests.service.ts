@@ -13,6 +13,7 @@ import { LeavesService } from '../leaves/leaves.service'
 import {
   CreateRequestDto,
   CreateApprovalRuleDto,
+  UpdateApprovalRuleDto,
   ApproveRejectDto,
   BulkApproveDto,
   RequestFilterDto,
@@ -428,7 +429,7 @@ export class RequestsService {
 
   async findApprovalRules(companyId: string) {
     return this.prisma.approvalRule.findMany({
-      where: { companyId },
+      where: { companyId, isActive: true },
       orderBy: [{ requestType: 'asc' }, { priority: 'desc' }],
       include: {
         details: { orderBy: { sortOrder: 'asc' } },
@@ -452,6 +453,59 @@ export class RequestsService {
       },
       include: { details: true },
     })
+  }
+
+  // ── HR-07-04b 승인 규칙 수정 ─────────────────────────────────────────────────
+
+  async updateApprovalRule(companyId: string, ruleId: string, dto: UpdateApprovalRuleDto) {
+    await this.assertRuleBelongsToCompany(companyId, ruleId)
+    const { details, ...ruleData } = dto
+
+    // details 배열이 오면 기존 details를 전체 삭제 후 재생성 (전체 교체 방식)
+    return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (tx: any) => {
+      if (details) {
+        await tx.approvalRuleDetail.deleteMany({ where: { ruleId } })
+      }
+
+      return tx.approvalRule.update({
+        where: { id: ruleId },
+        data: {
+          ...ruleData,
+          scopeOrgIds: ruleData.scopeOrgIds ?? undefined,
+          scopePositionIds: ruleData.scopePositionIds ?? undefined,
+          ...(details && { details: { create: details } }),
+        },
+        include: { details: { orderBy: { sortOrder: 'asc' } } },
+      })
+    })
+  }
+
+  // ── HR-07-04c 승인 규칙 삭제 (소프트) ────────────────────────────────────────
+
+  async deleteApprovalRule(companyId: string, ruleId: string) {
+    await this.assertRuleBelongsToCompany(companyId, ruleId)
+
+    await this.prisma.approvalRule.update({
+      where: { id: ruleId },
+      data: { isActive: false },
+    })
+
+    return { deleted: true }
+  }
+
+  /** 승인 규칙이 해당 회사 소속인지 검증 — 멀티테넌시 */
+  private async assertRuleBelongsToCompany(companyId: string, ruleId: string) {
+    const rule = await this.prisma.approvalRule.findFirst({
+      where: { id: ruleId, companyId },
+    })
+    if (!rule) {
+      throw new NotFoundException({
+        code: 'APPROVAL_RULE_NOT_FOUND',
+        message: '승인 규칙을 찾을 수 없습니다.',
+      })
+    }
+    return rule
   }
 
   // ── HR-07-05 승인 ────────────────────────────────────────────────────────────

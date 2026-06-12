@@ -39,6 +39,8 @@ import EmptyState from '@/components/common/EmptyState'
 import {
   useLeaveGroups,
   useCreateLeaveGroup,
+  useUpdateLeaveGroup,
+  useDeleteLeaveGroup,
   useLeaveTypes,
   useCreateLeaveType,
   useUpdateLeaveType,
@@ -86,13 +88,17 @@ export default function LeaveTypesPage() {
   const { data: types = [], isLoading: typesLoading } = useLeaveTypes()
 
   const createGroupMutation = useCreateLeaveGroup()
+  const updateGroupMutation = useUpdateLeaveGroup()
+  const deleteGroupMutation = useDeleteLeaveGroup()
   const createTypeMutation = useCreateLeaveType()
   const updateTypeMutation = useUpdateLeaveType()
   const deleteTypeMutation = useDeleteLeaveType()
 
   // Group dialog
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<LeaveGroup | null>(null)
   const [groupForm, setGroupForm] = useState<GroupForm>(defaultGroupForm)
+  const [deleteGroupTarget, setDeleteGroupTarget] = useState<LeaveGroup | null>(null)
 
   // Type dialog
   const [typeDialogOpen, setTypeDialogOpen] = useState(false)
@@ -115,22 +121,50 @@ export default function LeaveTypesPage() {
   // ── Group actions ────────────────────────────────────────────────────────────
 
   function openAddGroup() {
+    setEditingGroup(null)
     setGroupForm(defaultGroupForm)
+    setGroupDialogOpen(true)
+  }
+
+  function openEditGroup(g: LeaveGroup) {
+    setEditingGroup(g)
+    setGroupForm({
+      name: g.name,
+      code: g.code ?? '',
+      overageLimitDays: String(g.overageLimitDays),
+    })
     setGroupDialogOpen(true)
   }
 
   async function handleSaveGroup() {
     if (!groupForm.name.trim()) return
+    const payload = {
+      name: groupForm.name.trim(),
+      code: groupForm.code.trim() || undefined,
+      overageLimitDays: Number(groupForm.overageLimitDays),
+    }
     try {
-      await createGroupMutation.mutateAsync({
-        name: groupForm.name.trim(),
-        code: groupForm.code.trim() || undefined,
-        overageLimitDays: Number(groupForm.overageLimitDays),
-      })
+      if (editingGroup) {
+        await updateGroupMutation.mutateAsync({ id: editingGroup.id, ...payload })
+        showSnack('휴가 그룹이 수정되었습니다.')
+      } else {
+        await createGroupMutation.mutateAsync(payload)
+        showSnack('휴가 그룹이 추가되었습니다.')
+      }
       setGroupDialogOpen(false)
-      showSnack('휴가 그룹이 추가되었습니다.')
     } catch {
       showSnack('저장에 실패했습니다.', 'error')
+    }
+  }
+
+  async function handleDeleteGroup() {
+    if (!deleteGroupTarget) return
+    try {
+      await deleteGroupMutation.mutateAsync(deleteGroupTarget.id)
+      setDeleteGroupTarget(null)
+      showSnack('삭제되었습니다.')
+    } catch {
+      showSnack('삭제에 실패했습니다.', 'error')
     }
   }
 
@@ -234,6 +268,8 @@ export default function LeaveTypesPage() {
                     <TableCell>그룹명</TableCell>
                     <TableCell>코드</TableCell>
                     <TableCell>초과 제한 일수</TableCell>
+                    <TableCell>상태</TableCell>
+                    <TableCell align="right">액션</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -242,6 +278,22 @@ export default function LeaveTypesPage() {
                       <TableCell sx={{ fontWeight: 600 }}>{g.name}</TableCell>
                       <TableCell>{g.code ?? '—'}</TableCell>
                       <TableCell>{g.overageLimitDays}일</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={g.isActive === false ? '비활성' : '활성'}
+                          color={g.isActive === false ? 'default' : 'success'}
+                          size="small"
+                          variant="outlined"
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton size="small" onClick={() => openEditGroup(g)}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton size="small" color="error" onClick={() => setDeleteGroupTarget(g)}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -323,9 +375,9 @@ export default function LeaveTypesPage() {
         </>
       )}
 
-      {/* ── Add Group Dialog ───────────────────────────────────────────────────── */}
+      {/* ── Add/Edit Group Dialog ──────────────────────────────────────────────── */}
       <Dialog open={groupDialogOpen} onClose={() => setGroupDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>휴가 그룹 추가</DialogTitle>
+        <DialogTitle>{editingGroup ? '휴가 그룹 수정' : '휴가 그룹 추가'}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
           <TextField
             label="그룹명"
@@ -354,9 +406,13 @@ export default function LeaveTypesPage() {
           <Button
             variant="contained"
             onClick={handleSaveGroup}
-            disabled={createGroupMutation.isPending || !groupForm.name.trim()}
+            disabled={
+              createGroupMutation.isPending ||
+              updateGroupMutation.isPending ||
+              !groupForm.name.trim()
+            }
           >
-            추가
+            {editingGroup ? '수정' : '추가'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -434,7 +490,19 @@ export default function LeaveTypesPage() {
         </DialogActions>
       </Dialog>
 
-      {/* ── Delete Confirm ─────────────────────────────────────────────────────── */}
+      {/* ── Delete Group Confirm ───────────────────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!deleteGroupTarget}
+        title="휴가 그룹 삭제"
+        message={`"${deleteGroupTarget?.name}" 그룹을 삭제(비활성화)하시겠습니까?`}
+        confirmLabel="삭제"
+        confirmColor="error"
+        loading={deleteGroupMutation.isPending}
+        onConfirm={handleDeleteGroup}
+        onCancel={() => setDeleteGroupTarget(null)}
+      />
+
+      {/* ── Delete Type Confirm ────────────────────────────────────────────────── */}
       <ConfirmDialog
         open={!!deleteTarget}
         title="휴가 유형 삭제"

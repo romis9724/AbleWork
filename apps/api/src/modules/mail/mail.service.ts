@@ -56,7 +56,7 @@ export class MailService implements IMailService {
   async sendPasswordReset(to: string, token: string): Promise<void> {
     const from = this.config.get<string>('MAIL_FROM', 'no-reply@ablework.kr')
     const frontendUrl = this.config.get<string>('FRONTEND_URL', 'http://localhost:3000')
-    const resetLink = `${frontendUrl}/auth/reset-password?token=${token}`
+    const resetLink = `${frontendUrl}/reset-password?token=${token}`
 
     const html = `
 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
@@ -65,7 +65,7 @@ export class MailService implements IMailService {
   <a href="${resetLink}" style="display: inline-block; background: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0;">
     비밀번호 재설정
   </a>
-  <p style="color: #666;">이 링크는 1시간 후 만료됩니다. 본인이 요청하지 않은 경우 이 이메일을 무시하세요.</p>
+  <p style="color: #666;">이 링크는 30분 후 만료됩니다. 본인이 요청하지 않은 경우 이 이메일을 무시하세요.</p>
 </div>
 `
 

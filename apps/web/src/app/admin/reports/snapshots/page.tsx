@@ -26,7 +26,7 @@ import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import apiClient from '@/lib/api-client'
 
-interface ReportSnapshot { id: string; periodStart: string; periodEnd: string; isLocked: boolean; createdAt: string }
+interface ReportSnapshot { id: string; name?: string | null; periodStart: string; periodEnd: string; isLocked: boolean; createdAt: string }
 
 export default function ReportSnapshotsPage() {
   const qc = useQueryClient()
@@ -66,10 +66,11 @@ export default function ReportSnapshotsPage() {
       {snapshots.length === 0 ? <EmptyState message="생성된 스냅샷이 없습니다." action={<Button variant="outlined" onClick={() => setOpen(true)}>스냅샷 생성</Button>} /> : (
         <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
           <Table>
-            <TableHead><TableRow sx={{ bgcolor: 'background.default' }}><TableCell>기간</TableCell><TableCell>생성일</TableCell><TableCell>상태</TableCell><TableCell /></TableRow></TableHead>
+            <TableHead><TableRow sx={{ bgcolor: 'background.default' }}><TableCell>이름</TableCell><TableCell>기간</TableCell><TableCell>생성일</TableCell><TableCell>상태</TableCell><TableCell /></TableRow></TableHead>
             <TableBody>
               {snapshots.map(s => (
                 <TableRow key={s.id} hover>
+                  <TableCell sx={{ fontWeight: 600 }}>{s.name ?? '—'}</TableCell>
                   <TableCell>{s.periodStart?.slice(0,10)} ~ {s.periodEnd?.slice(0,10)}</TableCell>
                   <TableCell>{new Date(s.createdAt).toLocaleDateString('ko-KR')}</TableCell>
                   <TableCell><Chip label={s.isLocked ? '마감' : '열림'} color={s.isLocked ? 'default' : 'success'} size="small" /></TableCell>

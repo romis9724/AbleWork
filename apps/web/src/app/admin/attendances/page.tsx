@@ -4,13 +4,11 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
-import Checkbox from '@mui/material/Checkbox'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
@@ -33,9 +31,12 @@ import {
   useAttendances,
   useUpdateAttendance,
   useConfirmPeriod,
+  useUnconfirmAttendances,
   type Attendance,
 } from '@/lib/query/attendances'
 import { useOrganizations } from '@/lib/query/organizations'
+import { useAuthStore } from '@/stores/auth.store'
+import { ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
 
 const STATUS_LABEL: Record<string, string> = {
   normal: '정상',
@@ -79,7 +80,6 @@ interface EditForm {
   clockInAt: string
   clockOutAt: string
   status: string
-  isConfirmed: boolean
   note: string
 }
 
@@ -97,6 +97,12 @@ export default function AttendancesPage() {
   const { data: orgs = [] } = useOrganizations()
   const updateMutation = useUpdateAttendance()
   const confirmPeriodMutation = useConfirmPeriod()
+  const unconfirmMutation = useUnconfirmAttendances()
+
+  const { user } = useAuthStore()
+  const canUnconfirm =
+    !!user &&
+    ACCESS_LEVEL_HIERARCHY[user.accessLevel] >= ACCESS_LEVEL_HIERARCHY.GENERAL_ADMIN
 
   const records: Attendance[] = Array.isArray(rawData)
     ? rawData
@@ -107,7 +113,6 @@ export default function AttendancesPage() {
     clockInAt: '',
     clockOutAt: '',
     status: 'normal',
-    isConfirmed: false,
     note: '',
   })
 
@@ -127,7 +132,6 @@ export default function AttendancesPage() {
       clockInAt: toDatetimeLocal(row.clockInAt),
       clockOutAt: toDatetimeLocal(row.clockOutAt),
       status: row.status,
-      isConfirmed: row.isConfirmed,
       note: row.note ?? '',
     })
   }
@@ -144,13 +148,21 @@ export default function AttendancesPage() {
         clockInAt: editForm.clockInAt ? new Date(editForm.clockInAt).toISOString() : undefined,
         clockOutAt: editForm.clockOutAt ? new Date(editForm.clockOutAt).toISOString() : undefined,
         status: editForm.status,
-        isConfirmed: editForm.isConfirmed,
         note: editForm.note || undefined,
       })
       setEditRow(null)
       setSnack({ open: true, message: '저장되었습니다.', severity: 'success' })
     } catch {
       setSnack({ open: true, message: '저장에 실패했습니다.', severity: 'error' })
+    }
+  }
+
+  async function handleUnconfirm(row: Attendance) {
+    try {
+      await unconfirmMutation.mutateAsync({ attendanceIds: [row.id] })
+      setSnack({ open: true, message: '확정이 해제되었습니다.', severity: 'success' })
+    } catch {
+      setSnack({ open: true, message: '확정 해제에 실패했습니다.', severity: 'error' })
     }
   }
 
@@ -304,12 +316,27 @@ export default function AttendancesPage() {
                     />
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={r.isConfirmed ? '확정' : '미확정'}
-                      color={r.isConfirmed ? 'primary' : 'default'}
-                      size="small"
-                      variant={r.isConfirmed ? 'filled' : 'outlined'}
-                    />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Chip
+                        label={r.isConfirmed ? '확정' : '미확정'}
+                        color={r.isConfirmed ? 'primary' : 'default'}
+                        size="small"
+                        variant={r.isConfirmed ? 'filled' : 'outlined'}
+                      />
+                      {r.isConfirmed && canUnconfirm && (
+                        <Button
+                          size="small"
+                          color="warning"
+                          disabled={unconfirmMutation.isPending}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleUnconfirm(r)
+                          }}
+                        >
+                          확정 해제
+                        </Button>
+                      )}
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))}
@@ -353,17 +380,6 @@ export default function AttendancesPage() {
               <MenuItem value="absent">결근</MenuItem>
             </Select>
           </FormControl>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={editForm.isConfirmed}
-                onChange={(e) =>
-                  setEditForm((f) => ({ ...f, isConfirmed: e.target.checked }))
-                }
-              />
-            }
-            label="확정됨"
-          />
           <TextField
             label="근무 노트"
             value={editForm.note}

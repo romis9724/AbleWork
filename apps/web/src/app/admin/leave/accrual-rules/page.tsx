@@ -30,10 +30,12 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import PageHeader from '@/components/common/PageHeader'
+import ConfirmDialog from '@/components/common/ConfirmDialog'
 import EmptyState from '@/components/common/EmptyState'
 import {
   useAccrualRules,
   useCreateAccrualRule,
+  useDeleteAccrualRule,
   useRunAccrualRule,
   useLeaveGroups,
   type AccrualRule,
@@ -97,7 +99,11 @@ export default function AccrualRulesPage() {
   const employees = employeeData?.items ?? []
 
   const createRuleMutation = useCreateAccrualRule()
+  const deleteRuleMutation = useDeleteAccrualRule()
   const runRuleMutation = useRunAccrualRule()
+
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState<AccrualRule | null>(null)
 
   // Add rule dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false)
@@ -212,6 +218,17 @@ export default function AccrualRulesPage() {
     setRunDialogOpen(true)
   }
 
+  async function handleDeleteRule() {
+    if (!deleteTarget) return
+    try {
+      await deleteRuleMutation.mutateAsync(deleteTarget.id)
+      setDeleteTarget(null)
+      showSnack('발생 규칙이 삭제되었습니다.')
+    } catch {
+      showSnack('삭제에 실패했습니다.', 'error')
+    }
+  }
+
   async function handleRunRule() {
     if (!runRuleId) return
     try {
@@ -287,6 +304,7 @@ export default function AccrualRulesPage() {
                 <TableCell>그룹</TableCell>
                 <TableCell>메모</TableCell>
                 <TableCell>상태</TableCell>
+                <TableCell align="right">액션</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -302,6 +320,11 @@ export default function AccrualRulesPage() {
                       size="small"
                       variant="outlined"
                     />
+                  </TableCell>
+                  <TableCell align="right">
+                    <IconButton size="small" color="error" onClick={() => setDeleteTarget(rule)}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))}
@@ -520,6 +543,18 @@ export default function AccrualRulesPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* ── Delete Confirm ──────────────────────────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="발생 규칙 삭제"
+        message={`"${deleteTarget?.name}" 규칙을 삭제하시겠습니까? 규칙 항목도 함께 삭제됩니다.`}
+        confirmLabel="삭제"
+        confirmColor="error"
+        loading={deleteRuleMutation.isPending}
+        onConfirm={handleDeleteRule}
+        onCancel={() => setDeleteTarget(null)}
+      />
 
       <Snackbar
         open={snack.open}

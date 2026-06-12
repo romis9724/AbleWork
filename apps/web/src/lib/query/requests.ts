@@ -107,3 +107,11 @@ export const useUpdateApprovalRule = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: RULES_KEY }),
   })
 }
+
+export const useDeleteApprovalRule = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/requests/approval-rules/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: RULES_KEY }),
+  })
+}

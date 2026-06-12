@@ -31,7 +31,14 @@ import {
   BreakEndSchema,
   BreakEndDto,
 } from './dto/clock-out.dto'
-import { AttendanceFilterSchema, AttendanceFilterDto, ConfirmPeriodSchema, ConfirmPeriodDto } from './dto/attendance-filter.dto'
+import {
+  AttendanceFilterSchema,
+  AttendanceFilterDto,
+  ConfirmPeriodSchema,
+  ConfirmPeriodDto,
+  UnconfirmAttendancesSchema,
+  UnconfirmAttendancesDto,
+} from './dto/attendance-filter.dto'
 import { UpdateAttendanceSchema, UpdateAttendanceDto } from './dto/update-attendance.dto'
 
 @ApiTags('attendances')
@@ -116,6 +123,19 @@ export class AttendancesController {
     @CurrentUser() requester: JwtPayload,
   ) {
     return this.service.confirmPeriod(companyId, dto, requester.employeeId)
+  }
+
+  // HR-05-15 확정 해제
+  @Post('unconfirm')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '출퇴근 확정 해제 (GENERAL_ADMIN 이상, ID 목록 또는 기간)' })
+  unconfirm(
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(UnconfirmAttendancesSchema)) dto: UnconfirmAttendancesDto,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.service.unconfirm(companyId, dto, requester)
   }
 
   // HR-05-12 출퇴근 수정 (관리자)

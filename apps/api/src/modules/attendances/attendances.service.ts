@@ -3,14 +3,21 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
+import { AccessLevel } from '@ablework/shared-constants'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
 import { EVENTS } from '../../events/domain-events'
+import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { ClockInDto } from './dto/clock-in.dto'
 import { ClockOutDto, BreakStartDto, BreakEndDto } from './dto/clock-out.dto'
-import { AttendanceFilterDto, ConfirmPeriodDto } from './dto/attendance-filter.dto'
+import {
+  AttendanceFilterDto,
+  ConfirmPeriodDto,
+  UnconfirmAttendancesDto,
+} from './dto/attendance-filter.dto'
 import { UpdateAttendanceDto } from './dto/update-attendance.dto'
 
 /** 출근 상태 판정에 필요한 회사 설정 키 */
@@ -366,6 +373,42 @@ export class AttendancesService {
     })
 
     return { confirmed: result.count }
+  }
+
+  // ── 확정 해제 ───────────────────────────────────────────────────────────────
+
+  async unconfirm(companyId: string, dto: UnconfirmAttendancesDto, requester: JwtPayload) {
+    // RolesGuard로 처리하지만 서비스 레벨에서도 이중 방어 (shifts.service.unconfirm 패턴)
+    if (
+      requester.accessLevel !== AccessLevel.GENERAL_ADMIN &&
+      requester.accessLevel !== AccessLevel.SUPER_ADMIN
+    ) {
+      throw new ForbiddenException('확정 해제는 GENERAL_ADMIN 이상만 가능합니다.')
+    }
+
+    const where: Record<string, unknown> = {
+      employee: { companyId },
+      isConfirmed: true,
+      ...(dto.attendanceIds?.length && { id: { in: dto.attendanceIds } }),
+      ...(dto.startDate &&
+        dto.endDate && {
+          clockInAt: {
+            gte: new Date(dto.startDate),
+            lte: new Date(`${dto.endDate}T23:59:59.999Z`),
+          },
+        }),
+    }
+
+    const result = await this.prisma.attendance.updateMany({
+      where,
+      data: {
+        isConfirmed: false,
+        confirmedBy: null,
+        confirmedAt: null,
+      },
+    })
+
+    return { unconfirmed: result.count }
   }
 
   // ── 출근 상태 판정 ─────────────────────────────────────────────────────────

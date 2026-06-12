@@ -12,6 +12,10 @@ import {
   RefreshTokenSchema,
   ChangePasswordDto,
   ChangePasswordSchema,
+  ForgotPasswordDto,
+  ForgotPasswordSchema,
+  ResetPasswordDto,
+  ResetPasswordSchema,
 } from './dto/auth.dto'
 
 @ApiTags('auth')
@@ -31,6 +35,20 @@ export class AuthController {
   @ApiOperation({ summary: 'Access Token 갱신' })
   refresh(@Body(new ZodValidationPipe(RefreshTokenSchema)) dto: RefreshTokenDto) {
     return this.authService.refresh(dto.refreshToken)
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '비밀번호 재설정 메일 요청' })
+  forgotPassword(@Body(new ZodValidationPipe(ForgotPasswordSchema)) dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email)
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '토큰으로 비밀번호 재설정' })
+  resetPassword(@Body(new ZodValidationPipe(ResetPasswordSchema)) dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto)
   }
 
   @Post('change-password')

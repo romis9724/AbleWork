@@ -77,6 +77,10 @@ const mockPrisma = {
     findFirst: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
+  },
+  approvalRuleDetail: {
+    deleteMany: jest.fn(),
   },
   approvalLine: {
     create: jest.fn(),
@@ -544,6 +548,81 @@ describe('RequestsService', () => {
   })
 
   // ── findAll ──────────────────────────────────────────────────────────────────
+
+  describe('updateApprovalRule', () => {
+    it('규칙 필드를 부분 수정한다 (details 미포함 시 details는 건드리지 않음)', async () => {
+      mockPrisma.approvalRule.findFirst.mockResolvedValue(baseApprovalRule)
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.approvalRule.update.mockResolvedValue({
+        ...baseApprovalRule,
+        name: '수정된 규칙',
+      })
+
+      const result = await service.updateApprovalRule(COMPANY_ID, 'rule-1', {
+        name: '수정된 규칙',
+      })
+
+      expect(result.name).toBe('수정된 규칙')
+      expect(mockPrisma.approvalRuleDetail.deleteMany).not.toHaveBeenCalled()
+      expect(mockPrisma.approvalRule.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'rule-1' } }),
+      )
+    })
+
+    it('details 배열이 오면 기존 details를 삭제하고 재생성한다', async () => {
+      mockPrisma.approvalRule.findFirst.mockResolvedValue(baseApprovalRule)
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.approvalRule.update.mockResolvedValue(baseApprovalRule)
+
+      await service.updateApprovalRule(COMPANY_ID, 'rule-1', {
+        details: [{ round: 1, requiredCount: 1, isForbidden: false, sortOrder: 0 }],
+      })
+
+      expect(mockPrisma.approvalRuleDetail.deleteMany).toHaveBeenCalledWith({
+        where: { ruleId: 'rule-1' },
+      })
+    })
+
+    it('타 회사 규칙이면 NotFoundException을 던진다', async () => {
+      mockPrisma.approvalRule.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.updateApprovalRule('other-company', 'rule-1', { name: 'x' }),
+      ).rejects.toThrow(NotFoundException)
+      expect(mockPrisma.approvalRule.update).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('deleteApprovalRule', () => {
+    it('규칙을 소프트 삭제(isActive=false)한다', async () => {
+      mockPrisma.approvalRule.findFirst.mockResolvedValue(baseApprovalRule)
+      mockPrisma.approvalRule.update.mockResolvedValue({
+        ...baseApprovalRule,
+        isActive: false,
+      })
+
+      const result = await service.deleteApprovalRule(COMPANY_ID, 'rule-1')
+
+      expect(result).toEqual({ deleted: true })
+      expect(mockPrisma.approvalRule.update).toHaveBeenCalledWith({
+        where: { id: 'rule-1' },
+        data: { isActive: false },
+      })
+    })
+
+    it('타 회사 규칙이면 NotFoundException을 던진다', async () => {
+      mockPrisma.approvalRule.findFirst.mockResolvedValue(null)
+
+      await expect(service.deleteApprovalRule('other-company', 'rule-1')).rejects.toThrow(
+        NotFoundException,
+      )
+      expect(mockPrisma.approvalRule.update).not.toHaveBeenCalled()
+    })
+  })
 
   describe('findAll', () => {
     it('mine 스코프로 내 요청 목록을 반환한다', async () => {

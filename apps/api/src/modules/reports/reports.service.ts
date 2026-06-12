@@ -218,6 +218,7 @@ export class ReportsService {
     const snapshot = await this.prisma.reportSnapshot.create({
       data: {
         companyId,
+        name: dto.name,
         periodStart: new Date(dto.periodStart),
         periodEnd: new Date(dto.periodEnd),
         columnConfig: (dto.columnConfig ?? {}) as unknown as Prisma.InputJsonValue,

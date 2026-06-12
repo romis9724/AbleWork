@@ -7,10 +7,15 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
 import { EVENTS } from '../../events/domain-events'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
-import { CreateLeaveGroupDto } from './dto/create-leave-group.dto'
+import { CreateLeaveGroupDto, UpdateLeaveGroupDto } from './dto/create-leave-group.dto'
 import { CreateLeaveTypeDto, UpdateLeaveTypeDto } from './dto/create-leave-type.dto'
-import { CreateAccrualRuleDto, RunAccrualRuleDto } from './dto/accrual-rule.dto'
 import {
+  CreateAccrualRuleDto,
+  UpdateAccrualRuleDto,
+  RunAccrualRuleDto,
+} from './dto/accrual-rule.dto'
+import {
+  CreateLeaveDto,
   ManualAccrualDto,
   CompensationLeaveDto,
   LeaveFilterDto,
@@ -38,6 +43,25 @@ export class LeavesService {
   async createGroup(companyId: string, dto: CreateLeaveGroupDto) {
     return this.prisma.leaveGroup.create({
       data: { companyId, ...dto },
+    })
+  }
+
+  // ── 휴가 그룹 수정 ───────────────────────────────────────────────────────────
+
+  async updateGroup(companyId: string, id: string, dto: UpdateLeaveGroupDto) {
+    await this.assertGroupBelongsToCompany(companyId, id)
+
+    return this.prisma.leaveGroup.update({ where: { id }, data: dto })
+  }
+
+  // ── 휴가 그룹 삭제 (소프트 — isActive=false) ─────────────────────────────────
+
+  async deleteGroup(companyId: string, id: string) {
+    await this.assertGroupBelongsToCompany(companyId, id)
+
+    return this.prisma.leaveGroup.update({
+      where: { id },
+      data: { isActive: false },
     })
   }
 
@@ -82,6 +106,17 @@ export class LeavesService {
     return this.prisma.leaveType.update({ where: { id }, data })
   }
 
+  // ── 휴가 유형 삭제 (소프트 — isActive=false) ─────────────────────────────────
+
+  async deleteType(companyId: string, id: string) {
+    await this.assertTypeBelongsToCompany(companyId, id)
+
+    return this.prisma.leaveType.update({
+      where: { id },
+      data: { isActive: false },
+    })
+  }
+
   // ── HR-06-06 발생 규칙 목록 ──────────────────────────────────────────────────
 
   async findAccrualRules(companyId: string) {
@@ -110,6 +145,42 @@ export class LeavesService {
       },
       include: { items: true },
     })
+  }
+
+  // ── 발생 규칙 수정 (items 제공 시 전체 교체) ─────────────────────────────────
+
+  async updateAccrualRule(companyId: string, id: string, dto: UpdateAccrualRuleDto) {
+    await this.assertAccrualRuleBelongsToCompany(companyId, id)
+
+    if (dto.leaveGroupId) {
+      await this.assertGroupBelongsToCompany(companyId, dto.leaveGroupId)
+    }
+
+    const { items, ...ruleData } = dto
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.prisma.$transaction(async (tx: any) => {
+      if (items) {
+        await tx.leaveAccrualRuleItem.deleteMany({ where: { ruleId: id } })
+        await tx.leaveAccrualRuleItem.createMany({
+          data: items.map((item) => ({ ...item, ruleId: id })),
+        })
+      }
+
+      return tx.leaveAccrualRule.update({
+        where: { id },
+        data: ruleData,
+        include: { items: { orderBy: { sortOrder: 'asc' } } },
+      })
+    })
+  }
+
+  // ── 발생 규칙 삭제 (하드 — items는 onDelete: Cascade) ────────────────────────
+
+  async deleteAccrualRule(companyId: string, id: string) {
+    await this.assertAccrualRuleBelongsToCompany(companyId, id)
+
+    return this.prisma.leaveAccrualRule.delete({ where: { id } })
   }
 
   // ── HR-06-08 발생 규칙 실행 ──────────────────────────────────────────────────
@@ -337,6 +408,60 @@ export class LeavesService {
     return balance
   }
 
+  // ── 관리자 휴가 직접 추가 (잔액 검증 → Leave 생성 + 잔액 차감) ───────────────
+
+  async createLeave(companyId: string, dto: CreateLeaveDto) {
+    await this.assertEmployeeBelongsToCompany(companyId, dto.employeeId)
+    const leaveType = await this.assertTypeBelongsToCompany(companyId, dto.leaveTypeId)
+
+    const daysUsed = this.calcLeaveDaysUsed(
+      dto.startDate,
+      dto.endDate,
+      Number(leaveType.deductionDays),
+    )
+    const startDate = new Date(dto.startDate)
+    const year = startDate.getFullYear()
+
+    await this.validateBalance({
+      employeeId: dto.employeeId,
+      leaveTypeId: dto.leaveTypeId,
+      daysUsed,
+      startDate,
+      year,
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.prisma.$transaction(async (tx: any) => {
+      const leave = await tx.leave.create({
+        data: {
+          employeeId: dto.employeeId,
+          leaveTypeId: dto.leaveTypeId,
+          startDate,
+          endDate: new Date(dto.endDate),
+          daysUsed,
+          status: 'APPROVED',
+          reason: dto.reason ?? null,
+        },
+      })
+
+      await tx.leaveBalance.update({
+        where: {
+          employeeId_leaveTypeId_year: {
+            employeeId: dto.employeeId,
+            leaveTypeId: dto.leaveTypeId,
+            year,
+          },
+        },
+        data: {
+          usedDays: { increment: daysUsed },
+          remainingDays: { decrement: daysUsed },
+        },
+      })
+
+      return leave
+    })
+  }
+
   // ── 휴가 잔액 검증 (외부 모듈 — requests에서 사용) ──────────────────────────
 
   async validateBalance(params: {
@@ -440,6 +565,28 @@ export class LeavesService {
       })
     }
     return type
+  }
+
+  private async assertAccrualRuleBelongsToCompany(companyId: string, ruleId: string) {
+    const rule = await this.prisma.leaveAccrualRule.findFirst({
+      where: { id: ruleId, companyId },
+    })
+    if (!rule) {
+      throw new NotFoundException({
+        code: 'ACCRUAL_RULE_NOT_FOUND',
+        message: '발생 규칙을 찾을 수 없습니다.',
+      })
+    }
+    return rule
+  }
+
+  /** 휴가 차감 일수 계산: 기간 일수(양 끝 포함) × 유형별 차감 단위 */
+  private calcLeaveDaysUsed(startDate: string, endDate: string, deductionDays: number): number {
+    const MS_PER_DAY = 24 * 60 * 60 * 1000
+    const start = new Date(`${startDate.slice(0, 10)}T00:00:00.000Z`)
+    const end = new Date(`${endDate.slice(0, 10)}T00:00:00.000Z`)
+    const calendarDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / MS_PER_DAY) + 1)
+    return calendarDays * (deductionDays > 0 ? deductionDays : 1)
   }
 
   private async assertEmployeeBelongsToCompany(companyId: string, employeeId: string) {

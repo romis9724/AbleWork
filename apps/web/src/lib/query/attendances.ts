@@ -97,3 +97,12 @@ export const useConfirmPeriod = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }
+
+export const useUnconfirmAttendances = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { attendanceIds?: string[]; startDate?: string; endDate?: string }) =>
+      apiClient.post('/attendances/unconfirm', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}

@@ -1,7 +1,9 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import NextLink from 'next/link'
 import Box from '@mui/material/Box'
+import Link from '@mui/material/Link'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import TextField from '@mui/material/TextField'
@@ -127,6 +129,12 @@ export default function LoginPage() {
               {loading ? <CircularProgress size={24} color="inherit" /> : '로그인'}
             </Button>
           </form>
+
+          <Box sx={{ textAlign: 'center', mt: 2 }}>
+            <Link component={NextLink} href="/forgot-password" variant="body2" underline="hover">
+              비밀번호를 잊으셨나요?
+            </Link>
+          </Box>
         </CardContent>
       </Card>
     </Box>

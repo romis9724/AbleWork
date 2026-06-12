@@ -44,6 +44,35 @@ export const CreateApprovalRuleSchema = z.object({
   ).default([]),
 })
 
+// 부분 수정: details 배열이 포함되면 기존 details를 전체 교체한다.
+export const UpdateApprovalRuleSchema = z
+  .object({
+    name: z.string().min(1, '규칙명을 입력하세요.').max(100).optional(),
+    requestType: z.string().min(1).optional(),
+    customTypeId: z.string().uuid().optional(),
+    priority: z.number().int().min(0).optional(),
+    scopeOrgIds: z.array(z.string().uuid()).optional(),
+    scopePositionIds: z.array(z.string().uuid()).optional(),
+    maxApprovalRounds: z.number().int().min(1).optional(),
+    isAutoApprove: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+    details: z
+      .array(
+        z.object({
+          tag: z.string().max(30).optional(),
+          round: z.number().int().min(1).default(1),
+          requiredCount: z.number().int().min(1).default(1),
+          approverPositionId: z.string().uuid().optional(),
+          isForbidden: z.boolean().default(false),
+          sortOrder: z.number().int().min(0).default(0),
+        }),
+      )
+      .optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: '수정할 항목을 하나 이상 입력하세요.',
+  })
+
 export const ApproveRejectSchema = z.object({
   comment: z.string().optional(),
 })
@@ -79,6 +108,7 @@ export const RequestFilterSchema = z.object({
 
 export type CreateRequestDto = z.infer<typeof CreateRequestSchema>
 export type CreateApprovalRuleDto = z.infer<typeof CreateApprovalRuleSchema>
+export type UpdateApprovalRuleDto = z.infer<typeof UpdateApprovalRuleSchema>
 export type ApproveRejectDto = z.infer<typeof ApproveRejectSchema>
 export type BulkApproveDto = z.infer<typeof BulkApproveSchema>
 export type RequestFilterDto = z.infer<typeof RequestFilterSchema>
