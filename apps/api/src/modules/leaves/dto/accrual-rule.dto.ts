@@ -27,6 +27,7 @@ export const CreateAccrualRuleSchema = z.object({
 
 export const RunAccrualRuleSchema = z.object({
   employeeId: z.string().uuid().optional(),
+  employeeIds: z.array(z.string().uuid()).optional(),
   year: z.number().int().min(2000).max(2100).default(new Date().getFullYear()),
 })
 

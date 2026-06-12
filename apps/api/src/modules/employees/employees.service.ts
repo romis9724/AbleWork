@@ -172,12 +172,19 @@ export class EmployeesService {
     await this.guardOrgScope(requester, existing)
     this.guardUpdatePermission(requester, id, dto)
 
-    const { organizationIds, primaryOrganizationId, positionIds, ...rest } = dto
+    const { organizationIds, primaryOrganizationId, positionIds, joinedAt, resignedAt, ...rest } = dto
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const employee = await tx.employee.update({
         where: { id },
-        data: rest,
+        data: {
+          ...rest,
+          // date-only 문자열(YYYY-MM-DD)은 Prisma에 그대로 넘기면 실패하므로 Date로 변환
+          ...(joinedAt !== undefined && { joinedAt: new Date(joinedAt) }),
+          ...(resignedAt !== undefined && {
+            resignedAt: resignedAt === null ? null : new Date(resignedAt),
+          }),
+        },
       })
 
       if (organizationIds) {

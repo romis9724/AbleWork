@@ -33,6 +33,10 @@ export class ReportsService {
     companyId: string,
     filter: ReportFilterDto,
   ): Promise<EmployeeReportRow[]> {
+    // TODO(lateThresholdMinutes/earlyLeaveThresholdMinutes): 지각/조퇴 판정이
+    // attendance.status 기반이라 분 단위 임곗값 필터를 즉시 적용할 수 없음.
+    // 근무일정(shift) 시작/종료 시각과 조인해 지각/조퇴 '분'을 산출할 수 있게 되면
+    // lateCount/earlyLeaveCount 집계에 임곗값을 반영할 것.
     const { startDate, endDate, organizationId, employeeId } = filter
     const start = new Date(startDate)
     const end = new Date(endDate)

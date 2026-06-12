@@ -54,6 +54,8 @@ interface MonthlyRow {
 interface YearlyRow {
   tenureYears: string
   days: string
+  periodStartMd: string
+  periodEndMd: string
 }
 
 // ── Form state ─────────────────────────────────────────────────────────────────
@@ -67,7 +69,14 @@ interface RuleForm {
 }
 
 const defaultMonthlyRow: MonthlyRow = { tenureMonths: '', days: '', validMonths: '' }
-const defaultYearlyRow: YearlyRow = { tenureYears: '', days: '' }
+const defaultYearlyRow: YearlyRow = {
+  tenureYears: '',
+  days: '',
+  periodStartMd: '',
+  periodEndMd: '',
+}
+
+const MD_REGEX = /^\d{2}-\d{2}$/
 
 const defaultRuleForm: RuleForm = {
   name: '',
@@ -145,23 +154,45 @@ export default function AccrualRulesPage() {
 
   async function handleSaveRule() {
     if (!ruleForm.name.trim()) return
+    if (!ruleForm.groupId) {
+      showSnack('휴가 그룹을 선택하세요.', 'error')
+      return
+    }
+
+    // BE CreateAccrualRuleSchema의 items[{accrualBasis,...}] 형식으로 변환
+    const monthlyItems = ruleForm.monthlyRows
+      .filter((r) => r.tenureMonths !== '' && r.days !== '')
+      .map((r, i) => ({
+        accrualBasis: 'monthly' as const,
+        tenureMonths: Number(r.tenureMonths),
+        accrualDays: Number(r.days),
+        ...(Number(r.validMonths) > 0 && { validMonths: Number(r.validMonths) }),
+        sortOrder: i,
+      }))
+
+    const yearlyItems = ruleForm.yearlyRows
+      .filter((r) => r.tenureYears !== '' && r.days !== '')
+      .map((r, i) => ({
+        accrualBasis: 'yearly' as const,
+        tenureYears: Number(r.tenureYears),
+        accrualDays: Number(r.days),
+        ...(MD_REGEX.test(r.periodStartMd) && { periodStartMd: r.periodStartMd }),
+        ...(MD_REGEX.test(r.periodEndMd) && { periodEndMd: r.periodEndMd }),
+        sortOrder: monthlyItems.length + i,
+      }))
+
+    const items = [...monthlyItems, ...yearlyItems]
+    if (items.length === 0) {
+      showSnack('발생 규칙 항목을 하나 이상 입력하세요.', 'error')
+      return
+    }
+
     const payload = {
+      leaveGroupId: ruleForm.groupId,
       name: ruleForm.name.trim(),
-      note: ruleForm.note.trim() || undefined,
-      groupId: ruleForm.groupId || undefined,
-      monthlyAccruals: ruleForm.monthlyRows
-        .filter((r) => r.tenureMonths && r.days)
-        .map((r) => ({
-          tenureMonths: Number(r.tenureMonths),
-          days: Number(r.days),
-          validMonths: Number(r.validMonths) || 0,
-        })),
-      yearlyAccruals: ruleForm.yearlyRows
-        .filter((r) => r.tenureYears && r.days)
-        .map((r) => ({
-          tenureYears: Number(r.tenureYears),
-          days: Number(r.days),
-        })),
+      memo: ruleForm.note.trim() || undefined,
+      isActive: true,
+      items,
     }
     try {
       await createRuleMutation.mutateAsync(payload)
@@ -262,8 +293,8 @@ export default function AccrualRulesPage() {
               {rules.map((rule: AccrualRule) => (
                 <TableRow key={rule.id} hover>
                   <TableCell sx={{ fontWeight: 600 }}>{rule.name}</TableCell>
-                  <TableCell>{rule.group?.name ?? '—'}</TableCell>
-                  <TableCell>{rule.note ?? '—'}</TableCell>
+                  <TableCell>{rule.leaveGroup?.name ?? '—'}</TableCell>
+                  <TableCell>{rule.memo ?? '—'}</TableCell>
                   <TableCell>
                     <Chip
                       label={rule.isActive ? '활성' : '비활성'}
@@ -304,14 +335,13 @@ export default function AccrualRulesPage() {
             multiline
             rows={2}
           />
-          <FormControl fullWidth>
+          <FormControl fullWidth required>
             <InputLabel>휴가 그룹</InputLabel>
             <Select
               value={ruleForm.groupId}
               label="휴가 그룹"
               onChange={(e) => setRuleForm((f) => ({ ...f, groupId: e.target.value }))}
             >
-              <MenuItem value="">없음</MenuItem>
               {groups.map((g: LeaveGroup) => (
                 <MenuItem key={g.id} value={g.id}>
                   {g.name}
@@ -405,6 +435,22 @@ export default function AccrualRulesPage() {
                   inputProps={{ min: 0, step: 0.5 }}
                   sx={{ flex: 1 }}
                 />
+                <TextField
+                  label="시작 월일 (MM-DD)"
+                  size="small"
+                  placeholder="01-01"
+                  value={row.periodStartMd}
+                  onChange={(e) => updateYearlyRow(i, 'periodStartMd', e.target.value)}
+                  sx={{ flex: 1 }}
+                />
+                <TextField
+                  label="종료 월일 (MM-DD)"
+                  size="small"
+                  placeholder="12-31"
+                  value={row.periodEndMd}
+                  onChange={(e) => updateYearlyRow(i, 'periodEndMd', e.target.value)}
+                  sx={{ flex: 1 }}
+                />
                 <IconButton
                   size="small"
                   color="error"
@@ -422,7 +468,7 @@ export default function AccrualRulesPage() {
           <Button
             variant="contained"
             onClick={handleSaveRule}
-            disabled={createRuleMutation.isPending || !ruleForm.name.trim()}
+            disabled={createRuleMutation.isPending || !ruleForm.name.trim() || !ruleForm.groupId}
           >
             추가
           </Button>

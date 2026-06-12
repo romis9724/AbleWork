@@ -103,20 +103,58 @@ export const useDeleteLeaveType = () => {
   })
 }
 
+export interface AccrualRuleItem {
+  id: string
+  accrualBasis: 'monthly' | 'yearly'
+  tenureMonths?: number | null
+  tenureYears?: number | null
+  accrualDays: number
+  validMonths?: number | null
+  periodStartMd?: string | null
+  periodEndMd?: string | null
+  sortOrder: number
+}
+
 export interface AccrualRule {
   id: string
   name: string
-  note?: string
+  memo?: string
   isActive: boolean
-  group?: LeaveGroup
-  monthlyAccruals?: { tenureMonths: number; days: number; validMonths: number }[]
-  yearlyAccruals?: { tenureYears: number; days: number }[]
+  leaveGroup?: { id: string; name: string }
+  items?: AccrualRuleItem[]
+}
+
+export interface ManualAccrualPayload {
+  employeeIds: string[]
+  leaveTypeId: string
+  year?: number
+  days: number
+  expiresAt?: string
+  note?: string
 }
 
 export const useManualAccrual = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: unknown) => apiClient.post('/leaves/accrual', data),
+    mutationFn: (data: ManualAccrualPayload) => apiClient.post('/leaves/accrual', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['leave-balance'] }),
+  })
+}
+
+export interface CompensationAccrualPayload {
+  employeeId: string
+  leaveTypeId: string
+  year?: number
+  days: number
+  expiresAt?: string
+  reason?: string
+}
+
+export const useCompensationAccrual = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: CompensationAccrualPayload) =>
+      apiClient.post('/leaves/compensation', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['leave-balance'] }),
   })
 }

@@ -31,7 +31,7 @@ const baseEmployee = {
   employeeNumber: 'E001',
   joinedAt: new Date('2024-01-01'),
   resignedAt: null,
-  employmentType: 'FULL_TIME',
+  employmentType: 'regular',
   accessLevel: AccessLevel.EMPLOYEE,
   deviceId: 'device-abc',
   deviceBoundAt: new Date(),

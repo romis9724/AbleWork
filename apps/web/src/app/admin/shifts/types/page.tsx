@@ -63,8 +63,8 @@ const schema = z.object({
   category: z.string().min(1, '분류를 선택해주세요'),
   noClockInRequired: z.boolean(),
   isDeemedWork: z.boolean(),
-  deemedHours: z.number().min(0).max(24).optional(),
-  preShiftNote: z.string().optional(),
+  deemedWorkHours: z.number().min(0).max(24).optional(),
+  confirmedAlert: z.string().optional(),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -93,8 +93,8 @@ export default function ShiftTypesPage() {
       category: 'REGULAR',
       noClockInRequired: false,
       isDeemedWork: false,
-      deemedHours: undefined,
-      preShiftNote: '',
+      deemedWorkHours: undefined,
+      confirmedAlert: '',
     },
   })
 
@@ -104,7 +104,7 @@ export default function ShiftTypesPage() {
     reset({
       name: '', color: '#1976d2', category: 'REGULAR',
       noClockInRequired: false, isDeemedWork: false,
-      deemedHours: undefined, preShiftNote: '',
+      deemedWorkHours: undefined, confirmedAlert: '',
     })
     setDialog({ open: true, editing: null })
   }
@@ -116,8 +116,8 @@ export default function ShiftTypesPage() {
       category: type.category,
       noClockInRequired: type.noClockInRequired,
       isDeemedWork: type.isDeemedWork,
-      deemedHours: undefined,
-      preShiftNote: '',
+      deemedWorkHours: type.deemedWorkHours ?? undefined,
+      confirmedAlert: type.confirmedAlert ?? '',
     })
     setDialog({ open: true, editing: type })
   }
@@ -131,10 +131,10 @@ export default function ShiftTypesPage() {
       category: values.category,
       noClockInRequired: values.noClockInRequired,
       isDeemedWork: values.isDeemedWork,
-      ...(values.isDeemedWork && values.deemedHours != null
-        ? { deemedHours: values.deemedHours }
+      ...(values.isDeemedWork && values.deemedWorkHours != null
+        ? { deemedWorkHours: values.deemedWorkHours }
         : {}),
-      ...(values.preShiftNote ? { preShiftNote: values.preShiftNote } : {}),
+      ...(values.confirmedAlert ? { confirmedAlert: values.confirmedAlert } : {}),
     }
 
     try {
@@ -360,7 +360,7 @@ export default function ShiftTypesPage() {
 
             {isDeemedWork && (
               <Controller
-                name="deemedHours"
+                name="deemedWorkHours"
                 control={control}
                 render={({ field }) => (
                   <TextField
@@ -370,15 +370,15 @@ export default function ShiftTypesPage() {
                     inputProps={{ min: 0, max: 24, step: 0.5 }}
                     value={field.value ?? ''}
                     onChange={(e) => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
-                    error={!!errors.deemedHours}
-                    helperText={errors.deemedHours?.message}
+                    error={!!errors.deemedWorkHours}
+                    helperText={errors.deemedWorkHours?.message}
                   />
                 )}
               />
             )}
 
             <Controller
-              name="preShiftNote"
+              name="confirmedAlert"
               control={control}
               render={({ field }) => (
                 <TextField

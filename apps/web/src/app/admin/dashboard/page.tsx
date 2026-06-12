@@ -76,7 +76,8 @@ function StatCard({ label, value, color = 'primary.main', loading = false }: Sta
 export default function DashboardPage() {
   const todayStr = today()
 
-  const { data: nowAtWork = [], isLoading: nowLoading } = useNowAtWork()
+  const { data: nowAtWork, isLoading: nowLoading } = useNowAtWork()
+  const nowAtWorkCount = nowAtWork?.total ?? nowAtWork?.items?.length ?? 0
 
   const { data: rawAttendances, isLoading: attLoading } = useAttendances({
     startDate: todayStr,
@@ -111,7 +112,7 @@ export default function DashboardPage() {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             label="현재 근무 중"
-            value={nowAtWork.length}
+            value={nowAtWorkCount}
             color="success.main"
             loading={nowLoading}
           />

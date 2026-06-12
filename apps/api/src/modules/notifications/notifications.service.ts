@@ -4,9 +4,22 @@ import { PrismaService } from '../../prisma/prisma.service'
 import {
   CreateNotificationRuleDto,
   UpdateNotificationRuleDto,
+  UpdateWebhookDto,
+  UpdateEventRuleDto,
   ListNotificationRulesQueryDto,
   ListNotificationLogsQueryDto,
 } from './dto/notification-rule.dto'
+
+/** 규칙이 하나도 없을 때 webhook 설정과 함께 생성할 기본 이벤트 목록 */
+const DEFAULT_EVENT_TYPES = [
+  'clock_in',
+  'clock_out',
+  'late',
+  'absent',
+  'leave_request',
+  'leave_approved',
+  'request_approved',
+] as const
 
 @Injectable()
 export class NotificationsService {
@@ -76,6 +89,71 @@ export class NotificationsService {
         ...(dto.messageTemplateId !== undefined && { messageTemplateId: dto.messageTemplateId }),
         ...(dto.cronExpression !== undefined && { cronExpression: dto.cronExpression }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+      },
+    })
+  }
+
+  /**
+   * 회사의 모든 알림 규칙 webhookUrl 일괄 갱신.
+   * 규칙이 하나도 없으면 기본 이벤트 규칙들을 webhookUrl과 함께 생성한다.
+   */
+  async updateWebhook(companyId: string, dto: UpdateWebhookDto) {
+    const webhookUrl = dto.webhookUrl === '' ? null : dto.webhookUrl
+
+    const count = await this.prisma.notificationRule.count({ where: { companyId } })
+
+    if (count === 0) {
+      await this.prisma.notificationRule.createMany({
+        data: DEFAULT_EVENT_TYPES.map((eventType) => ({
+          companyId,
+          eventType,
+          channelType: 'discord',
+          webhookUrl,
+          isActive: true,
+        })),
+      })
+    } else {
+      await this.prisma.notificationRule.updateMany({
+        where: { companyId },
+        data: { webhookUrl },
+      })
+    }
+
+    return this.prisma.notificationRule.findMany({
+      where: { companyId },
+      orderBy: { createdAt: 'desc' },
+    })
+  }
+
+  /**
+   * 이벤트별 알림 규칙 활성/비활성 upsert.
+   * 규칙이 없으면 생성하며, webhookUrl은 기존 회사 규칙에서 상속한다.
+   */
+  async updateEventRule(companyId: string, dto: UpdateEventRuleDto) {
+    const { eventType, isActive } = dto
+
+    const existing = await this.prisma.notificationRule.findFirst({
+      where: { companyId, eventType },
+    })
+
+    if (existing) {
+      return this.prisma.notificationRule.update({
+        where: { id: existing.id },
+        data: { isActive },
+      })
+    }
+
+    const sibling = await this.prisma.notificationRule.findFirst({
+      where: { companyId, webhookUrl: { not: null } },
+    })
+
+    return this.prisma.notificationRule.create({
+      data: {
+        companyId,
+        eventType,
+        channelType: 'discord',
+        webhookUrl: sibling?.webhookUrl ?? null,
+        isActive,
       },
     })
   }

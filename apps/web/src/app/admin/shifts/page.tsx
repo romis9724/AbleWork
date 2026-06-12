@@ -60,20 +60,37 @@ function formatDateKR(iso: string) {
 function formatTimeKR(iso: string) {
   return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
 }
+/** ISO 문자열 → 24시간 HH:MM (폼 입력용, TIME_REGEX 호환) */
+function toHHMM(iso: string) {
+  const d = new Date(iso)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 
 const today = new Date().toISOString().split('T')[0]
 const weekLater = new Date(Date.now() + 7 * 86_400_000).toISOString().split('T')[0]
 
 const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/
 
-const shiftSchema = z.object({
-  employeeId: z.string().min(1, '직원을 선택해주세요'),
-  date: z.string().min(1, '날짜를 선택해주세요'),
-  templateId: z.string().optional(),
-  startTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요').optional().or(z.literal('')),
-  endTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요').optional().or(z.literal('')),
-  shiftTypeId: z.string().optional(),
-})
+const shiftSchema = z
+  .object({
+    employeeId: z.string().min(1, '직원을 선택해주세요'),
+    organizationId: z.string().min(1, '조직을 선택해주세요'),
+    date: z.string().min(1, '날짜를 선택해주세요'),
+    templateId: z.string().optional(),
+    startTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요').optional().or(z.literal('')),
+    endTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요').optional().or(z.literal('')),
+    shiftTypeId: z.string().min(1, '근무 유형을 선택해주세요'),
+  })
+  .superRefine((values, ctx) => {
+    if (!values.templateId) {
+      if (!values.startTime) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['startTime'], message: '시작 시간을 입력해주세요' })
+      }
+      if (!values.endTime) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endTime'], message: '종료 시간을 입력해주세요' })
+      }
+    }
+  })
 
 type ShiftFormValues = z.infer<typeof shiftSchema>
 
@@ -92,9 +109,10 @@ export default function ShiftsPage() {
 
   const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
 
+  // BE ShiftFilterDto는 startAt/endAt (YYYY-MM-DD) 파라미터를 사용
   const shiftsParams: Record<string, string | undefined> = {
-    startDate,
-    endDate,
+    startAt: startDate,
+    endAt: endDate,
     ...(orgFilter ? { organizationId: orgFilter } : {}),
   }
 
@@ -113,6 +131,7 @@ export default function ShiftsPage() {
     resolver: zodResolver(shiftSchema),
     defaultValues: {
       employeeId: '',
+      organizationId: '',
       date: today,
       templateId: '',
       startTime: '',
@@ -124,20 +143,19 @@ export default function ShiftsPage() {
   const selectedTemplate = watch('templateId')
 
   const openCreate = () => {
-    reset({ employeeId: '', date: today, templateId: '', startTime: '', endTime: '', shiftTypeId: '' })
+    reset({ employeeId: '', organizationId: '', date: today, templateId: '', startTime: '', endTime: '', shiftTypeId: '' })
     setDialog({ open: true, editing: null })
   }
 
   const openEdit = (shift: Shift) => {
     const date = shift.startAt.split('T')[0]
-    const startTime = formatTimeKR(shift.startAt)
-    const endTime = formatTimeKR(shift.endAt)
     reset({
       employeeId: shift.employeeId,
+      organizationId: shift.organizationId,
       date,
       templateId: '',
-      startTime,
-      endTime,
+      startTime: toHHMM(shift.startAt),
+      endTime: toHHMM(shift.endAt),
       shiftTypeId: shift.shiftType?.id ?? '',
     })
     setDialog({ open: true, editing: shift })
@@ -148,15 +166,19 @@ export default function ShiftsPage() {
   const onSubmit = async (values: ShiftFormValues) => {
     const template = templates.find((t) => t.id === values.templateId)
 
-    const resolvedStart = template ? `${values.date}T${template.startTime}:00` : `${values.date}T${values.startTime}:00`
-    const resolvedEnd = template ? `${values.date}T${template.endTime}:00` : `${values.date}T${values.endTime}:00`
+    const startTime = template ? template.startTime : values.startTime
+    const endTime = template ? template.endTime : values.endTime
+    // BE CreateShiftSchema는 ISO 8601(datetime) 형식 요구 → 로컬 시간 기준 ISO 변환
+    const resolvedStart = new Date(`${values.date}T${startTime}:00`).toISOString()
+    const resolvedEnd = new Date(`${values.date}T${endTime}:00`).toISOString()
 
     const payload = {
       employeeId: values.employeeId,
+      organizationId: values.organizationId,
+      shiftTypeId: values.shiftTypeId,
       startAt: resolvedStart,
       endAt: resolvedEnd,
       ...(values.templateId ? { templateId: values.templateId } : {}),
-      ...(values.shiftTypeId ? { shiftTypeId: values.shiftTypeId } : {}),
     }
 
     try {
@@ -164,8 +186,12 @@ export default function ShiftsPage() {
         await updateMutation.mutateAsync({ id: dialog.editing.id, ...payload })
         showSnackbar('근무일정이 수정되었습니다.')
       } else {
-        await createMutation.mutateAsync(payload)
-        showSnackbar('근무일정이 추가되었습니다.')
+        const result = await createMutation.mutateAsync(payload)
+        if (result.warning) {
+          showSnackbar(result.warning, 'warning')
+        } else {
+          showSnackbar('근무일정이 추가되었습니다.')
+        }
       }
       closeDialog()
     } catch {
@@ -176,8 +202,13 @@ export default function ShiftsPage() {
   const handleConfirmSelected = async () => {
     if (selected.size === 0) return
     try {
-      await Promise.all([...selected].map((id) => confirmMutation.mutateAsync(id)))
-      showSnackbar(`${selected.size}건이 확정되었습니다.`)
+      const results = await Promise.all([...selected].map((id) => confirmMutation.mutateAsync(id)))
+      const warnings = results.map((r) => r.warning).filter((w): w is string => !!w)
+      if (warnings.length > 0) {
+        showSnackbar(`${selected.size}건 확정 완료 — ${warnings[0]}`, 'warning')
+      } else {
+        showSnackbar(`${selected.size}건이 확정되었습니다.`)
+      }
       setSelected(new Set())
     } catch {
       showSnackbar('확정 중 오류가 발생했습니다.', 'error')
@@ -403,6 +434,28 @@ export default function ShiftsPage() {
             />
 
             <Controller
+              name="organizationId"
+              control={control}
+              render={({ field }) => (
+                <Autocomplete
+                  options={organizations}
+                  getOptionLabel={(o) => o.name}
+                  value={organizations.find((o) => o.id === field.value) ?? null}
+                  onChange={(_, val) => field.onChange(val?.id ?? '')}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="조직"
+                      required
+                      error={!!errors.organizationId}
+                      helperText={errors.organizationId?.message}
+                    />
+                  )}
+                />
+              )}
+            />
+
+            <Controller
               name="date"
               control={control}
               render={({ field }) => (
@@ -492,10 +545,13 @@ export default function ShiftsPage() {
                 <TextField
                   {...field}
                   select
-                  label="근무 유형 (선택)"
+                  label="근무 유형"
+                  required
                   fullWidth
+                  error={!!errors.shiftTypeId}
+                  helperText={errors.shiftTypeId?.message}
                 >
-                  <MenuItem value=""><em>없음</em></MenuItem>
+                  <MenuItem value=""><em>선택하세요</em></MenuItem>
                   {shiftTypes.map((type) => (
                     <MenuItem key={type.id} value={type.id}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

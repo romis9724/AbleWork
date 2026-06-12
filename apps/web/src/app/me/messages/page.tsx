@@ -24,7 +24,7 @@ interface Message {
   title?: string
   content: string
   sentAt: string
-  isRead: boolean
+  readAt: string | null
 }
 
 const MESSAGES_KEY = ['messages']
@@ -40,7 +40,8 @@ function useMessages() {
 function useReadMessage() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => apiClient.post(`/messages/${id}/read`),
+    mutationFn: ({ id, note }: { id: string; note?: string }) =>
+      apiClient.post(`/messages/${id}/read`, note ? { note } : {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: MESSAGES_KEY }),
   })
 }
@@ -74,7 +75,7 @@ export default function MessagesPage() {
   const handleConfirm = async () => {
     if (!selected) return
     try {
-      await readMessage.mutateAsync(selected.id)
+      await readMessage.mutateAsync({ id: selected.id, note: memo.trim() || undefined })
       showSnack('메시지를 확인했습니다.', 'success')
       handleClose()
     } catch {
@@ -95,12 +96,13 @@ export default function MessagesPage() {
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {messages.map((msg) => {
+            const isRead = msg.readAt !== null && msg.readAt !== undefined
             const displayTitle = msg.title ?? msg.content.slice(0, 30) + (msg.content.length > 30 ? '…' : '')
             return (
               <Card
                 key={msg.id}
                 variant="outlined"
-                sx={{ opacity: msg.isRead ? 0.7 : 1 }}
+                sx={{ opacity: isRead ? 0.7 : 1 }}
               >
                 <CardActionArea onClick={() => handleOpen(msg)}>
                   <CardContent
@@ -109,7 +111,7 @@ export default function MessagesPage() {
                     <Box sx={{ flex: 1, minWidth: 0, mr: 1.5 }}>
                       <Typography
                         variant="body2"
-                        fontWeight={msg.isRead ? 400 : 600}
+                        fontWeight={isRead ? 400 : 600}
                         noWrap
                       >
                         {displayTitle}
@@ -121,10 +123,10 @@ export default function MessagesPage() {
                       </Typography>
                     </Box>
                     <Chip
-                      label={msg.isRead ? '읽음' : '미읽음'}
+                      label={isRead ? '읽음' : '미읽음'}
                       size="small"
-                      color={msg.isRead ? 'default' : 'primary'}
-                      variant={msg.isRead ? 'outlined' : 'filled'}
+                      color={isRead ? 'default' : 'primary'}
+                      variant={isRead ? 'outlined' : 'filled'}
                     />
                   </CardContent>
                 </CardActionArea>

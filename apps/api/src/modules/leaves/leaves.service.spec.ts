@@ -289,9 +289,11 @@ describe('LeavesService', () => {
         accruedDays: Number(20),
         remainingDays: Number(17),
       })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma))
 
       const dto = {
-        employeeId: EMPLOYEE_ID,
+        employeeIds: [EMPLOYEE_ID],
         leaveTypeId: TYPE_ID,
         year: YEAR,
         days: 5,
@@ -304,7 +306,27 @@ describe('LeavesService', () => {
         'leave.accrued',
         expect.objectContaining({ employeeId: EMPLOYEE_ID, days: 5 }),
       )
-      expect(result).toBeDefined()
+      expect(result).toHaveLength(1)
+    })
+
+    it('여러 직원에게 동시에 휴가를 발생시킨다', async () => {
+      const SECOND_EMPLOYEE_ID = 'employee-2'
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.leaveType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.leaveBalance.upsert.mockResolvedValue(baseBalance)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma))
+
+      const result = await service.manualAccrual(COMPANY_ID, {
+        employeeIds: [EMPLOYEE_ID, SECOND_EMPLOYEE_ID],
+        leaveTypeId: TYPE_ID,
+        year: YEAR,
+        days: 3,
+      })
+
+      expect(mockPrisma.leaveBalance.upsert).toHaveBeenCalledTimes(2)
+      expect(mockEvents.emit).toHaveBeenCalledTimes(2)
+      expect(result).toHaveLength(2)
     })
 
     it('존재하지 않는 직원이면 NotFoundException을 던진다', async () => {
@@ -312,7 +334,7 @@ describe('LeavesService', () => {
 
       await expect(
         service.manualAccrual(COMPANY_ID, {
-          employeeId: 'nonexistent',
+          employeeIds: ['nonexistent'],
           leaveTypeId: TYPE_ID,
           year: YEAR,
           days: 5,

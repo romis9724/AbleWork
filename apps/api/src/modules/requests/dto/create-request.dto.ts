@@ -53,9 +53,26 @@ export const BulkApproveSchema = z.object({
   comment: z.string().optional(),
 })
 
+export const REQUEST_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'] as const
+
 export const RequestFilterSchema = z.object({
   scope: z.enum(['mine', 'pending_approval', 'completed', 'referenced']).default('mine'),
   type: z.string().optional(),
+  // 단일값('PENDING') 또는 콤마 구분 다중값('APPROVED,REJECTED') 허용
+  status: z
+    .string()
+    .optional()
+    .refine(
+      (value) =>
+        value === undefined ||
+        value
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .every((s) => (REQUEST_STATUSES as readonly string[]).includes(s)),
+      { message: `status는 ${REQUEST_STATUSES.join(', ')} 중 하나(콤마 구분 가능)여야 합니다.` },
+    ),
+  allEmployees: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 })

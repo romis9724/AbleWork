@@ -13,8 +13,8 @@ import Typography from '@mui/material/Typography'
 import Autocomplete from '@mui/material/Autocomplete'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import WorkIcon from '@mui/icons-material/Work'
-import EventBusyIcon from '@mui/icons-material/EventBusy'
-import BeachAccessIcon from '@mui/icons-material/BeachAccess'
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
+import AccessTimeIcon from '@mui/icons-material/AccessTime'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import { useNowAtWork, type NowAtWork } from '@/lib/query/attendances'
@@ -26,6 +26,8 @@ const STATUS_LABEL: Record<string, string> = {
   ON_LEAVE: '휴가 중',
   ONCALL: '대기',
   LATE: '지각',
+  REMOTE: '재택',
+  DEEMED_WORK: '간주근로',
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -34,6 +36,8 @@ const STATUS_COLOR: Record<string, string> = {
   ON_LEAVE: '#1565c0',
   ONCALL: '#e65100',
   LATE: '#f9a825',
+  REMOTE: '#00695c',
+  DEEMED_WORK: '#6a1b9a',
 }
 
 const STATUS_BG: Record<string, string> = {
@@ -42,6 +46,8 @@ const STATUS_BG: Record<string, string> = {
   ON_LEAVE: '#e3f2fd',
   ONCALL: '#fff3e0',
   LATE: '#fffde7',
+  REMOTE: '#e0f2f1',
+  DEEMED_WORK: '#f3e5f5',
 }
 
 function SummaryCard({
@@ -98,12 +104,16 @@ export default function NowAtWorkPage() {
   const orgs = toArray<Organization>(rawOrgs as RawList<Organization>)
 
   const filtered: NowAtWork[] = orgFilter
-    ? employees.filter((e) => e.organization === orgFilter || e.organization?.includes(orgFilter))
+    ? employees.filter(
+        (e) => e.organization?.name === orgFilter || e.organization?.name?.includes(orgFilter),
+      )
     : employees
 
-  const working = filtered.filter((e) => e.status === 'WORKING').length
-  const absent = filtered.filter((e) => e.status === 'ABSENT').length
-  const onLeave = filtered.filter((e) => e.status === 'ON_LEAVE').length
+  const working = filtered.filter((e) =>
+    ['WORKING', 'LATE', 'REMOTE', 'DEEMED_WORK'].includes(e.workingStatus),
+  ).length
+  const oncall = filtered.filter((e) => e.workingStatus === 'ONCALL').length
+  const late = filtered.filter((e) => e.workingStatus === 'LATE').length
 
   return (
     <>
@@ -130,16 +140,16 @@ export default function NowAtWorkPage() {
           color="#2e7d32"
         />
         <SummaryCard
-          icon={<EventBusyIcon fontSize="inherit" />}
-          label="미출근"
-          count={absent}
-          color="#c62828"
+          icon={<NotificationsActiveIcon fontSize="inherit" />}
+          label="대기"
+          count={oncall}
+          color="#e65100"
         />
         <SummaryCard
-          icon={<BeachAccessIcon fontSize="inherit" />}
-          label="휴가 중"
-          count={onLeave}
-          color="#1565c0"
+          icon={<AccessTimeIcon fontSize="inherit" />}
+          label="지각"
+          count={late}
+          color="#f9a825"
         />
       </Box>
 
@@ -164,36 +174,36 @@ export default function NowAtWorkPage() {
       ) : (
         <Grid container spacing={2}>
           {filtered.map((emp) => (
-            <Grid key={emp.employeeId} item xs={12} sm={6} md={4} lg={3}>
+            <Grid key={emp.attendanceId} item xs={12} sm={6} md={4} lg={3}>
               <Card
                 elevation={0}
                 sx={{
                   border: '1px solid',
                   borderColor: 'divider',
                   borderLeft: '4px solid',
-                  borderLeftColor: STATUS_COLOR[emp.status] ?? 'grey.400',
+                  borderLeftColor: STATUS_COLOR[emp.workingStatus] ?? 'grey.400',
                   height: '100%',
                 }}
               >
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
                     <Typography variant="subtitle1" fontWeight={700}>
-                      {emp.name}
+                      {emp.employeeName}
                     </Typography>
                     <Chip
-                      label={STATUS_LABEL[emp.status] ?? emp.status}
+                      label={STATUS_LABEL[emp.workingStatus] ?? emp.workingStatus}
                       size="small"
                       sx={{
-                        bgcolor: STATUS_BG[emp.status] ?? 'grey.100',
-                        color: STATUS_COLOR[emp.status] ?? 'grey.700',
+                        bgcolor: STATUS_BG[emp.workingStatus] ?? 'grey.100',
+                        color: STATUS_COLOR[emp.workingStatus] ?? 'grey.700',
                         fontWeight: 600,
                         fontSize: '0.7rem',
                       }}
                     />
                   </Box>
-                  {emp.organization && (
+                  {emp.organization?.name && (
                     <Typography variant="body2" color="text.secondary" mb={1}>
-                      {emp.organization}
+                      {emp.organization.name}
                     </Typography>
                   )}
                   {emp.clockInAt && (

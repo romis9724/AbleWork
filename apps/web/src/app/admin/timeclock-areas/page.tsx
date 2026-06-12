@@ -55,9 +55,9 @@ const areaSchema = z
     organizationId: z.string().min(1, '조직을 선택해 주세요.'),
     authMethod: z.enum(['gps', 'wifi', 'gps_or_wifi', 'gps_and_wifi', 'none']),
     // 폼 입력값은 string으로 관리
-    latitude: z.string().optional(),
-    longitude: z.string().optional(),
-    radius: z.string().optional(),
+    locationLat: z.string().optional(),
+    locationLng: z.string().optional(),
+    locationRadiusMeters: z.string().optional(),
     wifiSsid: z.string().optional(),
   })
   .superRefine((data, ctx) => {
@@ -65,9 +65,9 @@ const areaSchema = z
     const needsWifi = data.authMethod === 'wifi' || data.authMethod === 'gps_or_wifi' || data.authMethod === 'gps_and_wifi'
 
     if (needsGps) {
-      if (!data.latitude) ctx.addIssue({ path: ['latitude'], code: 'custom', message: '위도를 입력해 주세요.' })
-      if (!data.longitude) ctx.addIssue({ path: ['longitude'], code: 'custom', message: '경도를 입력해 주세요.' })
-      if (!data.radius) ctx.addIssue({ path: ['radius'], code: 'custom', message: '반경을 입력해 주세요.' })
+      if (!data.locationLat) ctx.addIssue({ path: ['locationLat'], code: 'custom', message: '위도를 입력해 주세요.' })
+      if (!data.locationLng) ctx.addIssue({ path: ['locationLng'], code: 'custom', message: '경도를 입력해 주세요.' })
+      if (!data.locationRadiusMeters) ctx.addIssue({ path: ['locationRadiusMeters'], code: 'custom', message: '반경을 입력해 주세요.' })
     }
     if (needsWifi) {
       if (!data.wifiSsid) ctx.addIssue({ path: ['wifiSsid'], code: 'custom', message: 'WiFi SSID를 입력해 주세요.' })
@@ -77,15 +77,18 @@ const areaSchema = z
 type AreaFormValues = z.infer<typeof areaSchema>
 
 // 폼 값을 API 페이로드로 변환
+// BE 스키마는 .optional()(undefined만 허용)이므로 미입력 필드는 null 대신 키 자체를 제외한다
 function toApiPayload(values: AreaFormValues) {
   return {
     name: values.name,
     organizationId: values.organizationId,
     authMethod: values.authMethod,
-    latitude: values.latitude ? Number(values.latitude) : null,
-    longitude: values.longitude ? Number(values.longitude) : null,
-    radius: values.radius ? parseInt(values.radius, 10) : null,
-    wifiSsid: values.wifiSsid || null,
+    ...(values.locationLat ? { locationLat: Number(values.locationLat) } : {}),
+    ...(values.locationLng ? { locationLng: Number(values.locationLng) } : {}),
+    ...(values.locationRadiusMeters
+      ? { locationRadiusMeters: parseInt(values.locationRadiusMeters, 10) }
+      : {}),
+    ...(values.wifiSsid ? { wifiSsid: values.wifiSsid } : {}),
   }
 }
 
@@ -134,9 +137,9 @@ function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }
       name: initial?.name ?? '',
       organizationId: initial?.organizationId ?? '',
       authMethod: (initial?.authMethod ?? 'gps') as AuthMethod,
-      latitude: initial?.latitude != null ? String(initial.latitude) : '',
-      longitude: initial?.longitude != null ? String(initial.longitude) : '',
-      radius: initial?.radius != null ? String(initial.radius) : '',
+      locationLat: initial?.locationLat != null ? String(initial.locationLat) : '',
+      locationLng: initial?.locationLng != null ? String(initial.locationLng) : '',
+      locationRadiusMeters: initial?.locationRadiusMeters != null ? String(initial.locationRadiusMeters) : '',
       wifiSsid: initial?.wifiSsid ?? '',
     },
   })
@@ -217,7 +220,7 @@ function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }
             <Grid container spacing={2}>
               <Grid item xs={6}>
                 <Controller
-                  name="latitude"
+                  name="locationLat"
                   control={control}
                   render={({ field }) => (
                     <TextField
@@ -228,8 +231,8 @@ function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }
                       type="number"
                       fullWidth
                       size="small"
-                      error={!!errors.latitude}
-                      helperText={errors.latitude?.message}
+                      error={!!errors.locationLat}
+                      helperText={errors.locationLat?.message}
                       inputProps={{ step: 'any' }}
                     />
                   )}
@@ -237,7 +240,7 @@ function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }
               </Grid>
               <Grid item xs={6}>
                 <Controller
-                  name="longitude"
+                  name="locationLng"
                   control={control}
                   render={({ field }) => (
                     <TextField
@@ -248,8 +251,8 @@ function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }
                       type="number"
                       fullWidth
                       size="small"
-                      error={!!errors.longitude}
-                      helperText={errors.longitude?.message}
+                      error={!!errors.locationLng}
+                      helperText={errors.locationLng?.message}
                       inputProps={{ step: 'any' }}
                     />
                   )}
@@ -257,7 +260,7 @@ function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }
               </Grid>
               <Grid item xs={12}>
                 <Controller
-                  name="radius"
+                  name="locationRadiusMeters"
                   control={control}
                   render={({ field }) => (
                     <TextField
@@ -268,8 +271,8 @@ function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }
                       type="number"
                       fullWidth
                       size="small"
-                      error={!!errors.radius}
-                      helperText={errors.radius?.message}
+                      error={!!errors.locationRadiusMeters}
+                      helperText={errors.locationRadiusMeters?.message}
                       inputProps={{ min: 1, step: 1 }}
                     />
                   )}
@@ -417,10 +420,10 @@ export default function TimeclockAreasPage() {
                             size="small"
                           />
                         </Box>
-                        {(area.authMethod === 'gps' || area.authMethod === 'gps_or_wifi' || area.authMethod === 'gps_and_wifi') && area.latitude != null && (
+                        {(area.authMethod === 'gps' || area.authMethod === 'gps_or_wifi' || area.authMethod === 'gps_and_wifi') && area.locationLat != null && (
                           <Typography variant="body2" color="text.secondary" mt={1} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                             <GpsFixedIcon sx={{ fontSize: 14 }} />
-                            {area.latitude.toFixed(5)}, {area.longitude?.toFixed(5)} · {area.radius}m
+                            {Number(area.locationLat).toFixed(5)}, {area.locationLng != null ? Number(area.locationLng).toFixed(5) : '—'} · {area.locationRadiusMeters}m
                           </Typography>
                         )}
                         {(area.authMethod === 'wifi' || area.authMethod === 'gps_or_wifi' || area.authMethod === 'gps_and_wifi') && area.wifiSsid && (

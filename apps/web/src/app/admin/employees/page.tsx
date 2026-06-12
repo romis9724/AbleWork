@@ -28,6 +28,9 @@ interface Employee {
 const LEVEL_LABEL: Record<string, string> = {
   SUPER_ADMIN: '최고관리자', GENERAL_ADMIN: '총괄관리자', ORG_ADMIN: '조직관리자', EMPLOYEE: '직원',
 }
+const EMPLOYMENT_TYPE_LABEL: Record<string, string> = {
+  regular: '정규직', contract: '계약직', part_time: '파트타임', daily: '일용직',
+}
 const LEVEL_COLOR: Record<string, 'error' | 'warning' | 'info' | 'default'> = {
   SUPER_ADMIN: 'error', GENERAL_ADMIN: 'warning', ORG_ADMIN: 'info', EMPLOYEE: 'default',
 }
@@ -73,7 +76,7 @@ export default function EmployeesPage() {
                 <TableCell sx={{ fontWeight: 600 }}>{emp.name}</TableCell>
                 <TableCell>{emp.user?.email ?? '—'}</TableCell>
                 <TableCell>{emp.organizations?.[0]?.organization.name ?? '—'}</TableCell>
-                <TableCell>{emp.employmentType === 'regular' ? '정규직' : emp.employmentType}</TableCell>
+                <TableCell>{EMPLOYMENT_TYPE_LABEL[emp.employmentType] ?? emp.employmentType}</TableCell>
                 <TableCell>{new Date(emp.joinedAt).toLocaleDateString('ko-KR')}</TableCell>
                 <TableCell>
                   <Chip label={LEVEL_LABEL[emp.accessLevel] ?? emp.accessLevel} color={LEVEL_COLOR[emp.accessLevel] ?? 'default'} size="small" />

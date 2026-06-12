@@ -31,6 +31,7 @@ import {
   useApproveRequest,
   useRejectRequest,
   useForceApproveRequest,
+  useForceRejectRequest,
   useBulkApprove,
   type Request,
 } from '@/lib/query/requests'
@@ -105,6 +106,7 @@ export default function RequestsPage() {
   const approveMutation = useApproveRequest()
   const rejectMutation = useRejectRequest()
   const forceApproveMutation = useForceApproveRequest()
+  const forceRejectMutation = useForceRejectRequest()
   const bulkApproveMutation = useBulkApprove()
 
   // Snackbar
@@ -179,7 +181,7 @@ export default function RequestsPage() {
   async function handleForceReject() {
     if (!detail) return
     try {
-      await rejectMutation.mutateAsync({ id: detail.id, comment: comment || undefined })
+      await forceRejectMutation.mutateAsync({ id: detail.id, comment: comment || undefined })
       closeDetail()
       showSnack('강제 거절되었습니다.')
     } catch {
@@ -204,7 +206,8 @@ export default function RequestsPage() {
   const isActionPending =
     approveMutation.isPending ||
     rejectMutation.isPending ||
-    forceApproveMutation.isPending
+    forceApproveMutation.isPending ||
+    forceRejectMutation.isPending
 
   return (
     <>

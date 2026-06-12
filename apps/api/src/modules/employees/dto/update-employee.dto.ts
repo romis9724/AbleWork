@@ -5,7 +5,16 @@ export const UpdateEmployeeSchema = z.object({
   phone: z.string().max(20).nullable().optional(),
   employeeNumber: z.string().max(50).nullable().optional(),
   employmentType: z
-    .enum(['FULL_TIME', 'PART_TIME', 'CONTRACT', 'DAILY'])
+    .enum(['regular', 'contract', 'part_time', 'daily'])
+    .optional(),
+  joinedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD 형식으로 입력하세요.')
+    .optional(),
+  resignedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD 형식으로 입력하세요.')
+    .nullable()
     .optional(),
   accessLevel: z
     .enum(['GENERAL_ADMIN', 'ORG_ADMIN', 'EMPLOYEE'])

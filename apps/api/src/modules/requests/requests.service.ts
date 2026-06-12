@@ -7,7 +7,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
-import { AccessLevel } from '@ablework/shared-constants'
+import { AccessLevel, ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
 import { EVENTS } from '../../events/domain-events'
 import {
   CreateRequestDto,
@@ -88,7 +88,7 @@ export class RequestsService {
   // ── HR-07-01 요청 목록 ───────────────────────────────────────────────────────
 
   async findAll(companyId: string, filter: RequestFilterDto, requester: JwtPayload) {
-    const { scope, type, page, limit } = filter
+    const { scope, type, status, allEmployees, page, limit } = filter
     const skip = (page - 1) * limit
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,9 +98,17 @@ export class RequestsService {
       where = { ...where, type }
     }
 
+    // allEmployees=true는 GENERAL_ADMIN 이상만 적용 (미만이면 무시하고 본인 것만 조회)
+    const isCompanyAdmin =
+      ACCESS_LEVEL_HIERARCHY[requester.accessLevel] >=
+      ACCESS_LEVEL_HIERARCHY[AccessLevel.GENERAL_ADMIN]
+    const includeAllEmployees = allEmployees === true && isCompanyAdmin
+
     switch (scope) {
       case 'mine':
-        where = { ...where, requesterId: requester.employeeId }
+        if (!includeAllEmployees) {
+          where = { ...where, requesterId: requester.employeeId }
+        }
         break
 
       case 'pending_approval':
@@ -149,6 +157,17 @@ export class RequestsService {
           },
         }
         break
+    }
+
+    // status 명시 시 scope 기본 status 조건보다 우선 적용 (콤마 구분 다중값 허용)
+    const statusList = (status ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (statusList.length === 1) {
+      where = { ...where, status: statusList[0] }
+    } else if (statusList.length > 1) {
+      where = { ...where, status: { in: statusList } }
     }
 
     const [items, total] = await Promise.all([

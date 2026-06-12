@@ -67,10 +67,19 @@ export const useForceApproveRequest = () => {
   })
 }
 
+export const useForceRejectRequest = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, comment }: { id: string; comment?: string }) =>
+      apiClient.post(`/requests/${id}/force-reject`, { comment }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
 export const useBulkApprove = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (ids: string[]) => apiClient.post('/requests/bulk-approve', { ids }),
+    mutationFn: (ids: string[]) => apiClient.post('/requests/bulk-approve', { requestIds: ids }),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }

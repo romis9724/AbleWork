@@ -172,12 +172,15 @@ export default function MessagesPage() {
 
   async function handleSend() {
     if (!sendForm.name.trim() || !sendForm.templateId || sendForm.recipients.length === 0) return
+    const template = templates.find((t) => t.id === sendForm.templateId)
+    if (!template) return
     try {
       await sendMutation.mutateAsync({
-        name: sendForm.name.trim(),
+        title: sendForm.name.trim(),
+        content: template.content,
         templateId: sendForm.templateId,
-        recipientIds: sendForm.recipients.map((e) => e.id),
-        emailNotification: sendForm.emailNotification,
+        recipientEmployeeIds: sendForm.recipients.map((e) => e.id),
+        sendEmail: sendForm.emailNotification,
       })
       setSendForm(defaultSendForm)
       showSnack(`메시지가 ${sendForm.recipients.length}명에게 발송되었습니다.`)

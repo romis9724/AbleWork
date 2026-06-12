@@ -10,6 +10,7 @@ import CircularProgress from '@mui/material/CircularProgress'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import EmptyState from '@/components/common/EmptyState'
+import { ShiftStatus } from '@ablework/shared-constants'
 import { useShifts } from '@/lib/query/shifts'
 import { useAuthStore } from '@/stores/auth.store'
 
@@ -217,9 +218,9 @@ export default function ShiftsPage() {
                       />
                     )}
                     <Chip
-                      label={shift.status === 'CONFIRMED' ? '확정' : '미확정'}
+                      label={shift.status === ShiftStatus.CONFIRMED ? '확정' : '미확정'}
                       size="small"
-                      color={shift.status === 'CONFIRMED' ? 'success' : 'default'}
+                      color={shift.status === ShiftStatus.CONFIRMED ? 'success' : 'default'}
                       variant="outlined"
                     />
                   </Box>

@@ -5,6 +5,8 @@ import {
   UpdateTemplateDto,
   SendMessageDto,
   CreateAutomationDto,
+  UpdateAutomationDto,
+  ReadMessageDto,
   PaginationDto,
   MessageQueryDto,
 } from './dto/message.dto'
@@ -64,7 +66,7 @@ export class MessagesService {
   // ── MSG-05 메시지 발송 ────────────────────────────────────────────────────────
 
   async sendMessage(companyId: string, senderId: string, dto: SendMessageDto) {
-    const { templateId, title, content, recipientEmployeeIds } = dto
+    const { templateId, title, content, recipientEmployeeIds, sendEmail } = dto
 
     if (templateId) {
       await this.assertTemplateBelongsToCompany(companyId, templateId)
@@ -79,7 +81,6 @@ export class MessagesService {
         title,
         content,
         senderId,
-        ...(templateId && { templateId }),
         recipients: {
           create: recipientEmployeeIds.map((recipientId) => ({ recipientId })),
         },
@@ -88,6 +89,12 @@ export class MessagesService {
         recipients: true,
       },
     })
+
+    // TODO(다음 Wave): Message 모델에 templateId/sendEmail 컬럼 마이그레이션 추가 후
+    //   발송 메시지 레코드에 templateId·sendEmail(현재 값: sendEmail 변수)을 기록하고,
+    //   sendEmail=true인 경우 Nodemailer로 이메일 실발송 처리.
+    //   현재는 수신함(in-app) 발송만 수행한다.
+    void sendEmail
 
     return message
   }
@@ -140,7 +147,7 @@ export class MessagesService {
 
   // ── MSG-07 메시지 읽음 처리 ───────────────────────────────────────────────────
 
-  async markAsRead(messageId: string, employeeId: string) {
+  async markAsRead(messageId: string, employeeId: string, dto?: ReadMessageDto) {
     const recipient = await this.prisma.messageRecipient.findFirst({
       where: { messageId, recipientId: employeeId },
     })
@@ -154,7 +161,10 @@ export class MessagesService {
 
     return this.prisma.messageRecipient.update({
       where: { id: recipient.id },
-      data: { readAt: new Date() },
+      data: {
+        readAt: recipient.readAt ?? new Date(),
+        ...(dto?.note !== undefined && { note: dto.note }),
+      },
     })
   }
 
@@ -188,13 +198,75 @@ export class MessagesService {
     return this.prisma.messageAutomation.create({
       data: {
         companyId,
-        ...dto,
-        startsAt: new Date(dto.startsAt as string),
+        name: dto.name,
+        automationType: dto.automationType,
+        triggerBasis: dto.triggerBasis,
+        offsetDays: dto.offsetDays,
+        sendTime: this.toSendTimeDate(dto.sendTime),
+        sendEmail: dto.sendEmail,
+        leaveTypeId: dto.leaveTypeId,
+        templateId: dto.templateId,
+        isActive: dto.isActive,
+        startsAt: dto.startsAt ? new Date(dto.startsAt) : new Date(),
       },
     })
   }
 
+  // ── MSG-10 자동화 수정 ────────────────────────────────────────────────────────
+
+  async updateAutomation(companyId: string, id: string, dto: UpdateAutomationDto) {
+    await this.assertAutomationBelongsToCompany(companyId, id)
+
+    if (dto.templateId) {
+      await this.assertTemplateBelongsToCompany(companyId, dto.templateId)
+    }
+
+    return this.prisma.messageAutomation.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.automationType !== undefined && { automationType: dto.automationType }),
+        ...(dto.triggerBasis !== undefined && { triggerBasis: dto.triggerBasis }),
+        ...(dto.offsetDays !== undefined && { offsetDays: dto.offsetDays }),
+        ...(dto.sendTime !== undefined && { sendTime: this.toSendTimeDate(dto.sendTime) }),
+        ...(dto.sendEmail !== undefined && { sendEmail: dto.sendEmail }),
+        ...(dto.leaveTypeId !== undefined && { leaveTypeId: dto.leaveTypeId }),
+        ...(dto.templateId !== undefined && { templateId: dto.templateId }),
+        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        ...(dto.startsAt !== undefined && { startsAt: new Date(dto.startsAt) }),
+      },
+    })
+  }
+
+  // ── MSG-11 자동화 삭제 ────────────────────────────────────────────────────────
+
+  async deleteAutomation(companyId: string, id: string) {
+    await this.assertAutomationBelongsToCompany(companyId, id)
+
+    await this.prisma.messageAutomation.delete({ where: { id } })
+
+    return { deleted: true }
+  }
+
   // ── 내부 헬퍼 ─────────────────────────────────────────────────────────────────
+
+  /** 'HH:mm' 문자열을 Prisma @db.Time 컬럼용 Date 값으로 변환 */
+  private toSendTimeDate(sendTime: string): Date {
+    return new Date(`1970-01-01T${sendTime}:00.000Z`)
+  }
+
+  private async assertAutomationBelongsToCompany(companyId: string, id: string) {
+    const automation = await this.prisma.messageAutomation.findFirst({
+      where: { id, companyId },
+    })
+    if (!automation) {
+      throw new NotFoundException({
+        code: 'AUTOMATION_NOT_FOUND',
+        message: '자동화 규칙을 찾을 수 없습니다.',
+      })
+    }
+    return automation
+  }
 
   private async assertTemplateBelongsToCompany(companyId: string, templateId: string) {
     const template = await this.prisma.messageTemplate.findFirst({

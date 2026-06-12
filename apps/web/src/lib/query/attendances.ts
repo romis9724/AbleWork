@@ -14,12 +14,20 @@ export interface Attendance {
 }
 
 export interface NowAtWork {
+  attendanceId: string
   employeeId: string
-  name: string
-  organization?: string
+  employeeName: string
+  employeeNumber?: string | null
+  organization: { name: string } | null
+  clockInAt: string
   status: string
-  clockInAt?: string
-  workMinutes?: number
+  workingStatus: string
+  isOncall: boolean
+}
+
+export interface NowAtWorkResponse {
+  total: number
+  items: NowAtWork[]
 }
 
 const QUERY_KEY = ['attendances']
@@ -35,7 +43,7 @@ export const useAttendances = (params?: Record<string, string | undefined>) =>
 export const useNowAtWork = () =>
   useQuery({
     queryKey: [...QUERY_KEY, 'now'],
-    queryFn: () => apiClient.get('/attendances/now-at-work') as Promise<NowAtWork[]>,
+    queryFn: () => apiClient.get('/attendances/now-at-work') as Promise<NowAtWorkResponse>,
     staleTime: 30_000,
     refetchInterval: 30_000,
   })

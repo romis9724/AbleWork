@@ -51,10 +51,11 @@ function EmployeeBalanceRows({
   employee: Employee
   orgFilter: string
 }) {
+  // 훅은 항상 최상단에서 호출 (조건부 early return 이전)
+  const { data: balances = [] } = useLeaveBalance(employee.id)
+
   const orgIds = employee.organizations?.map((o) => o.organization.id) ?? []
   if (orgFilter && !orgIds.includes(orgFilter)) return null
-
-  const { data: balances = [] } = useLeaveBalance(employee.id)
 
   return (
     <>

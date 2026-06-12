@@ -7,6 +7,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
+import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
@@ -14,6 +15,9 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import FormGroup from '@mui/material/FormGroup'
+import FormLabel from '@mui/material/FormLabel'
 import IconButton from '@mui/material/IconButton'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
@@ -53,23 +57,50 @@ interface EmployeeFormValues {
 
 interface WageInfoForm {
   hourlyWage: string
-  scheduledWorkHours: string
-  maxWorkHours: string
-  effectiveDate: string
+  contractedWorkDays: string[]
+  contractedHoursPerWeek: string
+  maxHoursPerWeek: string
+  effectiveFrom: string
 }
 
 interface WageInfo {
   id: string
-  effectiveDate: string
+  effectiveFrom: string
   hourlyWage: number
-  scheduledWorkHours: number
-  maxWorkHours: number
+  contractedWorkDays: string
+  contractedHoursPerWeek: number | string
+  maxHoursPerWeek: number | string
 }
 
 const EMPLOYMENT_TYPE_LABEL: Record<string, string> = {
   regular: '정규직',
   contract: '계약직',
-  part_time: '아르바이트',
+  part_time: '파트타임',
+  daily: '일용직',
+}
+
+const WORK_DAYS: { value: string; label: string }[] = [
+  { value: 'mon', label: '월' },
+  { value: 'tue', label: '화' },
+  { value: 'wed', label: '수' },
+  { value: 'thu', label: '목' },
+  { value: 'fri', label: '금' },
+  { value: 'sat', label: '토' },
+  { value: 'sun', label: '일' },
+]
+
+const DEFAULT_WORK_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri']
+
+const WORK_DAY_LABEL: Record<string, string> = Object.fromEntries(
+  WORK_DAYS.map((d) => [d.value, d.label]),
+)
+
+function formatWorkDays(days: string): string {
+  if (!days) return '—'
+  return days
+    .split(',')
+    .map((d) => WORK_DAY_LABEL[d.trim()] ?? d.trim())
+    .join(', ')
 }
 
 const ACCESS_LEVEL_LABEL: Record<string, string> = {
@@ -88,9 +119,10 @@ export default function EmployeeDetailPage() {
   const [addWageOpen, setAddWageOpen] = useState(false)
   const [wageForm, setWageForm] = useState<WageInfoForm>({
     hourlyWage: '',
-    scheduledWorkHours: '',
-    maxWorkHours: '',
-    effectiveDate: '',
+    contractedWorkDays: DEFAULT_WORK_DAYS,
+    contractedHoursPerWeek: '',
+    maxHoursPerWeek: '',
+    effectiveFrom: '',
   })
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
@@ -158,16 +190,33 @@ export default function EmployeeDetailPage() {
     try {
       await createWageInfoMutation.mutateAsync({
         hourlyWage: Number(wageForm.hourlyWage),
-        scheduledWorkHours: Number(wageForm.scheduledWorkHours),
-        maxWorkHours: Number(wageForm.maxWorkHours),
-        effectiveDate: wageForm.effectiveDate,
+        contractedWorkDays: wageForm.contractedWorkDays.join(','),
+        contractedHoursPerWeek: Number(wageForm.contractedHoursPerWeek),
+        // 미입력 시 키 자체를 제외 (BE 기본값 52 적용)
+        ...(wageForm.maxHoursPerWeek ? { maxHoursPerWeek: Number(wageForm.maxHoursPerWeek) } : {}),
+        effectiveFrom: wageForm.effectiveFrom,
       })
       setAddWageOpen(false)
-      setWageForm({ hourlyWage: '', scheduledWorkHours: '', maxWorkHours: '', effectiveDate: '' })
+      setWageForm({
+        hourlyWage: '',
+        contractedWorkDays: DEFAULT_WORK_DAYS,
+        contractedHoursPerWeek: '',
+        maxHoursPerWeek: '',
+        effectiveFrom: '',
+      })
       setSnack({ open: true, message: '근로정보가 추가되었습니다.', severity: 'success' })
     } catch {
       setSnack({ open: true, message: '추가에 실패했습니다.', severity: 'error' })
     }
+  }
+
+  function toggleWorkDay(day: string) {
+    setWageForm((f) => ({
+      ...f,
+      contractedWorkDays: f.contractedWorkDays.includes(day)
+        ? f.contractedWorkDays.filter((d) => d !== day)
+        : WORK_DAYS.filter((d) => f.contractedWorkDays.includes(d.value) || d.value === day).map((d) => d.value),
+    }))
   }
 
   if (isLoading) {
@@ -277,9 +326,9 @@ export default function EmployeeDetailPage() {
                     <FormControl size="small" sx={{ width: 180 }}>
                       <InputLabel>고용형태</InputLabel>
                       <Select {...field} label="고용형태">
-                        <MenuItem value="regular">정규직</MenuItem>
-                        <MenuItem value="contract">계약직</MenuItem>
-                        <MenuItem value="part_time">아르바이트</MenuItem>
+                        {Object.entries(EMPLOYMENT_TYPE_LABEL).map(([value, label]) => (
+                          <MenuItem key={value} value={value}>{label}</MenuItem>
+                        ))}
                       </Select>
                     </FormControl>
                   )}
@@ -343,14 +392,15 @@ export default function EmployeeDetailPage() {
                 <TableRow sx={{ bgcolor: 'background.default' }}>
                   <TableCell>적용시점</TableCell>
                   <TableCell align="right">시급 (원)</TableCell>
-                  <TableCell align="right">소정근로시간 (h)</TableCell>
-                  <TableCell align="right">최대근로시간 (h)</TableCell>
+                  <TableCell>계약 근무요일</TableCell>
+                  <TableCell align="right">주 계약시간 (h)</TableCell>
+                  <TableCell align="right">주 최대시간 (h)</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {wageInfos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                       근로정보가 없습니다.
                     </TableCell>
                   </TableRow>
@@ -358,13 +408,14 @@ export default function EmployeeDetailPage() {
                   wageInfos.map((w) => (
                     <TableRow key={w.id}>
                       <TableCell>
-                        {new Date(w.effectiveDate).toLocaleDateString('ko-KR')}
+                        {new Date(w.effectiveFrom).toLocaleDateString('ko-KR')}
                       </TableCell>
                       <TableCell align="right">
-                        {w.hourlyWage.toLocaleString('ko-KR')}
+                        {Number(w.hourlyWage).toLocaleString('ko-KR')}
                       </TableCell>
-                      <TableCell align="right">{w.scheduledWorkHours}</TableCell>
-                      <TableCell align="right">{w.maxWorkHours}</TableCell>
+                      <TableCell>{formatWorkDays(w.contractedWorkDays)}</TableCell>
+                      <TableCell align="right">{Number(w.contractedHoursPerWeek)}</TableCell>
+                      <TableCell align="right">{Number(w.maxHoursPerWeek)}</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -440,29 +491,49 @@ export default function EmployeeDetailPage() {
             fullWidth
             size="small"
           />
+          <FormControl size="small">
+            <FormLabel required sx={{ fontSize: '0.8rem' }}>계약 근무요일</FormLabel>
+            <FormGroup row>
+              {WORK_DAYS.map((day) => (
+                <FormControlLabel
+                  key={day.value}
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={wageForm.contractedWorkDays.includes(day.value)}
+                      onChange={() => toggleWorkDay(day.value)}
+                    />
+                  }
+                  label={day.label}
+                />
+              ))}
+            </FormGroup>
+          </FormControl>
           <TextField
-            label="소정근로시간 (시간/주)"
+            label="주 계약시간 (시간/주)"
             type="number"
-            value={wageForm.scheduledWorkHours}
-            onChange={(e) => setWageForm((f) => ({ ...f, scheduledWorkHours: e.target.value }))}
+            value={wageForm.contractedHoursPerWeek}
+            onChange={(e) => setWageForm((f) => ({ ...f, contractedHoursPerWeek: e.target.value }))}
             inputProps={{ min: 0 }}
             fullWidth
             size="small"
+            required
           />
           <TextField
-            label="최대근로시간 (시간/주)"
+            label="주 최대시간 (시간/주)"
             type="number"
-            value={wageForm.maxWorkHours}
-            onChange={(e) => setWageForm((f) => ({ ...f, maxWorkHours: e.target.value }))}
+            value={wageForm.maxHoursPerWeek}
+            onChange={(e) => setWageForm((f) => ({ ...f, maxHoursPerWeek: e.target.value }))}
             inputProps={{ min: 0 }}
             fullWidth
             size="small"
+            helperText="미입력 시 52시간이 적용됩니다."
           />
           <TextField
             label="적용시점"
             type="date"
-            value={wageForm.effectiveDate}
-            onChange={(e) => setWageForm((f) => ({ ...f, effectiveDate: e.target.value }))}
+            value={wageForm.effectiveFrom}
+            onChange={(e) => setWageForm((f) => ({ ...f, effectiveFrom: e.target.value }))}
             InputLabelProps={{ shrink: true }}
             fullWidth
             size="small"
@@ -476,7 +547,9 @@ export default function EmployeeDetailPage() {
             disabled={
               createWageInfoMutation.isPending ||
               !wageForm.hourlyWage ||
-              !wageForm.effectiveDate
+              wageForm.contractedWorkDays.length === 0 ||
+              !wageForm.contractedHoursPerWeek ||
+              !wageForm.effectiveFrom
             }
           >
             추가

@@ -52,9 +52,18 @@ export const SendMessageSchema = z.object({
   recipientEmployeeIds: z
     .array(z.string().uuid('유효한 UUID를 입력하세요.'))
     .min(1, '수신자를 한 명 이상 선택하세요.'),
+  sendEmail: z.boolean().optional().default(false),
 })
 
 export type SendMessageDto = z.infer<typeof SendMessageSchema>
+
+// ── 메시지 읽음 처리 ─────────────────────────────────────────────────────────
+
+export const ReadMessageSchema = z.object({
+  note: z.string().max(2000, '메모는 2000자 이내로 입력하세요.').optional(),
+})
+
+export type ReadMessageDto = z.infer<typeof ReadMessageSchema>
 
 // ── 자동화 생성 ───────────────────────────────────────────────────────────────
 
@@ -74,3 +83,23 @@ export const CreateAutomationSchema = z.object({
 })
 
 export type CreateAutomationDto = z.infer<typeof CreateAutomationSchema>
+
+// ── 자동화 수정 ───────────────────────────────────────────────────────────────
+
+export const UpdateAutomationSchema = z.object({
+  name: z.string().min(1, '자동화 이름을 입력하세요.').max(100).optional(),
+  automationType: z.string().min(1, '자동화 유형을 입력하세요.').optional(),
+  triggerBasis: z.string().min(1, '트리거 기준을 입력하세요.').optional(),
+  offsetDays: z.number().int().optional(),
+  sendTime: z
+    .string()
+    .regex(timeRegex, '발송 시간은 HH:mm 형식으로 입력하세요.')
+    .optional(),
+  sendEmail: z.boolean().optional(),
+  startsAt: z.string().datetime({ message: 'ISO 8601 형식으로 입력하세요.' }).optional(),
+  leaveTypeId: z.string().uuid('유효한 UUID를 입력하세요.').nullable().optional(),
+  templateId: z.string().uuid('유효한 UUID를 입력하세요.').optional(),
+  isActive: z.boolean().optional(),
+})
+
+export type UpdateAutomationDto = z.infer<typeof UpdateAutomationSchema>

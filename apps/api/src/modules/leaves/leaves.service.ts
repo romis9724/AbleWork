@@ -134,16 +134,22 @@ export class LeavesService {
       })
     }
 
-    // 대상 직원 목록 결정
-    const employees = dto.employeeId
-      ? await this.prisma.employee.findMany({
-          where: { id: dto.employeeId, companyId, isActive: true },
-          select: { id: true, joinedAt: true },
-        })
-      : await this.prisma.employee.findMany({
-          where: { companyId, isActive: true },
-          select: { id: true, joinedAt: true },
-        })
+    // 대상 직원 목록 결정 (employeeIds 배열 > 단일 employeeId > 전체)
+    const targetEmployeeIds =
+      dto.employeeIds && dto.employeeIds.length > 0
+        ? dto.employeeIds
+        : dto.employeeId
+          ? [dto.employeeId]
+          : undefined
+
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        ...(targetEmployeeIds && { id: { in: targetEmployeeIds } }),
+      },
+      select: { id: true, joinedAt: true },
+    })
 
     if (employees.length === 0) return { processed: 0 }
 
@@ -234,44 +240,41 @@ export class LeavesService {
   // ── HR-06-10 수동 발생 ───────────────────────────────────────────────────────
 
   async manualAccrual(companyId: string, dto: ManualAccrualDto) {
-    await this.assertEmployeeBelongsToCompany(companyId, dto.employeeId)
+    for (const employeeId of dto.employeeIds) {
+      await this.assertEmployeeBelongsToCompany(companyId, employeeId)
+    }
     await this.assertTypeBelongsToCompany(companyId, dto.leaveTypeId)
 
     const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null
 
-    const balance = await this.prisma.leaveBalance.upsert({
-      where: {
-        employeeId_leaveTypeId_year: {
-          employeeId: dto.employeeId,
-          leaveTypeId: dto.leaveTypeId,
-          year: dto.year,
-        },
-      },
-      create: {
-        employeeId: dto.employeeId,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const balances = await this.prisma.$transaction(async (tx: any) => {
+      const results = []
+      for (const employeeId of dto.employeeIds) {
+        results.push(
+          await this.upsertAccruedBalance(tx, {
+            employeeId,
+            leaveTypeId: dto.leaveTypeId,
+            year: dto.year,
+            days: dto.days,
+            expiresAt,
+          }),
+        )
+      }
+      return results
+    })
+
+    for (const employeeId of dto.employeeIds) {
+      this.events.emit(EVENTS.LEAVE_ACCRUED, {
+        employeeId,
         leaveTypeId: dto.leaveTypeId,
         year: dto.year,
-        accruedDays: dto.days,
-        usedDays: 0,
-        remainingDays: dto.days,
-        expiresAt,
-      },
-      update: {
-        accruedDays: { increment: dto.days },
-        remainingDays: { increment: dto.days },
-        ...(expiresAt && { expiresAt }),
-      },
-    })
+        days: dto.days,
+        companyId,
+      })
+    }
 
-    this.events.emit(EVENTS.LEAVE_ACCRUED, {
-      employeeId: dto.employeeId,
-      leaveTypeId: dto.leaveTypeId,
-      year: dto.year,
-      days: dto.days,
-      companyId,
-    })
-
-    return balance
+    return balances
   }
 
   // ── HR-06-11 휴가 일정 조회 ──────────────────────────────────────────────────
@@ -314,28 +317,12 @@ export class LeavesService {
 
     const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null
 
-    const balance = await this.prisma.leaveBalance.upsert({
-      where: {
-        employeeId_leaveTypeId_year: {
-          employeeId: dto.employeeId,
-          leaveTypeId: dto.leaveTypeId,
-          year: dto.year,
-        },
-      },
-      create: {
-        employeeId: dto.employeeId,
-        leaveTypeId: dto.leaveTypeId,
-        year: dto.year,
-        accruedDays: dto.days,
-        usedDays: 0,
-        remainingDays: dto.days,
-        expiresAt,
-      },
-      update: {
-        accruedDays: { increment: dto.days },
-        remainingDays: { increment: dto.days },
-        ...(expiresAt && { expiresAt }),
-      },
+    const balance = await this.upsertAccruedBalance(this.prisma, {
+      employeeId: dto.employeeId,
+      leaveTypeId: dto.leaveTypeId,
+      year: dto.year,
+      days: dto.days,
+      expiresAt,
     })
 
     this.events.emit(EVENTS.LEAVE_COMPENSATION_ACCRUED, {
@@ -393,6 +380,41 @@ export class LeavesService {
   }
 
   // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
+
+  /** 잔액 발생 공통 로직 (manualAccrual / createCompensationLeave 공용) */
+  private async upsertAccruedBalance(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    params: {
+      employeeId: string
+      leaveTypeId: string
+      year: number
+      days: number
+      expiresAt: Date | null
+    },
+  ) {
+    const { employeeId, leaveTypeId, year, days, expiresAt } = params
+
+    return tx.leaveBalance.upsert({
+      where: {
+        employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year },
+      },
+      create: {
+        employeeId,
+        leaveTypeId,
+        year,
+        accruedDays: days,
+        usedDays: 0,
+        remainingDays: days,
+        expiresAt,
+      },
+      update: {
+        accruedDays: { increment: days },
+        remainingDays: { increment: days },
+        ...(expiresAt && { expiresAt }),
+      },
+    })
+  }
 
   private async assertGroupBelongsToCompany(companyId: string, groupId: string) {
     const group = await this.prisma.leaveGroup.findFirst({
