@@ -1,12 +1,11 @@
 import { z } from 'zod'
 
+// 프론트엔드/모바일에서 보내는 간소화된 필드
 export const ClockInSchema = z.object({
-  employeeId: z.string().uuid('유효한 UUID를 입력하세요.'),
-  clockInAt: z.string().datetime({ message: 'ISO 8601 형식의 날짜/시각을 입력하세요.' }),
-  timeclockAreaId: z.string().uuid().optional(),
-  clockInLat: z.number().min(-90).max(90).optional(),
-  clockInLng: z.number().min(-180).max(180).optional(),
-  clockInMethod: z.enum(['qr', 'nfc', 'gps', 'wifi', 'manual']).optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  method: z.enum(['gps', 'wifi', 'manual', 'web']).default('gps'),
+  timeclockAreaId: z.string().optional(),
   note: z.string().max(500).optional(),
 })
 

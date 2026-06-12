@@ -88,9 +88,8 @@ export class AttendancesService {
 
   // ── 출근 기록 ───────────────────────────────────────────────────────────────
 
-  async clockIn(companyId: string, dto: ClockInDto) {
-    const { employeeId, clockInAt, timeclockAreaId, clockInLat, clockInLng, clockInMethod, note } =
-      dto
+  async clockIn(companyId: string, employeeId: string, dto: ClockInDto) {
+    const { lat, lng, method, timeclockAreaId, note } = dto
 
     await this.assertEmployee(companyId, employeeId)
 
@@ -105,7 +104,7 @@ export class AttendancesService {
       })
     }
 
-    const clockInDate = new Date(clockInAt)
+    const clockInDate = new Date() // 서버 현재 시각
 
     // 해당 날짜의 Shift 조회
     const shift = await this.findShiftForClockIn(employeeId, clockInDate)
@@ -124,9 +123,9 @@ export class AttendancesService {
         shiftId: shift?.id ?? null,
         timeclockAreaId: timeclockAreaId ?? null,
         clockInAt: clockInDate,
-        clockInLat: clockInLat ?? null,
-        clockInLng: clockInLng ?? null,
-        clockInMethod: clockInMethod ?? null,
+        clockInLat: lat ?? null,
+        clockInLng: lng ?? null,
+        clockInMethod: method ?? null,
         status,
         isOncall,
         note: note ?? null,
@@ -155,18 +154,30 @@ export class AttendancesService {
 
   // ── 퇴근 기록 ───────────────────────────────────────────────────────────────
 
-  async clockOut(companyId: string, dto: ClockOutDto) {
-    const attendance = await this.assertOpenAttendance(companyId, dto.attendanceId)
-
+  async clockOut(companyId: string, employeeId: string, dto: ClockOutDto) {
+    // 해당 직원의 현재 진행 중인 출근 기록 자동 조회
+    const attendance = await this.prisma.attendance.findFirst({
+      where: {
+        employeeId,
+        employee: { companyId },
+        clockOutAt: null,
+      },
+    })
+    if (!attendance) {
+      throw new NotFoundException({
+        code: 'ATTENDANCE_NOT_FOUND',
+        message: '현재 출근 중인 기록이 없습니다.',
+      })
+    }
     this.assertNotConfirmed(attendance)
 
     return this.prisma.attendance.update({
-      where: { id: dto.attendanceId },
+      where: { id: attendance.id },
       data: {
-        clockOutAt: new Date(dto.clockOutAt),
-        clockOutLat: dto.clockOutLat ?? undefined,
-        clockOutLng: dto.clockOutLng ?? undefined,
-        clockOutMethod: dto.clockOutMethod ?? undefined,
+        clockOutAt: new Date(),
+        clockOutLat: dto.lat ?? undefined,
+        clockOutLng: dto.lng ?? undefined,
+        clockOutMethod: dto.method ?? undefined,
         note: dto.note ?? undefined,
       },
     })
@@ -174,15 +185,21 @@ export class AttendancesService {
 
   // ── 휴게 시작 ───────────────────────────────────────────────────────────────
 
-  async breakStart(companyId: string, dto: BreakStartDto) {
-    const attendance = await this.assertOpenAttendance(companyId, dto.attendanceId)
+  async breakStart(companyId: string, employeeId: string, dto: BreakStartDto) {
+    // 현재 출근 중인 기록 자동 조회
+    const attendance = await this.prisma.attendance.findFirst({
+      where: { employeeId, employee: { companyId }, clockOutAt: null },
+    })
+    if (!attendance) {
+      throw new NotFoundException({ code: 'ATTENDANCE_NOT_FOUND', message: '출근 기록이 없습니다.' })
+    }
     this.assertNotConfirmed(attendance)
 
     return this.prisma.attendanceBreak.create({
       data: {
-        attendanceId: dto.attendanceId,
+        attendanceId: attendance.id,
         breakType: dto.breakType,
-        startAt: new Date(dto.startAt),
+        startAt: new Date(),
         isManual: false,
       },
     })
@@ -190,12 +207,24 @@ export class AttendancesService {
 
   // ── 휴게 종료 ───────────────────────────────────────────────────────────────
 
-  async breakEnd(companyId: string, dto: BreakEndDto) {
-    const attendance = await this.assertOpenAttendance(companyId, dto.attendanceId)
+  async breakEnd(companyId: string, employeeId: string, dto: BreakEndDto) {
+    // 현재 출근 중인 기록 자동 조회
+    const attendance = await this.prisma.attendance.findFirst({
+      where: { employeeId, employee: { companyId }, clockOutAt: null },
+    })
+    if (!attendance) {
+      throw new NotFoundException({ code: 'ATTENDANCE_NOT_FOUND', message: '출근 기록이 없습니다.' })
+    }
     this.assertNotConfirmed(attendance)
 
+    // breakId 없으면 열려있는 마지막 휴게 자동 선택
     const breakRecord = await this.prisma.attendanceBreak.findFirst({
-      where: { id: dto.breakId, attendanceId: dto.attendanceId, endAt: null },
+      where: {
+        ...(dto.breakId ? { id: dto.breakId } : {}),
+        attendanceId: attendance.id,
+        endAt: null,
+      },
+      orderBy: { startAt: 'desc' },
     })
     if (!breakRecord) {
       throw new NotFoundException({
@@ -205,8 +234,8 @@ export class AttendancesService {
     }
 
     return this.prisma.attendanceBreak.update({
-      where: { id: dto.breakId },
-      data: { endAt: new Date(dto.endAt) },
+      where: { id: breakRecord.id },
+      data: { endAt: new Date() },
     })
   }
 

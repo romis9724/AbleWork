@@ -1,28 +1,22 @@
 import { z } from 'zod'
 
+// 퇴근: attendanceId 불필요 (서버가 오늘 미퇴근 레코드 자동 조회)
 export const ClockOutSchema = z.object({
-  attendanceId: z.string().uuid('유효한 UUID를 입력하세요.'),
-  clockOutAt: z.string().datetime({ message: 'ISO 8601 형식의 날짜/시각을 입력하세요.' }),
-  clockOutLat: z.number().min(-90).max(90).optional(),
-  clockOutLng: z.number().min(-180).max(180).optional(),
-  clockOutMethod: z.enum(['qr', 'nfc', 'gps', 'wifi', 'manual']).optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  method: z.enum(['gps', 'wifi', 'manual', 'web']).default('gps'),
   note: z.string().max(500).optional(),
 })
 
 export type ClockOutDto = z.infer<typeof ClockOutSchema>
 
-// ── 휴게 시작/종료 ────────────────────────────────────────────────────────────
-
+// 휴게 시작/종료: attendanceId는 서버가 현재 출근 레코드에서 자동 조회
 export const BreakStartSchema = z.object({
-  attendanceId: z.string().uuid('유효한 UUID를 입력하세요.'),
-  startAt: z.string().datetime({ message: 'ISO 8601 형식의 날짜/시각을 입력하세요.' }),
   breakType: z.enum(['rest', 'meal', 'other']).default('rest'),
 })
 
 export const BreakEndSchema = z.object({
-  attendanceId: z.string().uuid('유효한 UUID를 입력하세요.'),
-  breakId: z.string().uuid('유효한 UUID를 입력하세요.'),
-  endAt: z.string().datetime({ message: 'ISO 8601 형식의 날짜/시각을 입력하세요.' }),
+  breakId: z.string().optional(), // 없으면 마지막 열린 휴게 종료
 })
 
 export type BreakStartDto = z.infer<typeof BreakStartSchema>

@@ -1,10 +1,18 @@
 import { z } from 'zod'
 
+// shared-constants/request-type.ts 와 동일하게 유지
 export const RequestTypeEnum = z.enum([
-  'LEAVE',
-  'SHIFT_CHANGE',
-  'OVERTIME',
-  'ATTENDANCE_CORRECTION',
+  'LEAVE_CREATE',
+  'LEAVE_MODIFY',
+  'LEAVE_DELETE',
+  'SHIFT_CREATE',
+  'SHIFT_MODIFY',
+  'SHIFT_DELETE',
+  'ATTENDANCE_EDIT',
+  'ATTENDANCE_CREATE',
+  'ATTENDANCE_DELETE',
+  'DEVICE_CHANGE',
+  'OFFSITE_WORK',
   'CUSTOM',
 ])
 

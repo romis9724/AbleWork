@@ -60,45 +60,49 @@ export class AttendancesController {
 
   // HR-05-04 출근 기록
   @Post('clock-in')
-  @ApiOperation({ summary: '출근 기록' })
+  @ApiOperation({ summary: '출근 기록 (JWT에서 employeeId 자동 추출, 서버 시각 사용)' })
   clockIn(
     @CompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
     @Body(new ZodValidationPipe(ClockInSchema)) dto: ClockInDto,
   ) {
-    return this.service.clockIn(companyId, dto)
+    return this.service.clockIn(companyId, user.employeeId, dto)
   }
 
   // HR-05-05 퇴근 기록
   @Post('clock-out')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '퇴근 기록' })
+  @ApiOperation({ summary: '퇴근 기록 (진행 중인 출근 기록 자동 조회)' })
   clockOut(
     @CompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
     @Body(new ZodValidationPipe(ClockOutSchema)) dto: ClockOutDto,
   ) {
-    return this.service.clockOut(companyId, dto)
+    return this.service.clockOut(companyId, user.employeeId, dto)
   }
 
   // HR-05-06 휴게 시작
   @Post('break-start')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '휴게 시작' })
+  @ApiOperation({ summary: '휴게 시작 (현재 출근 기록 자동 조회)' })
   breakStart(
     @CompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
     @Body(new ZodValidationPipe(BreakStartSchema)) dto: BreakStartDto,
   ) {
-    return this.service.breakStart(companyId, dto)
+    return this.service.breakStart(companyId, user.employeeId, dto)
   }
 
   // HR-05-07 휴게 종료
   @Post('break-end')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '휴게 종료' })
+  @ApiOperation({ summary: '휴게 종료 (현재 출근 기록 자동 조회)' })
   breakEnd(
     @CompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
     @Body(new ZodValidationPipe(BreakEndSchema)) dto: BreakEndDto,
   ) {
-    return this.service.breakEnd(companyId, dto)
+    return this.service.breakEnd(companyId, user.employeeId, dto)
   }
 
   // HR-05-14 기간 확정

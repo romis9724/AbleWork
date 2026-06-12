@@ -18,26 +18,38 @@ import {
 
 // request type → document_forms.category 매핑
 const REQUEST_TYPE_CATEGORY_MAP: Record<string, string> = {
-  LEAVE: 'leave_request',
-  SHIFT_CHANGE: 'shift_change_request',
-  OVERTIME: 'overtime_request',
-  ATTENDANCE_CORRECTION: 'attendance_correction_request',
+  LEAVE_CREATE: 'leave_request',
+  LEAVE_MODIFY: 'leave_request',
+  LEAVE_DELETE: 'leave_request',
+  SHIFT_CREATE: 'shift_change_request',
+  SHIFT_MODIFY: 'shift_change_request',
+  SHIFT_DELETE: 'shift_change_request',
+  ATTENDANCE_EDIT: 'attendance_correction_request',
+  ATTENDANCE_CREATE: 'attendance_correction_request',
+  ATTENDANCE_DELETE: 'attendance_correction_request',
+  DEVICE_CHANGE: 'device_change_request',
+  OFFSITE_WORK: 'offsite_work_request',
   CUSTOM: 'custom_request',
 }
 
 // 승인 완료 후 emit할 이벤트 매핑
 const REQUEST_TYPE_APPROVED_EVENT: Record<string, string> = {
-  LEAVE: 'leave.approved',
-  SHIFT_CHANGE: 'shift.approved',
-  OVERTIME: 'overtime.approved',
-  ATTENDANCE_CORRECTION: 'attendance.approved',
+  LEAVE_CREATE: 'leave.approved',
+  LEAVE_MODIFY: 'leave.approved',
+  LEAVE_DELETE: 'leave.approved',
+  SHIFT_CREATE: 'shift.approved',
+  SHIFT_MODIFY: 'shift.approved',
+  ATTENDANCE_EDIT: 'attendance.approved',
+  DEVICE_CHANGE: 'device.change_approved',
 }
 
 const REQUEST_TYPE_REJECTED_EVENT: Record<string, string> = {
-  LEAVE: 'leave.rejected',
-  SHIFT_CHANGE: 'shift.rejected',
-  OVERTIME: 'overtime.rejected',
-  ATTENDANCE_CORRECTION: 'attendance.rejected',
+  LEAVE_CREATE: 'leave.rejected',
+  LEAVE_MODIFY: 'leave.rejected',
+  LEAVE_DELETE: 'leave.rejected',
+  SHIFT_CREATE: 'shift.rejected',
+  SHIFT_MODIFY: 'shift.rejected',
+  ATTENDANCE_EDIT: 'attendance.rejected',
 }
 
 @Injectable()
@@ -224,6 +236,7 @@ export class RequestsService {
       }
 
       // 4. DocumentForm 조회 (category = request_type 매핑)
+      // Phase 1: 양식이 없으면 요청을 PENDING 상태로만 생성 (전자결재 연동은 Phase 2)
       const category = REQUEST_TYPE_CATEGORY_MAP[dto.type] ?? dto.type.toLowerCase()
       const form = await tx.documentForm.findFirst({
         where: { companyId, category, isActive: true },
@@ -231,10 +244,12 @@ export class RequestsService {
       })
 
       if (!form) {
-        throw new BadRequestException({
-          code: 'DOCUMENT_FORM_NOT_FOUND',
-          message: `해당 요청 유형(${dto.type})에 대응하는 문서 양식을 찾을 수 없습니다.`,
+        // DocumentForm 미설정 시 → 요청만 생성하고 관리자가 수동 처리
+        await tx.request.update({
+          where: { id: request.id },
+          data: { status: 'PENDING' },
         })
+        return request
       }
 
       // 5. Document 레코드 생성
