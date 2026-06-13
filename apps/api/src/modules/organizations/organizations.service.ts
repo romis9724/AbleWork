@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CreateOrganizationDto } from './dto/create-organization.dto'
@@ -71,6 +72,9 @@ export class OrganizationsService {
             message: '상위 조직을 찾을 수 없습니다.',
           })
         }
+
+        // 자기 자신/하위 조직을 상위로 지정하면 계층에 순환이 발생 → 차단
+        await this.assertNoParentCycle(id, dto.parentId, companyId)
 
         depth = parent.depth + 1
       }
@@ -158,6 +162,43 @@ export class OrganizationsService {
     }
 
     return org
+  }
+
+  /**
+   * 조직 계층 순환 참조 방지.
+   * `id`의 상위를 `parentId`로 바꿀 때, `parentId`의 조상 체인을 거슬러 올라가며
+   * `id`를 만나면(= 자기 자신이거나 `id`의 하위 조직) 순환이므로 차단한다.
+   * 데이터 손상 대비로 탐색 깊이에 상한(MAX_DEPTH)을 둔다.
+   */
+  private async assertNoParentCycle(
+    id: string,
+    parentId: string,
+    companyId: string,
+  ): Promise<void> {
+    const MAX_DEPTH = 100
+    let cursor: string | null = parentId
+    let steps = 0
+
+    while (cursor && steps < MAX_DEPTH) {
+      const currentId: string = cursor
+
+      if (currentId === id) {
+        throw new BadRequestException({
+          code: 'ORG_PARENT_CYCLE',
+          message:
+            '조직 계층에 순환이 발생합니다. 자기 자신 또는 하위 조직을 상위 조직으로 지정할 수 없습니다.',
+        })
+      }
+
+      const node: { parentId: string | null } | null =
+        await this.prisma.organization.findFirst({
+          where: { id: currentId, companyId },
+          select: { parentId: true },
+        })
+
+      cursor = node?.parentId ?? null
+      steps++
+    }
   }
 
   buildTree(
