@@ -597,7 +597,7 @@
 
 ### organizations
 
-- spec 존재: 예 · 기존 테스트 12개 · 권장 추가 27개
+- spec 존재: 예 · 기존 테스트 18개 · 권장 추가 24개
 - public 메서드: `findTree`, `create`, `update`, `remove`, `buildTree`
 
 **커버된 시나리오:**
@@ -611,8 +611,14 @@
 - create: parent not found throws NotFoundException
 - update: organization information
 - update: non-existent organization throws NotFoundException
+- **update: 자기 자신을 상위로 지정 → `ORG_PARENT_CYCLE` 차단** (순환 방지)
+- **update: 하위 조직을 상위로 지정 → `ORG_PARENT_CYCLE` 차단** (조상 체인 탐색)
+- **update: 하위가 아닌 다른 조직으로 재지정 → 정상 처리** (회귀 방지)
 - remove: soft delete when no children
 - remove: prevent deletion when children exist
+- remove: 소속 활성 직원 → `ORG_HAS_EMPLOYEES` 차단
+- remove: 출퇴근 장소 → `ORG_HAS_TIMECLOCK_AREAS` 차단
+- remove: 근무일정 → `ORG_HAS_SHIFTS` 차단
 - remove: non-existent organization throws NotFoundException
 
 **커버리지 갭 (우선순위순):**
@@ -627,7 +633,7 @@
 | MEDIUM | `create` | error code structure validation (ORG_PARENT_NOT_FOUND) | 에러코드: [도메인]_[상황] 형식(예: ORG_PARENT_NOT_FOUND). NotFoundException 타입만 검증, {code, message} 구조 검증 부재. |
 | MEDIUM | `update` | conditional field updates not verified | 선택적 필드 업데이트: undefined 필드는 UPDATE 대상에서 제외(line 82-87). 스프레드 조건이 정확한지 검증 부재. |
 | MEDIUM | `buildTree` | orphaned nodes handling (parentId exists but node not in array) | 트리 구축 시 부모 없는 노드 처리. filter(org => org.parentId === null) 반복 호출 시 무한 재귀 위험성 검증 부재. |
-| MEDIUM | `buildTree` | circular reference detection | 순환 참조(A→B→C→A) 감지 및 방지. 현재 로직에서는 무한 재귀 가능성. |
+| ✅ 해소 | `update` | circular reference detection (write-path) | 순환 참조(자기/하위→상위) **쓰기 경로 차단 구현 완료**(`ORG_PARENT_CYCLE`, 단위 3건). 단, `buildTree`는 이미 저장된 순환 데이터에 대한 방어가 없으므로(이론상 무한 재귀) 쓰기 가드로 유입을 막는 전략. |
 | MEDIUM | `create` | approverId validation (Employee existence check) | approverId 참조 검증: 해당 Employee가 실제 존재하는지 확인 필요. 현재 검증 로직 없음. |
 | MEDIUM | `update` | approverId validation during update | approverId 변경 시 존재성 검증. 현재 검증 로직 없음. |
 | MEDIUM | `remove` | isActive soft delete flag verification | 소프트 삭제 확인: isActive = false 설정 검증. 테스트 있지만 실제 update 호출 인자 검증 부족. |

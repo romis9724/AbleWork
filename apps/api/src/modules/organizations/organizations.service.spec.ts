@@ -169,6 +169,55 @@ describe('OrganizationsService', () => {
         service.update('non-existent', 'company-1', { name: '팀' }),
       ).rejects.toThrow(NotFoundException)
     })
+
+    it('자기 자신을 상위 조직으로 지정하면 ORG_PARENT_CYCLE로 차단한다', async () => {
+      // findOneOrThrow + 부모 존재확인 모두 org-1 반환 → 순환 검증 첫 단계에서 차단
+      mockPrisma.organization.findFirst.mockResolvedValue(
+        makeOrg({ id: 'org-1', parentId: null }),
+      )
+
+      await expect(
+        service.update('org-1', 'company-1', { parentId: 'org-1' }),
+      ).rejects.toMatchObject({ response: { code: 'ORG_PARENT_CYCLE' } })
+      expect(mockPrisma.organization.update).not.toHaveBeenCalled()
+    })
+
+    it('하위 조직을 상위 조직으로 지정하면 ORG_PARENT_CYCLE로 차단한다', async () => {
+      // org-1(루트) ← org-2(자식). org-1의 부모를 org-2로 지정 시도 → 순환
+      mockPrisma.organization.findFirst.mockImplementation(({ where }) => {
+        if (where.id === 'org-1')
+          return Promise.resolve(makeOrg({ id: 'org-1', parentId: null, depth: 0 }))
+        if (where.id === 'org-2')
+          return Promise.resolve(makeOrg({ id: 'org-2', parentId: 'org-1', depth: 1 }))
+        return Promise.resolve(null)
+      })
+
+      await expect(
+        service.update('org-1', 'company-1', { parentId: 'org-2' }),
+      ).rejects.toMatchObject({ response: { code: 'ORG_PARENT_CYCLE' } })
+      expect(mockPrisma.organization.update).not.toHaveBeenCalled()
+    })
+
+    it('하위가 아닌 다른 조직을 상위로 재지정하면 정상 처리한다 (회귀 방지)', async () => {
+      // org-1, org-2 모두 루트. org-1의 부모를 org-2로 지정 → 순환 아님
+      mockPrisma.organization.findFirst.mockImplementation(({ where }) => {
+        if (where.id === 'org-1')
+          return Promise.resolve(makeOrg({ id: 'org-1', parentId: null, depth: 0 }))
+        if (where.id === 'org-2')
+          return Promise.resolve(makeOrg({ id: 'org-2', parentId: null, depth: 0 }))
+        return Promise.resolve(null)
+      })
+      mockPrisma.organization.update.mockResolvedValue(
+        makeOrg({ id: 'org-1', parentId: 'org-2', depth: 1 }),
+      )
+
+      const result = await service.update('org-1', 'company-1', { parentId: 'org-2' })
+
+      expect(result.parentId).toBe('org-2')
+      expect(mockPrisma.organization.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ depth: 1 }) }),
+      )
+    })
   })
 
   describe('remove', () => {
