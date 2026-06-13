@@ -169,6 +169,7 @@ describe('RequestsService', () => {
       id: 'lt-1',
       groupId: 'lg-1',
       deductionDays: 1,
+      isActive: true,
     })
     mockPrisma.leaveBalance.findUnique.mockResolvedValue({
       id: 'bal-1',
@@ -343,6 +344,25 @@ describe('RequestsService', () => {
 
       expect(result.status).toBe('PENDING')
       expect(mockPrisma.document.create).not.toHaveBeenCalled()
+    })
+
+    it('비활성화된 휴가 유형으로 신청하면 LEAVE_TYPE_INACTIVE로 차단한다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' } }
+
+      // 유형은 존재하나 isActive=false → 신규 신청 차단(잔액·요청 생성 단계 진입 전)
+      mockPrisma.leaveType.findFirst.mockResolvedValue({
+        id: 'lt-1',
+        groupId: 'lg-1',
+        deductionDays: 1,
+        isActive: false,
+      })
+
+      await expect(service.createRequest(COMPANY_ID, dto, requester)).rejects.toMatchObject({
+        response: { code: 'LEAVE_TYPE_INACTIVE' },
+      })
+      expect(mockLeavesService.validateBalance).not.toHaveBeenCalled()
+      expect(mockPrisma.request.create).not.toHaveBeenCalled()
     })
   })
 

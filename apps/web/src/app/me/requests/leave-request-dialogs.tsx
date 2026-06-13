@@ -44,7 +44,7 @@ export function LeaveCreateDialog({ open, submitting, onClose, onSubmit }: Reque
       <DialogTitle>휴가 신청</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
         <TextField select label="휴가 유형" value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)} fullWidth required>
-          {leaveTypes.map((lt) => (
+          {leaveTypes.filter((lt) => lt.isActive).map((lt) => (
             <MenuItem key={lt.id} value={lt.id}>{lt.displayName ?? lt.name}</MenuItem>
           ))}
         </TextField>
