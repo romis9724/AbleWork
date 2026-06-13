@@ -930,7 +930,7 @@ notification_rules {
 
 무결성/정합성 심화 권고. 스키마 변경 또는 설계 결정이 필요한 항목은 별도 작업으로 분리한다.
 
-1. ⏳ **스키마 FK 정책 명시화** (마이그레이션 필요): `Document.form` 관계가 `onDelete: Cascade` (운영상 폼은 soft-delete만 사용해 실 위험은 없으나 `Restrict` 권장). `ApprovalLine.sharedLineRef`의 `onDelete`를 스키마에 명시(`SetNull`)하여 DB 마이그레이션과 정합.
+1. ✅ **스키마 FK 정책 명시화** (구현 완료 — 마이그레이션 무발생): 실제 DB 제약 확인 결과 `documents.form_id`는 **이미 `ON DELETE RESTRICT`**, `approval_lines.shared_line_ref_id`는 **이미 `ON DELETE SET NULL`**이었다(초기 마이그레이션 기준. "Cascade" 우려는 별개 테이블 `form_access_rules.form_id`와 혼동된 것). `schema.prisma`에 두 관계의 `onDelete`(`Restrict`/`SetNull`)를 **명시적으로 선언**해 의도를 코드로 고정 — Prisma 기본값과 동일하여 `migrate diff` 결과 *empty migration*(DB 변경 없음, 클라이언트 타입 무영향).
 2. ✅ **근무일정 확정(CONFIRMED) 정책 — 확정**: 출퇴근 정정은 확정 시 결재로도 차단(`ATTENDANCE_ALREADY_CONFIRMED`)한다. 반면 근무일정은 **결재가 변경의 정식 경로**이므로 확정 상태에서도 `SHIFT_MODIFY/DELETE` 승인을 허용한다 — 이 **비대칭은 의도된 정책으로 확정**한다(근태=기록 정정 차단, 근무일정=결재로 변경).
 3. ⏳ **결재 규칙 스냅샷** (마이그레이션 필요): 진행 중 요청에 결재 규칙 변경이 소급되지 않도록 `Request`에 `ruleId`(또는 규칙 스냅샷)를 저장.
 4. 조회/계층 무결성:

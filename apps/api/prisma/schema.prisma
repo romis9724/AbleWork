@@ -768,7 +768,9 @@ model Document {
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   company       Company          @relation(fields: [companyId], references: [id])
-  form          DocumentForm     @relation(fields: [formId], references: [id])
+  // 양식 삭제로 문서가 연쇄삭제되지 않도록 Restrict 명시(기존 DB 기본값과 동일 — 마이그레이션 무발생).
+  // 운영상 양식은 soft-delete만 사용하고 FORM_IN_USE 가드로 사용 중 삭제를 차단한다.
+  form          DocumentForm     @relation(fields: [formId], references: [id], onDelete: Restrict)
   request       Request?
   drafter       Employee         @relation("DocumentDrafter", fields: [drafterId], references: [id])
   approvalLines ApprovalLine[]
@@ -787,7 +789,8 @@ model ApprovalLine {
   sharedLineRefId String? @map("shared_line_ref_id")
 
   document        Document          @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  sharedLineRef   SharedApprovalLine? @relation(fields: [sharedLineRefId], references: [id])
+  // 공용 결재선 원본 삭제 시 참조만 끊고(결재선 단계는 상신 시 복사되어 독립) SetNull 명시(기존 DB 기본값과 동일).
+  sharedLineRef   SharedApprovalLine? @relation(fields: [sharedLineRefId], references: [id], onDelete: SetNull)
   steps           ApprovalStep[]
 
   @@map("approval_lines")
