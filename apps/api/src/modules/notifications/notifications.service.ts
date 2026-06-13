@@ -75,7 +75,8 @@ export class NotificationsService {
     }
 
     return this.prisma.notificationRule.update({
-      where: { id },
+      // 멀티테넌시: id 단독이 아닌 companyId를 함께 조건에 포함해 타 회사 규칙 수정을 차단한다.
+      where: { id, companyId },
       data: {
         ...(dto.eventType !== undefined && { eventType: dto.eventType }),
         ...(dto.channelType !== undefined && { channelType: dto.channelType }),

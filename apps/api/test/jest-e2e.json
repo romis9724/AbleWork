@@ -1,0 +1,19 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testRegex": ".e2e-spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^@ablework/shared-constants$": "<rootDir>/../../../packages/shared-constants/src/index.ts",
+    "^@ablework/shared-types$": "<rootDir>/../../../packages/shared-types/src/index.ts",
+    "^@ablework/shared-schemas$": "<rootDir>/../../../packages/shared-schemas/src/index.ts"
+  },
+  "globalSetup": "<rootDir>/global-setup.ts",
+  "setupFiles": ["<rootDir>/setup-e2e.ts"],
+  "testTimeout": 30000,
+  "maxWorkers": 1,
+  "forceExit": true
+}

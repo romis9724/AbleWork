@@ -102,7 +102,7 @@ describe('PositionsService', () => {
       expect(result.isActive).toBe(false)
       expect(mockPrisma.position.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: POSITION_ID },
+          where: { id: POSITION_ID, companyId: COMPANY_ID }, // 멀티테넌시 방어
           data: { isActive: false },
         }),
       )

@@ -48,7 +48,9 @@ export class CompanyHolidaysService {
       })
     }
 
-    await this.prisma.companyHoliday.delete({ where: { id } })
+    // 멀티테넌시 방어: delete의 where는 unique 필드(id)만 허용하므로
+    // companyId 조건을 강제하려면 deleteMany를 사용한다.
+    await this.prisma.companyHoliday.deleteMany({ where: { id, companyId } })
     return { deleted: true }
   }
 }

@@ -34,7 +34,8 @@ export class SharedApprovalLinesService {
     }
 
     return this.prisma.sharedApprovalLine.update({
-      where: { id: lineId },
+      // 멀티테넌시 방어: assertLineBelongsToCompany 우회 시에도 타 회사 라인 수정 차단
+      where: { id: lineId, companyId },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         // steps 변경 시 version 증가 — 변경 이력 추적 (SYSTEM_DESIGN §5.3.8)
@@ -47,7 +48,8 @@ export class SharedApprovalLinesService {
     await this.assertLineBelongsToCompany(companyId, lineId)
 
     try {
-      await this.prisma.sharedApprovalLine.delete({ where: { id: lineId } })
+      // 멀티테넌시 방어: where에 companyId 포함 — 타 회사 라인 삭제 차단
+      await this.prisma.sharedApprovalLine.delete({ where: { id: lineId, companyId } })
     } catch (error: unknown) {
       // P2003: 기존 문서의 ApprovalLine이 참조 중 — 삭제 불가
       if ((error as { code?: string }).code === 'P2003') {

@@ -41,8 +41,9 @@ export class CustomTypesService {
     return this.prisma.$transaction(async (tx) => {
       // fields가 주어지면 전체 교체
       if (dto.fields !== undefined) {
+        // 멀티테넌시: 관계 조건으로 companyId를 강제하여 타사 데이터 삭제 방지
         await tx.customRequestTypeField.deleteMany({
-          where: { customTypeId: id },
+          where: { customTypeId: id, customType: { companyId } },
         })
         if (dto.fields.length > 0) {
           await tx.customRequestTypeField.createMany({

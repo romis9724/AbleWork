@@ -41,12 +41,12 @@ export class ShiftTypesService {
 
   async update(companyId: string, id: string, dto: UpdateShiftTypeDto) {
     await this.findOneOrThrow(companyId, id)
-    return this.prisma.shiftType.update({ where: { id }, data: dto })
+    return this.prisma.shiftType.update({ where: { id, companyId }, data: dto })
   }
 
   async remove(companyId: string, id: string) {
     await this.findOneOrThrow(companyId, id)
-    return this.prisma.shiftType.update({ where: { id }, data: { isActive: false } })
+    return this.prisma.shiftType.update({ where: { id, companyId }, data: { isActive: false } })
   }
 
   private async findOneOrThrow(companyId: string, id: string) {
