@@ -57,7 +57,7 @@ cp apps/web/.env.example apps/web/.env
 
 ```bash
 docker compose up -d
-# PostgreSQL(:5432), Redis(:6379), MinIO(:9000) 기동
+# PostgreSQL(호스트 :5433 → 컨테이너 5432), Redis(:6379), MinIO(:9000/:9001) 기동
 ```
 
 ### 4. 데이터베이스 초기화
@@ -67,11 +67,48 @@ pnpm --filter api prisma migrate dev   # 마이그레이션 적용
 pnpm --filter api prisma db seed       # 초기 데이터 삽입
 ```
 
-### 5. 개발 서버 시작
+### 5. 개발 서버 실행
+
+> ⚠️ **API는 `nest start`(= `pnpm dev`)로 기동되지 않는다.** 모노레포 공유 패키지(`packages/*`) 때문에 빌드 산출물이 `dist/apps/api/src/main.js`로 중첩되어 `node dist/main`이 깨진다. **API는 `ts-node`로 직접 실행**하며, **파일 변경 감지(watch)가 없어 백엔드 코드 수정 후 수동 재시작이 필요**하다.
+
+**① API 서버 (포트 3001)** — 전용 터미널 1개:
 
 ```bash
-pnpm dev   # API + Web 동시 실행 (Turborepo)
+cd apps/api
+npx ts-node --project tsconfig.json --require tsconfig-paths/register src/main.ts
+# 기동 완료 로그: "AbleWork API is running on: http://localhost:3001/api"
 ```
+
+**② Web 서버 (포트 3000)** — 전용 터미널 1개 (Next.js, 핫리로드 지원):
+
+```bash
+pnpm --filter web dev
+```
+
+- 백엔드(`apps/api/src`) 코드를 고치면 **API 서버를 `Ctrl+C`로 멈추고 ①을 다시 실행**해야 반영된다.
+- 프론트엔드(`apps/web`)는 저장 시 자동 반영된다.
+
+### 서버 정지 / 재기동
+
+```bash
+# 정지 — 포트로 종료 (3000=web, 3001=api). 둘 다 한 번에:
+kill $(lsof -tiTCP:3000 -tiTCP:3001 -sTCP:LISTEN)
+
+# 실행 상태 확인 (리스닝 중인 포트 표시)
+lsof -iTCP:3000 -iTCP:3001 -sTCP:LISTEN -n -P
+
+# API 헬스 체크 (200 이면 정상)
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -X POST http://localhost:3001/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@ablework.io","password":"admin1234!"}'
+
+# 인프라(DB/Redis/MinIO) 정지 / 재기동
+docker compose stop      # 정지 (데이터 보존)
+docker compose up -d     # 재기동
+```
+
+> **로그인이 안 될 때 1순위 점검:** API 서버(3001)가 떠 있는지 `lsof`로 확인한다. 3001이 없으면 위 **① API 서버** 명령으로 재기동하면 된다. (웹만 떠 있으면 로그인 요청이 백엔드에 도달하지 못한다.)
 
 ### 접속 URL
 
@@ -86,9 +123,10 @@ pnpm dev   # API + Web 동시 실행 (Turborepo)
 ## 개발 명령어
 
 ```bash
-pnpm dev               # 전체 개발 서버
+# 개발 서버 실행은 위 "5. 개발 서버 실행" 참조 (API는 ts-node 직접 실행, pnpm dev 불가)
 pnpm build             # 전체 빌드 (Turborepo 캐시)
-pnpm test              # Jest 단위 + 통합 테스트
+pnpm test              # Jest 단위 + 통합 테스트 (API)
+pnpm --filter api test:e2e   # 통합 e2e (실 DB ablework_test 자동 초기화)
 pnpm test:e2e          # Playwright E2E 테스트
 pnpm typecheck         # TypeScript 타입 검사
 pnpm lint              # ESLint
