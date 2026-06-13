@@ -449,6 +449,7 @@
 - createCompensationLeave - 보상휴가 발생 및 이벤트 emit
 - findLeaves - 페이징된 목록 반환 및 직원 필터
 - runAccrualRule - 최고 구간 선택, 그룹당 대표 유형 1개 발생, 멱등성(중복 발생 방지), 월 기준 규칙 누적 발생, 월 기준 멱등 증분, 미존재 규칙 NotFoundException
+- **비활성 휴가유형 신청 차단** — 비활성화된 유형으로 `LEAVE_CREATE` 요청 시 `LEAVE_TYPE_INACTIVE`(잔액·생성 단계 진입 전 차단). *(테스트는 `requests.service.spec.ts` createRequest 블록에 위치 — 검증이 요청 생성 경로에 있음)*
 
 **커버리지 갭 (우선순위순):**
 

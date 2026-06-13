@@ -123,7 +123,7 @@ export default function LeavesPage() {
             fullWidth
             required
           >
-            {leaveTypes.map((lt) => (
+            {leaveTypes.filter((lt) => lt.isActive).map((lt) => (
               <MenuItem key={lt.id} value={lt.id}>
                 {lt.displayName ?? lt.name}
               </MenuItem>

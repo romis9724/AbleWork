@@ -939,6 +939,13 @@ export class RequestsService {
         message: '휴가 유형을 찾을 수 없습니다.',
       })
     }
+    // 비활성화된(소프트 삭제) 휴가 유형으로는 신규 신청 불가 — 기존 잔액/이력은 보존하되 선택은 차단
+    if (!leaveType.isActive) {
+      throw new BadRequestException({
+        code: 'LEAVE_TYPE_INACTIVE',
+        message: '비활성화된 휴가 유형으로는 신청할 수 없습니다.',
+      })
+    }
 
     const start = new Date(startDate)
     const daysUsed = this.calcLeaveDaysUsed(startDate, endDate, Number(leaveType.deductionDays))
