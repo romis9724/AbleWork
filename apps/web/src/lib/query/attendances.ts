@@ -2,6 +2,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/lib/api-client'
 
+export interface AttendanceBreak {
+  id: string
+  attendanceId: string
+  breakType: string
+  startAt: string
+  endAt?: string | null
+  isManual: boolean
+}
+
 export interface Attendance {
   id: string
   employeeId: string
@@ -11,15 +20,29 @@ export interface Attendance {
   isConfirmed: boolean
   note?: string
   employee?: { name: string }
+  breaks?: AttendanceBreak[]
+}
+
+export interface MyTodayAttendance {
+  attendance: (Attendance & { breaks: AttendanceBreak[] }) | null
+  openBreak: AttendanceBreak | null
 }
 
 export interface NowAtWork {
+  attendanceId: string
   employeeId: string
-  name: string
-  organization?: string
+  employeeName: string
+  employeeNumber?: string | null
+  organization: { name: string } | null
+  clockInAt: string
   status: string
-  clockInAt?: string
-  workMinutes?: number
+  workingStatus: string
+  isOncall: boolean
+}
+
+export interface NowAtWorkResponse {
+  total: number
+  items: NowAtWork[]
 }
 
 const QUERY_KEY = ['attendances']
@@ -35,7 +58,7 @@ export const useAttendances = (params?: Record<string, string | undefined>) =>
 export const useNowAtWork = () =>
   useQuery({
     queryKey: [...QUERY_KEY, 'now'],
-    queryFn: () => apiClient.get('/attendances/now-at-work') as Promise<NowAtWork[]>,
+    queryFn: () => apiClient.get('/attendances/now-at-work') as Promise<NowAtWorkResponse>,
     staleTime: 30_000,
     refetchInterval: 30_000,
   })
@@ -58,11 +81,56 @@ export const useClockOut = () => {
   })
 }
 
-export const useBreakStart = () =>
-  useMutation({ mutationFn: () => apiClient.post('/attendances/break-start') })
+export const useMyTodayAttendance = () =>
+  useQuery({
+    queryKey: [...QUERY_KEY, 'me', 'today'],
+    queryFn: () => apiClient.get('/attendances/me/today') as Promise<MyTodayAttendance>,
+    staleTime: 10_000,
+  })
 
-export const useBreakEnd = () =>
-  useMutation({ mutationFn: () => apiClient.post('/attendances/break-end') })
+export const useBreakStart = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiClient.post('/attendances/break-start'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useBreakEnd = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiClient.post('/attendances/break-end'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useCreateAttendance = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      employeeId: string
+      clockInAt: string
+      clockOutAt?: string
+      status?: string
+      note?: string
+    }) => apiClient.post('/attendances', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useUpdateAttendanceBreaks = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      breaks,
+    }: {
+      id: string
+      breaks: { id?: string; breakType: string; startAt: string; endAt?: string }[]
+    }) => apiClient.patch(`/attendances/${id}/breaks`, { breaks }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
 
 export const useUpdateAttendance = () => {
   const qc = useQueryClient()
@@ -84,8 +152,21 @@ export const useDeleteAttendance = () => {
 export const useConfirmPeriod = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { startDate: string; endDate: string; organizationId?: string }) =>
-      apiClient.post('/attendances/confirm-period', data),
+    mutationFn: (data: {
+      startDate?: string
+      endDate?: string
+      organizationId?: string
+      attendanceIds?: string[]
+    }) => apiClient.post('/attendances/confirm-period', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useUnconfirmAttendances = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { attendanceIds?: string[]; startDate?: string; endDate?: string }) =>
+      apiClient.post('/attendances/unconfirm', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }

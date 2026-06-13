@@ -31,8 +31,21 @@ import {
   BreakEndSchema,
   BreakEndDto,
 } from './dto/clock-out.dto'
-import { AttendanceFilterSchema, AttendanceFilterDto, ConfirmPeriodSchema, ConfirmPeriodDto } from './dto/attendance-filter.dto'
+import {
+  AttendanceFilterSchema,
+  AttendanceFilterDto,
+  ConfirmPeriodSchema,
+  ConfirmPeriodDto,
+  UnconfirmAttendancesSchema,
+  UnconfirmAttendancesDto,
+} from './dto/attendance-filter.dto'
 import { UpdateAttendanceSchema, UpdateAttendanceDto } from './dto/update-attendance.dto'
+import {
+  CreateAttendanceSchema,
+  CreateAttendanceDto,
+  UpdateBreaksSchema,
+  UpdateBreaksDto,
+} from './dto/create-attendance.dto'
 
 @ApiTags('attendances')
 @ApiBearerAuth()
@@ -49,6 +62,24 @@ export class AttendancesController {
     @Query(new ZodValidationPipe(AttendanceFilterSchema)) filter: AttendanceFilterDto,
   ) {
     return this.service.findAll(companyId, filter)
+  }
+
+  // HR-05-16 내 오늘 출근 상태 (me/home 상태 복원)
+  @Get('me/today')
+  @ApiOperation({ summary: '내 오늘 출근 상태 조회 (미퇴근 레코드 + 열린 휴게)' })
+  getMyToday(@CompanyId() companyId: string, @CurrentUser() user: JwtPayload) {
+    return this.service.getMyToday(companyId, user.employeeId)
+  }
+
+  // HR-05-17 출퇴근 수기 추가 (관리자)
+  @Post()
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '출퇴근 기록 수기 추가 (ORG_ADMIN 이상)' })
+  create(
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(CreateAttendanceSchema)) dto: CreateAttendanceDto,
+  ) {
+    return this.service.createManual(companyId, dto)
   }
 
   // HR-05-03 현재 근무 현황
@@ -116,6 +147,32 @@ export class AttendancesController {
     @CurrentUser() requester: JwtPayload,
   ) {
     return this.service.confirmPeriod(companyId, dto, requester.employeeId)
+  }
+
+  // HR-05-15 확정 해제
+  @Post('unconfirm')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '출퇴근 확정 해제 (GENERAL_ADMIN 이상, ID 목록 또는 기간)' })
+  unconfirm(
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(UnconfirmAttendancesSchema)) dto: UnconfirmAttendancesDto,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.service.unconfirm(companyId, dto, requester)
+  }
+
+  // HR-05-18 휴게 전체 교체 (관리자)
+  @Patch(':id/breaks')
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '휴게 기록 전체 교체 (ORG_ADMIN 이상, 확정 기록 차단)' })
+  @ApiParam({ name: 'id', type: String })
+  updateBreaks(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(UpdateBreaksSchema)) dto: UpdateBreaksDto,
+  ) {
+    return this.service.updateBreaks(companyId, id, dto)
   }
 
   // HR-05-12 출퇴근 수정 (관리자)

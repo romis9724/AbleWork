@@ -26,10 +26,10 @@ import apiClient from '@/lib/api-client'
 
 interface NotificationRule {
   id: string
-  channel: string
-  webhookUrl?: string
+  channelType: string
+  webhookUrl?: string | null
   eventType: string
-  enabled: boolean
+  isActive: boolean
 }
 
 interface NotificationLog {
@@ -116,29 +116,29 @@ export default function NotificationsSettingsPage() {
   })
 
   const toggleEventMutation = useMutation({
-    mutationFn: ({ eventType, enabled }: { eventType: string; enabled: boolean }) =>
-      apiClient.patch(`/notifications/rules/event`, { eventType, enabled }),
+    mutationFn: ({ eventType, isActive }: { eventType: string; isActive: boolean }) =>
+      apiClient.patch(`/notifications/rules/event`, { eventType, isActive }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notification-rules'] }),
     onError: () => setSnack({ open: true, message: '설정 변경에 실패했습니다.', severity: 'error' }),
   })
 
   function getWebhookValue(channel: string) {
     if (webhookInputs[channel] !== undefined) return webhookInputs[channel]
-    return rules.find((r) => r.channel === channel)?.webhookUrl ?? ''
+    // 현재 BE는 회사 단위 webhook을 사용하므로 등록된 규칙의 webhookUrl을 표시
+    return rules.find((r) => r.webhookUrl)?.webhookUrl ?? ''
   }
 
   function isEventEnabled(eventType: string) {
     const rule = rules.find((r) => r.eventType === eventType)
-    return rule?.enabled ?? false
+    return rule?.isActive ?? false
   }
 
   function handleWebhookSave(channel: string) {
-    const url = webhookInputs[channel] ?? ''
-    updateWebhookMutation.mutate({ channel, webhookUrl: url })
+    updateWebhookMutation.mutate({ channel, webhookUrl: getWebhookValue(channel) })
   }
 
-  function handleToggleEvent(eventType: string, enabled: boolean) {
-    toggleEventMutation.mutate({ eventType, enabled })
+  function handleToggleEvent(eventType: string, isActive: boolean) {
+    toggleEventMutation.mutate({ eventType, isActive })
   }
 
   if (rulesLoading) {

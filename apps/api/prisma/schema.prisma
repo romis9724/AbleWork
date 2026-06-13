@@ -125,8 +125,23 @@ model User {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   employee Employee?
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash") @db.VarChar(128)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 model Employee {
@@ -890,6 +905,7 @@ model ReportSnapshotTemplate {
 model ReportSnapshot {
   id           String    @id @default(uuid())
   companyId    String    @map("company_id")
+  name         String?   @db.VarChar(200)
   templateId   String?   @map("template_id")
   periodStart  DateTime  @db.Date @map("period_start")
   periodEnd    DateTime  @db.Date @map("period_end")
@@ -955,6 +971,7 @@ model MessageTemplate {
   company    Company             @relation(fields: [companyId], references: [id])
   automations MessageAutomation[]
   notificationRules NotificationRule[]
+  messages   Message[]
 
   @@map("message_templates")
 }
@@ -987,13 +1004,16 @@ model Message {
   companyId    String   @map("company_id")
   senderId     String?  @map("sender_id")
   automationId String?  @map("automation_id")
+  templateId   String?  @map("template_id")
   type         String   @db.VarChar(20)
   title        String?  @db.VarChar(200)
   content      String   @db.Text
+  sendEmail    Boolean  @default(false) @map("send_email")
   sentAt       DateTime @default(now()) @map("sent_at")
 
   company    Company            @relation(fields: [companyId], references: [id])
   sender     Employee?          @relation(fields: [senderId], references: [id])
+  template   MessageTemplate?   @relation(fields: [templateId], references: [id])
   recipients MessageRecipient[]
 
   @@index([companyId, sentAt(sort: Desc)])

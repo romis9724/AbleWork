@@ -1,12 +1,14 @@
 'use client'
-import { useState } from 'react'
-import { useForm, Controller } from 'react-hook-form'
+import { useEffect, useState } from 'react'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import Alert from '@mui/material/Alert'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
+import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
@@ -14,6 +16,9 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import FormGroup from '@mui/material/FormGroup'
+import FormLabel from '@mui/material/FormLabel'
 import IconButton from '@mui/material/IconButton'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
@@ -30,46 +35,93 @@ import TableRow from '@mui/material/TableRow'
 import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import PageHeader from '@/components/common/PageHeader'
 import {
   useEmployee,
   useUpdateEmployee,
   useDeactivateEmployee,
+  useActivateEmployee,
   useResetDevice,
   useWageInfos,
   useCreateWageInfo,
 } from '@/lib/query/employees'
+import { useOrganizations, type Organization } from '@/lib/query/organizations'
+import { usePositions } from '@/lib/query/positions'
 
 interface EmployeeFormValues {
   name: string
+  phone: string
   employeeNumber: string
   joinedAt: string
   resignedAt: string
   employmentType: string
   accessLevel: string
+  organizationIds: string[]
+  primaryOrganizationId: string
+  positionIds: string[]
+}
+
+interface OrgOption {
+  id: string
+  name: string
+  depth: number
+}
+
+function flattenOrgs(orgs: Organization[], depth = 0): OrgOption[] {
+  return orgs.flatMap((o) => [
+    { id: o.id, name: o.name, depth },
+    ...(o.children ? flattenOrgs(o.children, depth + 1) : []),
+  ])
 }
 
 interface WageInfoForm {
   hourlyWage: string
-  scheduledWorkHours: string
-  maxWorkHours: string
-  effectiveDate: string
+  contractedWorkDays: string[]
+  contractedHoursPerWeek: string
+  maxHoursPerWeek: string
+  effectiveFrom: string
 }
 
 interface WageInfo {
   id: string
-  effectiveDate: string
+  effectiveFrom: string
   hourlyWage: number
-  scheduledWorkHours: number
-  maxWorkHours: number
+  contractedWorkDays: string
+  contractedHoursPerWeek: number | string
+  maxHoursPerWeek: number | string
 }
 
 const EMPLOYMENT_TYPE_LABEL: Record<string, string> = {
   regular: '정규직',
   contract: '계약직',
-  part_time: '아르바이트',
+  part_time: '파트타임',
+  daily: '일용직',
+}
+
+const WORK_DAYS: { value: string; label: string }[] = [
+  { value: 'mon', label: '월' },
+  { value: 'tue', label: '화' },
+  { value: 'wed', label: '수' },
+  { value: 'thu', label: '목' },
+  { value: 'fri', label: '금' },
+  { value: 'sat', label: '토' },
+  { value: 'sun', label: '일' },
+]
+
+const DEFAULT_WORK_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri']
+
+const WORK_DAY_LABEL: Record<string, string> = Object.fromEntries(
+  WORK_DAYS.map((d) => [d.value, d.label]),
+)
+
+function formatWorkDays(days: string): string {
+  if (!days) return '—'
+  return days
+    .split(',')
+    .map((d) => WORK_DAY_LABEL[d.trim()] ?? d.trim())
+    .join(', ')
 }
 
 const ACCESS_LEVEL_LABEL: Record<string, string> = {
@@ -79,18 +131,20 @@ const ACCESS_LEVEL_LABEL: Record<string, string> = {
   SUPER_ADMIN: '최고관리자',
 }
 
-export default function EmployeeDetailPage({ params }: { params: { id: string } }) {
+export default function EmployeeDetailPage() {
   const router = useRouter()
-  const { id } = params
+  const { id } = useParams<{ id: string }>()
   const [tab, setTab] = useState(0)
   const [deactivateOpen, setDeactivateOpen] = useState(false)
+  const [activateOpen, setActivateOpen] = useState(false)
   const [resetDeviceOpen, setResetDeviceOpen] = useState(false)
   const [addWageOpen, setAddWageOpen] = useState(false)
   const [wageForm, setWageForm] = useState<WageInfoForm>({
     hourlyWage: '',
-    scheduledWorkHours: '',
-    maxWorkHours: '',
-    effectiveDate: '',
+    contractedWorkDays: DEFAULT_WORK_DAYS,
+    contractedHoursPerWeek: '',
+    maxHoursPerWeek: '',
+    effectiveFrom: '',
   })
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
@@ -101,36 +155,79 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
   const { data: employee, isLoading } = useEmployee(id)
   const updateMutation = useUpdateEmployee()
   const deactivateMutation = useDeactivateEmployee()
+  const activateMutation = useActivateEmployee()
   const resetDeviceMutation = useResetDevice()
   const { data: wageInfosRaw } = useWageInfos(id)
   const createWageInfoMutation = useCreateWageInfo(id)
+  const { data: orgsRaw = [] } = useOrganizations()
+  const { data: positions = [] } = usePositions()
+  const orgOptions = flattenOrgs(orgsRaw)
 
   const wageInfos: WageInfo[] = Array.isArray(wageInfosRaw)
     ? (wageInfosRaw as WageInfo[])
     : ((wageInfosRaw as { items?: WageInfo[] })?.items ?? [])
 
-  const { control, handleSubmit, formState: { isDirty } } = useForm<EmployeeFormValues>({
+  const { control, handleSubmit, setValue, formState: { isDirty, errors } } = useForm<EmployeeFormValues>({
     values: {
       name: employee?.name ?? '',
+      phone: employee?.phone ?? '',
       employeeNumber: employee?.employeeNumber ?? '',
       joinedAt: employee?.joinedAt?.slice(0, 10) ?? '',
       resignedAt: employee?.resignedAt?.slice(0, 10) ?? '',
       employmentType: employee?.employmentType ?? 'regular',
       accessLevel: employee?.accessLevel ?? 'EMPLOYEE',
+      organizationIds: employee?.organizations?.map((o) => o.organization.id) ?? [],
+      primaryOrganizationId:
+        employee?.organizations?.find((o) => o.isPrimary)?.organization.id ??
+        employee?.organizations?.[0]?.organization.id ??
+        '',
+      positionIds: employee?.positions?.map((p) => p.position.id) ?? [],
     },
   })
 
+  const organizationIds = useWatch({ control, name: 'organizationIds' })
+  const primaryOrganizationId = useWatch({ control, name: 'primaryOrganizationId' })
+
+  // 선택 조직이 바뀌면 본조직 값을 항상 유효하게 유지한다
+  useEffect(() => {
+    if (organizationIds.length === 0) {
+      if (primaryOrganizationId) setValue('primaryOrganizationId', '', { shouldDirty: true })
+      return
+    }
+    if (!organizationIds.includes(primaryOrganizationId)) {
+      setValue('primaryOrganizationId', organizationIds[0], { shouldDirty: true })
+    }
+  }, [organizationIds, primaryOrganizationId, setValue])
+
   async function onSaveBasic(values: EmployeeFormValues) {
     try {
+      const { organizationIds: orgIds, primaryOrganizationId: primaryId, positionIds, phone, ...rest } = values
       await updateMutation.mutateAsync({
         id,
-        ...values,
+        ...rest,
+        phone: phone || null,
         resignedAt: values.resignedAt || undefined,
         employeeNumber: values.employeeNumber || undefined,
+        // UpdateEmployeeSchema: organizationIds는 min(1) — 비어 있으면 전송하지 않는다
+        ...(orgIds.length > 0 && {
+          organizationIds: orgIds,
+          primaryOrganizationId: orgIds.includes(primaryId) ? primaryId : orgIds[0],
+        }),
+        positionIds,
       })
       setSnack({ open: true, message: '저장되었습니다.', severity: 'success' })
     } catch {
       setSnack({ open: true, message: '저장에 실패했습니다.', severity: 'error' })
+    }
+  }
+
+  async function handleActivate() {
+    try {
+      await activateMutation.mutateAsync(id)
+      setActivateOpen(false)
+      setSnack({ open: true, message: '직원이 재활성화되었습니다.', severity: 'success' })
+    } catch {
+      setSnack({ open: true, message: '재활성화에 실패했습니다.', severity: 'error' })
     }
   }
 
@@ -158,16 +255,33 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
     try {
       await createWageInfoMutation.mutateAsync({
         hourlyWage: Number(wageForm.hourlyWage),
-        scheduledWorkHours: Number(wageForm.scheduledWorkHours),
-        maxWorkHours: Number(wageForm.maxWorkHours),
-        effectiveDate: wageForm.effectiveDate,
+        contractedWorkDays: wageForm.contractedWorkDays.join(','),
+        contractedHoursPerWeek: Number(wageForm.contractedHoursPerWeek),
+        // 미입력 시 키 자체를 제외 (BE 기본값 52 적용)
+        ...(wageForm.maxHoursPerWeek ? { maxHoursPerWeek: Number(wageForm.maxHoursPerWeek) } : {}),
+        effectiveFrom: wageForm.effectiveFrom,
       })
       setAddWageOpen(false)
-      setWageForm({ hourlyWage: '', scheduledWorkHours: '', maxWorkHours: '', effectiveDate: '' })
+      setWageForm({
+        hourlyWage: '',
+        contractedWorkDays: DEFAULT_WORK_DAYS,
+        contractedHoursPerWeek: '',
+        maxHoursPerWeek: '',
+        effectiveFrom: '',
+      })
       setSnack({ open: true, message: '근로정보가 추가되었습니다.', severity: 'success' })
     } catch {
       setSnack({ open: true, message: '추가에 실패했습니다.', severity: 'error' })
     }
+  }
+
+  function toggleWorkDay(day: string) {
+    setWageForm((f) => ({
+      ...f,
+      contractedWorkDays: f.contractedWorkDays.includes(day)
+        ? f.contractedWorkDays.filter((d) => d !== day)
+        : WORK_DAYS.filter((d) => f.contractedWorkDays.includes(d.value) || d.value === day).map((d) => d.value),
+    }))
   }
 
   if (isLoading) {
@@ -236,7 +350,101 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
                     />
                   )}
                 />
+                <Controller
+                  name="phone"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      label="전화번호"
+                      size="small"
+                      placeholder="010-0000-0000"
+                      sx={{ flex: 1, minWidth: 160 }}
+                    />
+                  )}
+                />
               </Box>
+
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Controller
+                  name="organizationIds"
+                  control={control}
+                  rules={{ validate: (v) => v.length > 0 || '소속 조직을 하나 이상 선택해 주세요.' }}
+                  render={({ field }) => (
+                    <Autocomplete
+                      multiple
+                      size="small"
+                      options={orgOptions}
+                      getOptionLabel={(o) => o.name}
+                      isOptionEqualToValue={(o, v) => o.id === v.id}
+                      value={orgOptions.filter((o) => field.value.includes(o.id))}
+                      onChange={(_, selected) => field.onChange(selected.map((o) => o.id))}
+                      renderOption={(props, option) => (
+                        <Box
+                          component="li"
+                          {...props}
+                          key={option.id}
+                          sx={{ pl: `${16 + option.depth * 16}px !important` }}
+                        >
+                          {option.name}
+                        </Box>
+                      )}
+                      renderTags={(value, getTagProps) =>
+                        value.map((option, index) => (
+                          <Chip {...getTagProps({ index })} key={option.id} label={option.name} size="small" />
+                        ))
+                      }
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="소속 조직"
+                          error={!!errors.organizationIds}
+                          helperText={errors.organizationIds?.message}
+                        />
+                      )}
+                      sx={{ flex: 2, minWidth: 280 }}
+                    />
+                  )}
+                />
+                <Controller
+                  name="primaryOrganizationId"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl size="small" sx={{ flex: 1, minWidth: 180 }} disabled={organizationIds.length === 0}>
+                      <InputLabel>본조직</InputLabel>
+                      <Select {...field} label="본조직">
+                        {orgOptions
+                          .filter((o) => organizationIds.includes(o.id))
+                          .map((o) => (
+                            <MenuItem key={o.id} value={o.id}>{o.name}</MenuItem>
+                          ))}
+                      </Select>
+                    </FormControl>
+                  )}
+                />
+              </Box>
+
+              <Controller
+                name="positionIds"
+                control={control}
+                render={({ field }) => (
+                  <Autocomplete
+                    multiple
+                    size="small"
+                    options={positions}
+                    getOptionLabel={(p) => p.name}
+                    isOptionEqualToValue={(o, v) => o.id === v.id}
+                    value={positions.filter((p) => field.value.includes(p.id))}
+                    onChange={(_, selected) => field.onChange(selected.map((p) => p.id))}
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => (
+                        <Chip {...getTagProps({ index })} key={option.id} label={option.name} size="small" />
+                      ))
+                    }
+                    renderInput={(params) => <TextField {...params} label="직무" />}
+                  />
+                )}
+              />
 
               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <Controller
@@ -277,9 +485,9 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
                     <FormControl size="small" sx={{ width: 180 }}>
                       <InputLabel>고용형태</InputLabel>
                       <Select {...field} label="고용형태">
-                        <MenuItem value="regular">정규직</MenuItem>
-                        <MenuItem value="contract">계약직</MenuItem>
-                        <MenuItem value="part_time">아르바이트</MenuItem>
+                        {Object.entries(EMPLOYMENT_TYPE_LABEL).map(([value, label]) => (
+                          <MenuItem key={value} value={value}>{label}</MenuItem>
+                        ))}
                       </Select>
                     </FormControl>
                   )}
@@ -309,7 +517,7 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
                 >
                   저장
                 </Button>
-                {employee.isActive && (
+                {employee.isActive ? (
                   <Button
                     variant="outlined"
                     color="error"
@@ -317,6 +525,15 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
                     disabled={deactivateMutation.isPending}
                   >
                     비활성화
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outlined"
+                    color="success"
+                    onClick={() => setActivateOpen(true)}
+                    disabled={activateMutation.isPending}
+                  >
+                    재활성화
                   </Button>
                 )}
               </Box>
@@ -343,14 +560,15 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
                 <TableRow sx={{ bgcolor: 'background.default' }}>
                   <TableCell>적용시점</TableCell>
                   <TableCell align="right">시급 (원)</TableCell>
-                  <TableCell align="right">소정근로시간 (h)</TableCell>
-                  <TableCell align="right">최대근로시간 (h)</TableCell>
+                  <TableCell>계약 근무요일</TableCell>
+                  <TableCell align="right">주 계약시간 (h)</TableCell>
+                  <TableCell align="right">주 최대시간 (h)</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {wageInfos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                       근로정보가 없습니다.
                     </TableCell>
                   </TableRow>
@@ -358,13 +576,14 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
                   wageInfos.map((w) => (
                     <TableRow key={w.id}>
                       <TableCell>
-                        {new Date(w.effectiveDate).toLocaleDateString('ko-KR')}
+                        {new Date(w.effectiveFrom).toLocaleDateString('ko-KR')}
                       </TableCell>
                       <TableCell align="right">
-                        {w.hourlyWage.toLocaleString('ko-KR')}
+                        {Number(w.hourlyWage).toLocaleString('ko-KR')}
                       </TableCell>
-                      <TableCell align="right">{w.scheduledWorkHours}</TableCell>
-                      <TableCell align="right">{w.maxWorkHours}</TableCell>
+                      <TableCell>{formatWorkDays(w.contractedWorkDays)}</TableCell>
+                      <TableCell align="right">{Number(w.contractedHoursPerWeek)}</TableCell>
+                      <TableCell align="right">{Number(w.maxHoursPerWeek)}</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -415,6 +634,18 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
         onCancel={() => setDeactivateOpen(false)}
       />
 
+      {/* 재활성화 ConfirmDialog */}
+      <ConfirmDialog
+        open={activateOpen}
+        title="직원 재활성화"
+        message={`${employee.name} 직원을 재활성화하시겠습니까? 재직 상태로 전환되고 퇴사일이 초기화됩니다.`}
+        confirmLabel="재활성화"
+        confirmColor="primary"
+        loading={activateMutation.isPending}
+        onConfirm={handleActivate}
+        onCancel={() => setActivateOpen(false)}
+      />
+
       {/* 기기 초기화 ConfirmDialog */}
       <ConfirmDialog
         open={resetDeviceOpen}
@@ -440,29 +671,49 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
             fullWidth
             size="small"
           />
+          <FormControl size="small">
+            <FormLabel required sx={{ fontSize: '0.8rem' }}>계약 근무요일</FormLabel>
+            <FormGroup row>
+              {WORK_DAYS.map((day) => (
+                <FormControlLabel
+                  key={day.value}
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={wageForm.contractedWorkDays.includes(day.value)}
+                      onChange={() => toggleWorkDay(day.value)}
+                    />
+                  }
+                  label={day.label}
+                />
+              ))}
+            </FormGroup>
+          </FormControl>
           <TextField
-            label="소정근로시간 (시간/주)"
+            label="주 계약시간 (시간/주)"
             type="number"
-            value={wageForm.scheduledWorkHours}
-            onChange={(e) => setWageForm((f) => ({ ...f, scheduledWorkHours: e.target.value }))}
+            value={wageForm.contractedHoursPerWeek}
+            onChange={(e) => setWageForm((f) => ({ ...f, contractedHoursPerWeek: e.target.value }))}
             inputProps={{ min: 0 }}
             fullWidth
             size="small"
+            required
           />
           <TextField
-            label="최대근로시간 (시간/주)"
+            label="주 최대시간 (시간/주)"
             type="number"
-            value={wageForm.maxWorkHours}
-            onChange={(e) => setWageForm((f) => ({ ...f, maxWorkHours: e.target.value }))}
+            value={wageForm.maxHoursPerWeek}
+            onChange={(e) => setWageForm((f) => ({ ...f, maxHoursPerWeek: e.target.value }))}
             inputProps={{ min: 0 }}
             fullWidth
             size="small"
+            helperText="미입력 시 52시간이 적용됩니다."
           />
           <TextField
             label="적용시점"
             type="date"
-            value={wageForm.effectiveDate}
-            onChange={(e) => setWageForm((f) => ({ ...f, effectiveDate: e.target.value }))}
+            value={wageForm.effectiveFrom}
+            onChange={(e) => setWageForm((f) => ({ ...f, effectiveFrom: e.target.value }))}
             InputLabelProps={{ shrink: true }}
             fullWidth
             size="small"
@@ -476,7 +727,9 @@ export default function EmployeeDetailPage({ params }: { params: { id: string } 
             disabled={
               createWageInfoMutation.isPending ||
               !wageForm.hourlyWage ||
-              !wageForm.effectiveDate
+              wageForm.contractedWorkDays.length === 0 ||
+              !wageForm.contractedHoursPerWeek ||
+              !wageForm.effectiveFrom
             }
           >
             추가

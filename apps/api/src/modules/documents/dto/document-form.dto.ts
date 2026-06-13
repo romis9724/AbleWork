@@ -1,0 +1,51 @@
+import { z } from 'zod'
+import { StepInputSchema } from './document.dto'
+
+export const CreateDocumentFormSchema = z.object({
+  name: z.string().min(1, '양식명을 입력하세요.').max(200),
+  category: z.string().max(100).optional(),
+  fieldsSchema: z.record(z.unknown()).default({}),
+  sortOrder: z.number().int().min(0).default(0),
+  allowReDraft: z.boolean().default(false),
+  allowPreApproval: z.boolean().default(false),
+})
+
+export const UpdateDocumentFormSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    category: z.string().max(100).optional(),
+    fieldsSchema: z.record(z.unknown()).optional(),
+    sortOrder: z.number().int().min(0).optional(),
+    allowReDraft: z.boolean().optional(),
+    allowPreApproval: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: '수정할 항목을 하나 이상 입력하세요.',
+  })
+
+// 문서번호 채번 규칙 — pattern 토큰: {YYYY}, {MM}, {SEQ:n}(n자리 0패딩)
+export const UpsertNumberRuleSchema = z.object({
+  pattern: z.string().min(1, '채번 패턴을 입력하세요.').max(200),
+  resetYearly: z.boolean().default(true),
+})
+
+export const CreateSharedLineSchema = z.object({
+  name: z.string().min(1, '결재선 이름을 입력하세요.').max(100),
+  steps: z.array(StepInputSchema).min(1, '결재 단계를 하나 이상 입력하세요.'),
+})
+
+export const UpdateSharedLineSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    steps: z.array(StepInputSchema).min(1).optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: '수정할 항목을 하나 이상 입력하세요.',
+  })
+
+export type CreateDocumentFormDto = z.infer<typeof CreateDocumentFormSchema>
+export type UpdateDocumentFormDto = z.infer<typeof UpdateDocumentFormSchema>
+export type UpsertNumberRuleDto = z.infer<typeof UpsertNumberRuleSchema>
+export type CreateSharedLineDto = z.infer<typeof CreateSharedLineSchema>
+export type UpdateSharedLineDto = z.infer<typeof UpdateSharedLineSchema>

@@ -6,7 +6,7 @@ export const CreateEmployeeSchema = z.object({
   phone: z.string().max(20).optional(),
   employeeNumber: z.string().max(50).optional(),
   joinedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD 형식으로 입력하세요.'),
-  employmentType: z.enum(['FULL_TIME', 'PART_TIME', 'CONTRACT', 'DAILY'], {
+  employmentType: z.enum(['regular', 'contract', 'part_time', 'daily'], {
     errorMap: () => ({ message: '고용형태가 올바르지 않습니다.' }),
   }),
   accessLevel: z.enum(['GENERAL_ADMIN', 'ORG_ADMIN', 'EMPLOYEE'], {

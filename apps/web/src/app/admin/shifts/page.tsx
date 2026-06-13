@@ -26,12 +26,18 @@ import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
+import CalendarViewWeekOutlinedIcon from '@mui/icons-material/CalendarViewWeekOutlined'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListIcon from '@mui/icons-material/FilterList'
+import LockOpenIcon from '@mui/icons-material/LockOpen'
+import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
+import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import { useSnackbar } from '@/hooks/useSnackbar'
@@ -42,10 +48,15 @@ import {
   useCreateShift,
   useUpdateShift,
   useConfirmShift,
+  useUnconfirmShift,
   type Shift,
 } from '@/lib/query/shifts'
 import { useEmployees } from '@/lib/query/employees'
 import { useOrganizations } from '@/lib/query/organizations'
+import { useAuthStore } from '@/stores/auth.store'
+import { ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
+import WeeklyCalendar, { addDays, getMonday, toLocalDateStr } from './WeeklyCalendar'
+import BulkCreateDialog from './BulkCreateDialog'
 
 const STATUS_LABEL: Record<string, string> = {
   confirmed: '확정', pending: '미확정', draft: '임시',
@@ -60,20 +71,37 @@ function formatDateKR(iso: string) {
 function formatTimeKR(iso: string) {
   return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
 }
+/** ISO 문자열 → 24시간 HH:MM (폼 입력용, TIME_REGEX 호환) */
+function toHHMM(iso: string) {
+  const d = new Date(iso)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 
 const today = new Date().toISOString().split('T')[0]
 const weekLater = new Date(Date.now() + 7 * 86_400_000).toISOString().split('T')[0]
 
 const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/
 
-const shiftSchema = z.object({
-  employeeId: z.string().min(1, '직원을 선택해주세요'),
-  date: z.string().min(1, '날짜를 선택해주세요'),
-  templateId: z.string().optional(),
-  startTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요').optional().or(z.literal('')),
-  endTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요').optional().or(z.literal('')),
-  shiftTypeId: z.string().optional(),
-})
+const shiftSchema = z
+  .object({
+    employeeId: z.string().min(1, '직원을 선택해주세요'),
+    organizationId: z.string().min(1, '조직을 선택해주세요'),
+    date: z.string().min(1, '날짜를 선택해주세요'),
+    templateId: z.string().optional(),
+    startTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요').optional().or(z.literal('')),
+    endTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요').optional().or(z.literal('')),
+    shiftTypeId: z.string().min(1, '근무 유형을 선택해주세요'),
+  })
+  .superRefine((values, ctx) => {
+    if (!values.templateId) {
+      if (!values.startTime) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['startTime'], message: '시작 시간을 입력해주세요' })
+      }
+      if (!values.endTime) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endTime'], message: '종료 시간을 입력해주세요' })
+      }
+    }
+  })
 
 type ShiftFormValues = z.infer<typeof shiftSchema>
 
@@ -82,19 +110,31 @@ interface DialogState {
   editing: Shift | null
 }
 
+type ViewMode = 'calendar' | 'list'
+
 export default function ShiftsPage() {
+  const [view, setView] = useState<ViewMode>('list')
+  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
   const [startDate, setStartDate] = useState(today)
   const [endDate, setEndDate] = useState(weekLater)
   const [orgFilter, setOrgFilter] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const [dialog, setDialog] = useState<DialogState>({ open: false, editing: null })
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
 
+  const { user } = useAuthStore()
+  const canUnconfirm =
+    !!user &&
+    ACCESS_LEVEL_HIERARCHY[user.accessLevel] >= ACCESS_LEVEL_HIERARCHY.GENERAL_ADMIN
+
+  // BE ShiftFilterDto는 startAt/endAt (YYYY-MM-DD) 파라미터를 사용
+  // 달력 뷰는 현재 주(월~일), 목록 뷰는 필터의 기간을 따른다
   const shiftsParams: Record<string, string | undefined> = {
-    startDate,
-    endDate,
+    startAt: view === 'calendar' ? toLocalDateStr(weekStart) : startDate,
+    endAt: view === 'calendar' ? toLocalDateStr(addDays(weekStart, 6)) : endDate,
     ...(orgFilter ? { organizationId: orgFilter } : {}),
   }
 
@@ -105,14 +145,23 @@ export default function ShiftsPage() {
   const employees = employeeData?.items ?? []
   const { data: organizations = [] } = useOrganizations()
 
+  // 달력 행: 조직 필터가 있으면 해당 조직 소속 직원만 표시
+  const calendarEmployees = orgFilter
+    ? employees.filter((e) =>
+        e.organizations?.some((o) => o.organization.id === orgFilter),
+      )
+    : employees
+
   const createMutation = useCreateShift()
   const updateMutation = useUpdateShift()
   const confirmMutation = useConfirmShift()
+  const unconfirmMutation = useUnconfirmShift()
 
   const { control, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<ShiftFormValues>({
     resolver: zodResolver(shiftSchema),
     defaultValues: {
       employeeId: '',
+      organizationId: '',
       date: today,
       templateId: '',
       startTime: '',
@@ -124,20 +173,31 @@ export default function ShiftsPage() {
   const selectedTemplate = watch('templateId')
 
   const openCreate = () => {
-    reset({ employeeId: '', date: today, templateId: '', startTime: '', endTime: '', shiftTypeId: '' })
+    reset({ employeeId: '', organizationId: '', date: today, templateId: '', startTime: '', endTime: '', shiftTypeId: '' })
+    setDialog({ open: true, editing: null })
+  }
+
+  /** 달력 셀 클릭 — 직원/날짜 프리필 생성 (직원의 대표 조직 자동 선택) */
+  const openCreateAt = (employeeId: string, date: string) => {
+    const employee = employees.find((e) => e.id === employeeId)
+    const primaryOrgId =
+      employee?.organizations?.find((o) => o.isPrimary)?.organization.id ??
+      employee?.organizations?.[0]?.organization.id ??
+      orgFilter ??
+      ''
+    reset({ employeeId, organizationId: primaryOrgId, date, templateId: '', startTime: '', endTime: '', shiftTypeId: '' })
     setDialog({ open: true, editing: null })
   }
 
   const openEdit = (shift: Shift) => {
     const date = shift.startAt.split('T')[0]
-    const startTime = formatTimeKR(shift.startAt)
-    const endTime = formatTimeKR(shift.endAt)
     reset({
       employeeId: shift.employeeId,
+      organizationId: shift.organizationId,
       date,
       templateId: '',
-      startTime,
-      endTime,
+      startTime: toHHMM(shift.startAt),
+      endTime: toHHMM(shift.endAt),
       shiftTypeId: shift.shiftType?.id ?? '',
     })
     setDialog({ open: true, editing: shift })
@@ -148,15 +208,19 @@ export default function ShiftsPage() {
   const onSubmit = async (values: ShiftFormValues) => {
     const template = templates.find((t) => t.id === values.templateId)
 
-    const resolvedStart = template ? `${values.date}T${template.startTime}:00` : `${values.date}T${values.startTime}:00`
-    const resolvedEnd = template ? `${values.date}T${template.endTime}:00` : `${values.date}T${values.endTime}:00`
+    const startTime = template ? template.startTime : values.startTime
+    const endTime = template ? template.endTime : values.endTime
+    // BE CreateShiftSchema는 ISO 8601(datetime) 형식 요구 → 로컬 시간 기준 ISO 변환
+    const resolvedStart = new Date(`${values.date}T${startTime}:00`).toISOString()
+    const resolvedEnd = new Date(`${values.date}T${endTime}:00`).toISOString()
 
     const payload = {
       employeeId: values.employeeId,
+      organizationId: values.organizationId,
+      shiftTypeId: values.shiftTypeId,
       startAt: resolvedStart,
       endAt: resolvedEnd,
       ...(values.templateId ? { templateId: values.templateId } : {}),
-      ...(values.shiftTypeId ? { shiftTypeId: values.shiftTypeId } : {}),
     }
 
     try {
@@ -164,8 +228,12 @@ export default function ShiftsPage() {
         await updateMutation.mutateAsync({ id: dialog.editing.id, ...payload })
         showSnackbar('근무일정이 수정되었습니다.')
       } else {
-        await createMutation.mutateAsync(payload)
-        showSnackbar('근무일정이 추가되었습니다.')
+        const result = await createMutation.mutateAsync(payload)
+        if (result.warning) {
+          showSnackbar(result.warning, 'warning')
+        } else {
+          showSnackbar('근무일정이 추가되었습니다.')
+        }
       }
       closeDialog()
     } catch {
@@ -176,11 +244,25 @@ export default function ShiftsPage() {
   const handleConfirmSelected = async () => {
     if (selected.size === 0) return
     try {
-      await Promise.all([...selected].map((id) => confirmMutation.mutateAsync(id)))
-      showSnackbar(`${selected.size}건이 확정되었습니다.`)
+      const results = await Promise.all([...selected].map((id) => confirmMutation.mutateAsync(id)))
+      const warnings = results.map((r) => r.warning).filter((w): w is string => !!w)
+      if (warnings.length > 0) {
+        showSnackbar(`${selected.size}건 확정 완료 — ${warnings[0]}`, 'warning')
+      } else {
+        showSnackbar(`${selected.size}건이 확정되었습니다.`)
+      }
       setSelected(new Set())
     } catch {
       showSnackbar('확정 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
+  const handleUnconfirm = async (shift: Shift) => {
+    try {
+      await unconfirmMutation.mutateAsync(shift.id)
+      showSnackbar('확정이 해제되었습니다.')
+    } catch {
+      showSnackbar('확정 해제 중 오류가 발생했습니다.', 'error')
     }
   }
 
@@ -210,9 +292,14 @@ export default function ShiftsPage() {
         title="근무일정 관리"
         subtitle="직원별 근무일정을 조회하고 관리합니다."
         actions={
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-            근무일정 추가
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button variant="outlined" startIcon={<PlaylistAddIcon />} onClick={() => setBulkOpen(true)}>
+              일괄 생성
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+              근무일정 추가
+            </Button>
+          </Box>
         }
       />
 
@@ -222,24 +309,28 @@ export default function ShiftsPage() {
         sx={{ border: '1px solid', borderColor: 'divider', p: 2, mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}
       >
         <FilterListIcon sx={{ color: 'text.secondary' }} />
-        <TextField
-          label="시작일"
-          type="date"
-          size="small"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-          InputLabelProps={{ shrink: true }}
-          sx={{ width: 160 }}
-        />
-        <TextField
-          label="종료일"
-          type="date"
-          size="small"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-          InputLabelProps={{ shrink: true }}
-          sx={{ width: 160 }}
-        />
+        {view === 'list' && (
+          <>
+            <TextField
+              label="시작일"
+              type="date"
+              size="small"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ width: 160 }}
+            />
+            <TextField
+              label="종료일"
+              type="date"
+              size="small"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ width: 160 }}
+            />
+          </>
+        )}
         <Autocomplete
           size="small"
           options={organizations}
@@ -250,10 +341,29 @@ export default function ShiftsPage() {
           sx={{ width: 200 }}
           clearOnEscape
         />
+        <Box sx={{ flexGrow: 1 }} />
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={view}
+          onChange={(_, next: ViewMode | null) => {
+            if (next) setView(next)
+          }}
+          aria-label="보기 전환"
+        >
+          <ToggleButton value="calendar" aria-label="주간 달력">
+            <CalendarViewWeekOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />
+            주간 달력
+          </ToggleButton>
+          <ToggleButton value="list" aria-label="목록">
+            <TableRowsOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />
+            목록
+          </ToggleButton>
+        </ToggleButtonGroup>
       </Paper>
 
       {/* Bulk action bar */}
-      {selected.size > 0 && (
+      {view === 'list' && selected.size > 0 && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, px: 1 }}>
           <Typography variant="body2" color="text.secondary">
             {selected.size}건 선택됨
@@ -278,7 +388,25 @@ export default function ShiftsPage() {
         </Box>
       )}
 
-      {loadingShifts ? (
+      {view === 'calendar' ? (
+        loadingShifts ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <WeeklyCalendar
+            weekStart={weekStart}
+            shifts={shifts as Shift[]}
+            employees={calendarEmployees}
+            canUnconfirm={canUnconfirm}
+            isUnconfirming={unconfirmMutation.isPending}
+            onWeekChange={setWeekStart}
+            onCellClick={openCreateAt}
+            onShiftClick={openEdit}
+            onUnconfirm={handleUnconfirm}
+          />
+        )
+      ) : loadingShifts ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
           <CircularProgress />
         </Box>
@@ -364,6 +492,20 @@ export default function ShiftsPage() {
                     />
                   </TableCell>
                   <TableCell align="right">
+                    {shift.status === 'confirmed' && canUnconfirm && (
+                      <Tooltip title="확정 해제">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="warning"
+                            onClick={() => handleUnconfirm(shift)}
+                            disabled={unconfirmMutation.isPending}
+                          >
+                            <LockOpenIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
                     <IconButton size="small" onClick={() => openEdit(shift)}>
                       <EditOutlinedIcon fontSize="small" />
                     </IconButton>
@@ -396,6 +538,28 @@ export default function ShiftsPage() {
                       required
                       error={!!errors.employeeId}
                       helperText={errors.employeeId?.message}
+                    />
+                  )}
+                />
+              )}
+            />
+
+            <Controller
+              name="organizationId"
+              control={control}
+              render={({ field }) => (
+                <Autocomplete
+                  options={organizations}
+                  getOptionLabel={(o) => o.name}
+                  value={organizations.find((o) => o.id === field.value) ?? null}
+                  onChange={(_, val) => field.onChange(val?.id ?? '')}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="조직"
+                      required
+                      error={!!errors.organizationId}
+                      helperText={errors.organizationId?.message}
                     />
                   )}
                 />
@@ -492,10 +656,13 @@ export default function ShiftsPage() {
                 <TextField
                   {...field}
                   select
-                  label="근무 유형 (선택)"
+                  label="근무 유형"
+                  required
                   fullWidth
+                  error={!!errors.shiftTypeId}
+                  helperText={errors.shiftTypeId?.message}
                 >
-                  <MenuItem value=""><em>없음</em></MenuItem>
+                  <MenuItem value=""><em>선택하세요</em></MenuItem>
                   {shiftTypes.map((type) => (
                     <MenuItem key={type.id} value={type.id}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -531,6 +698,17 @@ export default function ShiftsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* 일괄 생성 다이얼로그 */}
+      <BulkCreateDialog
+        open={bulkOpen}
+        templates={templates}
+        organizations={organizations}
+        defaultStartDate={view === 'calendar' ? toLocalDateStr(weekStart) : startDate}
+        defaultEndDate={view === 'calendar' ? toLocalDateStr(addDays(weekStart, 6)) : endDate}
+        onClose={() => setBulkOpen(false)}
+        onResult={showSnackbar}
+      />
 
       <Snackbar
         open={snackbar.open}

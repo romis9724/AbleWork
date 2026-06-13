@@ -11,14 +11,14 @@ import Fab from '@mui/material/Fab'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
 import DialogActions from '@mui/material/DialogActions'
 import Button from '@mui/material/Button'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
-import TextField from '@mui/material/TextField'
-import MenuItem from '@mui/material/MenuItem'
+import ListSubheader from '@mui/material/ListSubheader'
 import CircularProgress from '@mui/material/CircularProgress'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
@@ -26,17 +26,48 @@ import AddIcon from '@mui/icons-material/Add'
 import BeachAccessIcon from '@mui/icons-material/BeachAccess'
 import ScheduleIcon from '@mui/icons-material/Schedule'
 import EditCalendarIcon from '@mui/icons-material/EditCalendar'
+import PhoneAndroidIcon from '@mui/icons-material/PhoneAndroid'
 import EmptyState from '@/components/common/EmptyState'
-import { useRequests, useCreateRequest } from '@/lib/query/requests'
-import { useLeaveTypes } from '@/lib/query/leaves'
+import { useRequests, useCreateRequest, useCancelRequest } from '@/lib/query/requests'
+import { useAuthStore } from '@/stores/auth.store'
+import { LeaveCreateDialog, LeaveModifyDialog, LeaveDeleteDialog } from './leave-request-dialogs'
+import { ShiftCreateDialog, ShiftModifyDialog, ShiftDeleteDialog } from './shift-request-dialogs'
+import {
+  AttendanceEditDialog,
+  AttendanceCreateDialog,
+  AttendanceDeleteDialog,
+} from './attendance-request-dialogs'
+import { DeviceChangeDialog } from './device-request-dialog'
 
 type TabValue = 'ALL' | 'PENDING' | 'DONE'
-type DialogMode = null | 'menu' | 'leave' | 'shift' | 'attendance'
+
+type RequestDialogType =
+  | 'LEAVE_CREATE'
+  | 'LEAVE_MODIFY'
+  | 'LEAVE_DELETE'
+  | 'SHIFT_CREATE'
+  | 'SHIFT_MODIFY'
+  | 'SHIFT_DELETE'
+  | 'ATTENDANCE_EDIT'
+  | 'ATTENDANCE_CREATE'
+  | 'ATTENDANCE_DELETE'
+  | 'DEVICE_CHANGE'
+
+type DialogMode = null | 'menu' | RequestDialogType
 
 const TYPE_LABEL: Record<string, string> = {
   LEAVE_CREATE: '휴가 신청',
-  SHIFT_CREATE: '근무일정 변경 요청',
+  LEAVE_MODIFY: '휴가 수정 요청',
+  LEAVE_DELETE: '휴가 취소 요청',
+  SHIFT_CREATE: '근무일정 신청',
+  SHIFT_MODIFY: '근무일정 수정 요청',
+  SHIFT_DELETE: '근무일정 삭제 요청',
   ATTENDANCE_EDIT: '출퇴근 정정 요청',
+  ATTENDANCE_CREATE: '출퇴근 기록 생성 요청',
+  ATTENDANCE_DELETE: '출퇴근 기록 삭제 요청',
+  DEVICE_CHANGE: '기기 변경 요청',
+  OFFSITE_WORK: '외근/출장 요청',
+  CUSTOM: '기타 요청',
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -53,34 +84,56 @@ const STATUS_COLOR: Record<string, 'warning' | 'success' | 'error' | 'default'> 
   CANCELLED: 'default',
 }
 
-const MENU_ITEMS = [
-  { mode: 'leave' as const, icon: <BeachAccessIcon fontSize="small" />, label: '휴가 신청' },
-  { mode: 'shift' as const, icon: <ScheduleIcon fontSize="small" />, label: '근무일정 변경 요청' },
-  { mode: 'attendance' as const, icon: <EditCalendarIcon fontSize="small" />, label: '출퇴근 정정 요청' },
+interface MenuGroup {
+  title: string
+  icon: React.ReactNode
+  items: { type: RequestDialogType; label: string }[]
+}
+
+const MENU_GROUPS: MenuGroup[] = [
+  {
+    title: '휴가',
+    icon: <BeachAccessIcon fontSize="small" />,
+    items: [
+      { type: 'LEAVE_CREATE', label: '휴가 신청' },
+      { type: 'LEAVE_MODIFY', label: '휴가 수정' },
+      { type: 'LEAVE_DELETE', label: '휴가 취소(삭제)' },
+    ],
+  },
+  {
+    title: '근무일정',
+    icon: <ScheduleIcon fontSize="small" />,
+    items: [
+      { type: 'SHIFT_CREATE', label: '일정 신청' },
+      { type: 'SHIFT_MODIFY', label: '일정 수정' },
+      { type: 'SHIFT_DELETE', label: '일정 삭제' },
+    ],
+  },
+  {
+    title: '출퇴근',
+    icon: <EditCalendarIcon fontSize="small" />,
+    items: [
+      { type: 'ATTENDANCE_EDIT', label: '출퇴근 정정' },
+      { type: 'ATTENDANCE_CREATE', label: '기록 생성' },
+      { type: 'ATTENDANCE_DELETE', label: '기록 삭제' },
+    ],
+  },
+  {
+    title: '기타',
+    icon: <PhoneAndroidIcon fontSize="small" />,
+    items: [{ type: 'DEVICE_CHANGE', label: '기기 변경' }],
+  },
 ]
 
 export default function RequestsPage() {
   const [tab, setTab] = useState<TabValue>('ALL')
   const [dialogMode, setDialogMode] = useState<DialogMode>(null)
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null)
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false, message: '', severity: 'success',
   })
 
-  // Leave form state
-  const [leaveTypeId, setLeaveTypeId] = useState('')
-  const [leaveStartDate, setLeaveStartDate] = useState('')
-  const [leaveEndDate, setLeaveEndDate] = useState('')
-  const [leaveReason, setLeaveReason] = useState('')
-
-  // Shift form state
-  const [shiftDate, setShiftDate] = useState('')
-  const [shiftReason, setShiftReason] = useState('')
-
-  // Attendance form state
-  const [attDate, setAttDate] = useState('')
-  const [attClockIn, setAttClockIn] = useState('')
-  const [attClockOut, setAttClockOut] = useState('')
-  const [attReason, setAttReason] = useState('')
+  const employeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
 
   const queryParams = tab === 'ALL'
     ? undefined
@@ -89,77 +142,47 @@ export default function RequestsPage() {
     : { status: 'APPROVED,REJECTED,CANCELLED' }
 
   const { data, isLoading } = useRequests(queryParams)
-  const { data: leaveTypes = [] } = useLeaveTypes()
   const createRequest = useCreateRequest()
+  const cancelRequest = useCancelRequest()
 
   const requests = Array.isArray(data) ? data : (data?.items ?? [])
 
   const showSnack = (message: string, severity: 'success' | 'error') =>
     setSnack({ open: true, message, severity })
 
-  const resetDialogs = () => {
-    setDialogMode(null)
-    setLeaveTypeId('')
-    setLeaveStartDate('')
-    setLeaveEndDate('')
-    setLeaveReason('')
-    setShiftDate('')
-    setShiftReason('')
-    setAttDate('')
-    setAttClockIn('')
-    setAttClockOut('')
-    setAttReason('')
-  }
+  const closeDialog = () => setDialogMode(null)
 
-  const handleLeaveSubmit = async () => {
-    if (!leaveTypeId || !leaveStartDate || !leaveEndDate) {
-      showSnack('필수 항목을 모두 입력해 주세요.', 'error')
-      return
-    }
+  const handleSubmit = async (type: string, payload: Record<string, unknown>) => {
     try {
-      await createRequest.mutateAsync({
-        type: 'LEAVE_CREATE',
-        payload: { leaveTypeId, startDate: leaveStartDate, endDate: leaveEndDate, reason: leaveReason },
-      })
-      showSnack('휴가 신청이 완료됐습니다.', 'success')
-      resetDialogs()
+      await createRequest.mutateAsync({ type, payload })
+      showSnack(`${TYPE_LABEL[type] ?? '요청'} 접수가 완료됐습니다.`, 'success')
+      closeDialog()
     } catch {
       showSnack('신청 중 오류가 발생했습니다.', 'error')
     }
   }
 
-  const handleShiftSubmit = async () => {
-    if (!shiftDate) {
-      showSnack('날짜를 입력해 주세요.', 'error')
-      return
-    }
+  const handleCancelConfirm = async () => {
+    if (!cancelTargetId) return
     try {
-      await createRequest.mutateAsync({
-        type: 'SHIFT_CREATE',
-        payload: { date: shiftDate, reason: shiftReason },
-      })
-      showSnack('근무일정 변경 요청이 완료됐습니다.', 'success')
-      resetDialogs()
+      await cancelRequest.mutateAsync(cancelTargetId)
+      showSnack('요청이 취소됐습니다.', 'success')
     } catch {
-      showSnack('신청 중 오류가 발생했습니다.', 'error')
+      showSnack('취소 중 오류가 발생했습니다.', 'error')
+    } finally {
+      setCancelTargetId(null)
     }
   }
 
-  const handleAttendanceSubmit = async () => {
-    if (!attDate || !attClockIn || !attClockOut) {
-      showSnack('필수 항목을 모두 입력해 주세요.', 'error')
-      return
-    }
-    try {
-      await createRequest.mutateAsync({
-        type: 'ATTENDANCE_EDIT',
-        payload: { date: attDate, clockInAt: attClockIn, clockOutAt: attClockOut, reason: attReason },
-      })
-      showSnack('출퇴근 정정 요청이 완료됐습니다.', 'success')
-      resetDialogs()
-    } catch {
-      showSnack('신청 중 오류가 발생했습니다.', 'error')
-    }
+  /** 내가 올린 PENDING 요청만 취소 가능 (requesterId 미제공 응답은 본인 목록으로 간주) */
+  const isCancellable = (r: { status: string; requesterId?: string }) =>
+    r.status === 'PENDING' && (!r.requesterId || r.requesterId === employeeId)
+
+  const dialogProps = {
+    employeeId,
+    submitting: createRequest.isPending,
+    onClose: closeDialog,
+    onSubmit: handleSubmit,
   }
 
   return (
@@ -191,11 +214,23 @@ export default function RequestsPage() {
                     {new Date(r.createdAt).toLocaleDateString('ko-KR')}
                   </Typography>
                 </Box>
-                <Chip
-                  label={STATUS_LABEL[r.status] ?? r.status}
-                  color={STATUS_COLOR[r.status] ?? 'default'}
-                  size="small"
-                />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {isCancellable(r) && (
+                    <Button
+                      size="small"
+                      color="inherit"
+                      sx={{ color: 'text.secondary' }}
+                      onClick={() => setCancelTargetId(r.id)}
+                    >
+                      신청 취소
+                    </Button>
+                  )}
+                  <Chip
+                    label={STATUS_LABEL[r.status] ?? r.status}
+                    color={STATUS_COLOR[r.status] ?? 'default'}
+                    size="small"
+                  />
+                </Box>
               </CardContent>
             </Card>
           ))}
@@ -212,163 +247,62 @@ export default function RequestsPage() {
         <AddIcon />
       </Fab>
 
-      {/* Menu dialog */}
-      <Dialog open={dialogMode === 'menu'} onClose={resetDialogs} fullWidth maxWidth="xs">
+      {/* 유형 선택 메뉴 (그룹 구분) */}
+      <Dialog open={dialogMode === 'menu'} onClose={closeDialog} fullWidth maxWidth="xs">
         <DialogTitle>요청 유형 선택</DialogTitle>
         <DialogContent sx={{ p: 0 }}>
-          <List disablePadding>
-            {MENU_ITEMS.map((item) => (
-              <ListItem key={item.mode} disablePadding divider>
-                <ListItemButton onClick={() => setDialogMode(item.mode)}>
-                  <Box sx={{ mr: 1.5, color: 'primary.main', display: 'flex' }}>{item.icon}</Box>
-                  <ListItemText primary={item.label} />
-                </ListItemButton>
-              </ListItem>
+          <List disablePadding subheader={<li />}>
+            {MENU_GROUPS.map((group) => (
+              <li key={group.title}>
+                <ul style={{ padding: 0 }}>
+                  <ListSubheader sx={{ display: 'flex', alignItems: 'center', gap: 1, lineHeight: '36px' }}>
+                    <Box sx={{ color: 'primary.main', display: 'flex' }}>{group.icon}</Box>
+                    {group.title}
+                  </ListSubheader>
+                  {group.items.map((item) => (
+                    <ListItem key={item.type} disablePadding divider>
+                      <ListItemButton onClick={() => setDialogMode(item.type)}>
+                        <ListItemText primary={item.label} sx={{ pl: 4 }} />
+                      </ListItemButton>
+                    </ListItem>
+                  ))}
+                </ul>
+              </li>
             ))}
           </List>
         </DialogContent>
         <DialogActions>
-          <Button onClick={resetDialogs}>취소</Button>
+          <Button onClick={closeDialog}>취소</Button>
         </DialogActions>
       </Dialog>
 
-      {/* Leave dialog */}
-      <Dialog open={dialogMode === 'leave'} onClose={resetDialogs} fullWidth maxWidth="xs">
-        <DialogTitle>휴가 신청</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-          <TextField
-            select
-            label="휴가 유형"
-            value={leaveTypeId}
-            onChange={(e) => setLeaveTypeId(e.target.value)}
-            fullWidth
-            required
-          >
-            {leaveTypes.map((lt) => (
-              <MenuItem key={lt.id} value={lt.id}>{lt.displayName ?? lt.name}</MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            label="시작일"
-            type="date"
-            value={leaveStartDate}
-            onChange={(e) => setLeaveStartDate(e.target.value)}
-            fullWidth
-            required
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="종료일"
-            type="date"
-            value={leaveEndDate}
-            onChange={(e) => setLeaveEndDate(e.target.value)}
-            fullWidth
-            required
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="사유"
-            value={leaveReason}
-            onChange={(e) => setLeaveReason(e.target.value)}
-            fullWidth
-            multiline
-            rows={3}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={resetDialogs}>취소</Button>
-          <Button
-            variant="contained"
-            onClick={handleLeaveSubmit}
-            disabled={createRequest.isPending}
-          >
-            {createRequest.isPending ? <CircularProgress size={20} color="inherit" /> : '신청'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* 유형별 신청 다이얼로그 — 열릴 때만 마운트해 내부 조회/입력 상태를 초기화 */}
+      {dialogMode === 'LEAVE_CREATE' && <LeaveCreateDialog open {...dialogProps} />}
+      {dialogMode === 'LEAVE_MODIFY' && <LeaveModifyDialog open {...dialogProps} />}
+      {dialogMode === 'LEAVE_DELETE' && <LeaveDeleteDialog open {...dialogProps} />}
+      {dialogMode === 'SHIFT_CREATE' && <ShiftCreateDialog open {...dialogProps} />}
+      {dialogMode === 'SHIFT_MODIFY' && <ShiftModifyDialog open {...dialogProps} />}
+      {dialogMode === 'SHIFT_DELETE' && <ShiftDeleteDialog open {...dialogProps} />}
+      {dialogMode === 'ATTENDANCE_EDIT' && <AttendanceEditDialog open {...dialogProps} />}
+      {dialogMode === 'ATTENDANCE_CREATE' && <AttendanceCreateDialog open {...dialogProps} />}
+      {dialogMode === 'ATTENDANCE_DELETE' && <AttendanceDeleteDialog open {...dialogProps} />}
+      {dialogMode === 'DEVICE_CHANGE' && <DeviceChangeDialog open {...dialogProps} />}
 
-      {/* Shift dialog */}
-      <Dialog open={dialogMode === 'shift'} onClose={resetDialogs} fullWidth maxWidth="xs">
-        <DialogTitle>근무일정 변경 요청</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-          <TextField
-            label="날짜"
-            type="date"
-            value={shiftDate}
-            onChange={(e) => setShiftDate(e.target.value)}
-            fullWidth
-            required
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="사유"
-            value={shiftReason}
-            onChange={(e) => setShiftReason(e.target.value)}
-            fullWidth
-            multiline
-            rows={3}
-          />
+      {/* 신청 취소 확인 */}
+      <Dialog open={!!cancelTargetId} onClose={() => setCancelTargetId(null)} fullWidth maxWidth="xs">
+        <DialogTitle>신청 취소</DialogTitle>
+        <DialogContent>
+          <DialogContentText>이 요청을 취소하시겠어요? 취소한 요청은 되돌릴 수 없습니다.</DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={resetDialogs}>취소</Button>
+          <Button onClick={() => setCancelTargetId(null)}>닫기</Button>
           <Button
             variant="contained"
-            onClick={handleShiftSubmit}
-            disabled={createRequest.isPending}
+            color="error"
+            disabled={cancelRequest.isPending}
+            onClick={handleCancelConfirm}
           >
-            {createRequest.isPending ? <CircularProgress size={20} color="inherit" /> : '신청'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Attendance correction dialog */}
-      <Dialog open={dialogMode === 'attendance'} onClose={resetDialogs} fullWidth maxWidth="xs">
-        <DialogTitle>출퇴근 정정 요청</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-          <TextField
-            label="날짜"
-            type="date"
-            value={attDate}
-            onChange={(e) => setAttDate(e.target.value)}
-            fullWidth
-            required
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="출근 시간"
-            type="datetime-local"
-            value={attClockIn}
-            onChange={(e) => setAttClockIn(e.target.value)}
-            fullWidth
-            required
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="퇴근 시간"
-            type="datetime-local"
-            value={attClockOut}
-            onChange={(e) => setAttClockOut(e.target.value)}
-            fullWidth
-            required
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="사유"
-            value={attReason}
-            onChange={(e) => setAttReason(e.target.value)}
-            fullWidth
-            multiline
-            rows={3}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={resetDialogs}>취소</Button>
-          <Button
-            variant="contained"
-            onClick={handleAttendanceSubmit}
-            disabled={createRequest.isPending}
-          >
-            {createRequest.isPending ? <CircularProgress size={20} color="inherit" /> : '신청'}
+            {cancelRequest.isPending ? <CircularProgress size={20} color="inherit" /> : '신청 취소'}
           </Button>
         </DialogActions>
       </Dialog>

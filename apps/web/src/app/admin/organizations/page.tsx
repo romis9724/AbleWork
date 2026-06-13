@@ -168,7 +168,12 @@ export default function OrganizationsPage() {
 
   // ── 추가
   const handleCreate = (values: OrgFormValues) => {
-    createMutation.mutate(values, {
+    // null 값 제거 — 백엔드 Zod UUID 검증이 null을 거부하므로 undefined로 변환
+    createMutation.mutate({
+      ...values,
+      parentId: values.parentId ?? undefined,
+      approverId: values.approverId ?? undefined,
+    }, {
       onSuccess: () => { setDialogOpen(false); showSnack('조직이 추가되었습니다.', 'success') },
       onError: () => showSnack('조직 추가에 실패했습니다.', 'error'),
     })

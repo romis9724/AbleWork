@@ -62,15 +62,18 @@ export const useMessageLogs = () =>
     staleTime: 30_000,
   })
 
+export interface SendMessagePayload {
+  title: string
+  content: string
+  recipientEmployeeIds: string[]
+  templateId?: string
+  sendEmail?: boolean
+}
+
 export const useSendMessage = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: {
-      name: string
-      templateId: string
-      recipientIds: string[]
-      emailNotification: boolean
-    }) => apiClient.post('/messages/send', data),
+    mutationFn: (data: SendMessagePayload) => apiClient.post('/messages/send', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: LOGS_KEY }),
   })
 }

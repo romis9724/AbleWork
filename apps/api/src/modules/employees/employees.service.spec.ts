@@ -7,6 +7,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { EmployeesService } from './employees.service'
 import { PrismaService } from '../../prisma/prisma.service'
+import { CompanySettingsService } from '../companies/company-settings.service'
 import { AccessLevel } from '@ablework/shared-constants'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 
@@ -31,7 +32,7 @@ const baseEmployee = {
   employeeNumber: 'E001',
   joinedAt: new Date('2024-01-01'),
   resignedAt: null,
-  employmentType: 'FULL_TIME',
+  employmentType: 'regular',
   accessLevel: AccessLevel.EMPLOYEE,
   deviceId: 'device-abc',
   deviceBoundAt: new Date(),
@@ -70,11 +71,15 @@ const mockPrisma = {
   user: {
     findUnique: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
   },
   $transaction: jest.fn(),
 }
 
 const mockEvents = { emit: jest.fn() }
+
+// 기본값: org_admin_can_manage_employees = true (권한 허용)
+const mockSettings = { get: jest.fn().mockResolvedValue(true) }
 
 // ── 테스트 ────────────────────────────────────────────────────────────────────
 
@@ -87,6 +92,7 @@ describe('EmployeesService', () => {
         EmployeesService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
+        { provide: CompanySettingsService, useValue: mockSettings },
       ],
     }).compile()
 
@@ -145,6 +151,38 @@ describe('EmployeesService', () => {
 
   // ── deactivate ───────────────────────────────────────────────────────────────
 
+  // ── findAll — ORG_ADMIN 조직 스코프 ─────────────────────────────────────────
+
+  describe('findAll — ORG_ADMIN 조직 스코프', () => {
+    it('ORG_ADMIN은 자신의 소속 조직 직원만 조회된다 (조직 필터 자동 적용)', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN, 'req-emp-org-admin')
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockPrisma.employee.findMany.mockResolvedValue([])
+      mockPrisma.employee.count.mockResolvedValue(0)
+
+      await service.findAll(COMPANY_ID, { page: 1, limit: 20 }, requester)
+
+      const whereArg = mockPrisma.employee.findMany.mock.calls[0][0].where
+      expect(whereArg.companyId).toBe(COMPANY_ID)
+      expect(whereArg.organizations).toEqual({
+        some: { organizationId: { in: ['org-1'] } },
+      })
+    })
+
+    it('GENERAL_ADMIN은 조직 스코프 조건 없이 회사 전체 직원을 조회한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findMany.mockResolvedValue([baseEmployee])
+      mockPrisma.employee.count.mockResolvedValue(1)
+
+      await service.findAll(COMPANY_ID, { page: 1, limit: 20 }, requester)
+
+      const whereArg = mockPrisma.employee.findMany.mock.calls[0][0].where
+      expect(whereArg.companyId).toBe(COMPANY_ID)
+      expect(whereArg.organizations).toBeUndefined()
+      expect(mockPrisma.employeeOrganization.findMany).not.toHaveBeenCalled()
+    })
+  })
+
   describe('deactivate', () => {
     it('활성 직원을 퇴사 처리한다', async () => {
       const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
@@ -177,6 +215,149 @@ describe('EmployeesService', () => {
       await expect(
         service.deactivate(COMPANY_ID, 'nonexistent', undefined, requester),
       ).rejects.toThrow(NotFoundException)
+    })
+
+    it('권한 설정이 꺼져 있으면 ORG_ADMIN의 퇴사 처리를 차단한다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockSettings.get.mockResolvedValueOnce(false) // org_admin_can_manage_employees = false
+
+      await expect(
+        service.deactivate(COMPANY_ID, EMPLOYEE_ID, undefined, requester),
+      ).rejects.toThrow(ForbiddenException)
+      expect(mockSettings.get).toHaveBeenCalledWith(
+        COMPANY_ID,
+        'permission',
+        'org_admin_can_manage_employees',
+        true,
+      )
+    })
+
+    it('권한 설정이 켜져 있으면 ORG_ADMIN도 퇴사 처리가 가능하다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, isActive: false })
+
+      const result = await service.deactivate(COMPANY_ID, EMPLOYEE_ID, undefined, requester)
+      expect(result.isActive).toBe(false)
+    })
+
+    it('GENERAL_ADMIN은 권한 설정과 무관하게 퇴사 처리가 가능하다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, isActive: false })
+      mockSettings.get.mockResolvedValue(false)
+
+      const result = await service.deactivate(COMPANY_ID, EMPLOYEE_ID, undefined, requester)
+      expect(result.isActive).toBe(false)
+      mockSettings.get.mockResolvedValue(true) // 기본값 복원
+    })
+  })
+
+  // ── activate ─────────────────────────────────────────────────────────────────
+
+  describe('activate', () => {
+    it('퇴사한 직원을 재활성화한다 (isActive=true, resignedAt=null)', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        ...baseEmployee,
+        isActive: false,
+        resignedAt: new Date('2024-12-31'),
+      })
+      mockPrisma.employee.update.mockResolvedValue({
+        ...baseEmployee,
+        isActive: true,
+        resignedAt: null,
+      })
+
+      const result = await service.activate(COMPANY_ID, EMPLOYEE_ID, requester)
+      expect(result.isActive).toBe(true)
+      expect(result.resignedAt).toBeNull()
+      expect(mockPrisma.employee.update).toHaveBeenCalledWith({
+        where: { id: EMPLOYEE_ID },
+        data: { isActive: true, resignedAt: null },
+      })
+    })
+
+    it('이미 재직 중인 직원은 EMPLOYEE_ALREADY_ACTIVE 에러를 던진다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee) // isActive: true
+
+      await expect(service.activate(COMPANY_ID, EMPLOYEE_ID, requester)).rejects.toThrow(
+        BadRequestException,
+      )
+      expect(mockPrisma.employee.update).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── update (권한 설정 enforcement) ──────────────────────────────────────────
+
+  describe('update — 권한 설정 enforcement', () => {
+    it('권한 설정이 꺼져 있으면 ORG_ADMIN의 타인 수정은 차단된다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockSettings.get.mockResolvedValueOnce(false)
+
+      await expect(
+        service.update(COMPANY_ID, EMPLOYEE_ID, { name: '새이름' }, requester),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('권한 설정이 꺼져 있어도 본인 이름/전화번호 수정은 허용된다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN, EMPLOYEE_ID)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockSettings.get.mockResolvedValue(false)
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma),
+      )
+      mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, name: '새이름' })
+
+      const result = await service.update(COMPANY_ID, EMPLOYEE_ID, { name: '새이름' }, requester)
+      expect(result.name).toBe('새이름')
+      mockSettings.get.mockResolvedValue(true) // 기본값 복원
+    })
+
+    it('이름/전화번호 변경 시 연결된 User.name/phone도 같은 트랜잭션에서 동기화한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma),
+      )
+      mockPrisma.employee.update.mockResolvedValue({
+        ...baseEmployee,
+        name: '김새이름',
+        phone: '010-9999-0000',
+      })
+      mockPrisma.user.update.mockResolvedValue({})
+
+      await service.update(
+        COMPANY_ID,
+        EMPLOYEE_ID,
+        { name: '김새이름', phone: '010-9999-0000' },
+        requester,
+      )
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: baseEmployee.userId },
+        data: { name: '김새이름', phone: '010-9999-0000' },
+      })
+    })
+
+    it('이름/전화번호가 아닌 필드만 변경하면 User 동기화를 호출하지 않는다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma),
+      )
+      mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, employeeNumber: 'E002' })
+
+      await service.update(COMPANY_ID, EMPLOYEE_ID, { employeeNumber: 'E002' }, requester)
+
+      expect(mockPrisma.user.update).not.toHaveBeenCalled()
     })
   })
 

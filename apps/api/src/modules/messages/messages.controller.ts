@@ -38,8 +38,12 @@ import {
   UpdateTemplateDto,
   SendMessageSchema,
   SendMessageDto,
+  ReadMessageSchema,
+  ReadMessageDto,
   CreateAutomationSchema,
   CreateAutomationDto,
+  UpdateAutomationSchema,
+  UpdateAutomationDto,
 } from './dto/message.dto'
 
 @ApiTags('messages')
@@ -132,8 +136,9 @@ export class MessagesController {
   markAsRead(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
+    @Body(new ZodValidationPipe(ReadMessageSchema)) dto: ReadMessageDto,
   ) {
-    return this.messagesService.markAsRead(id, user.employeeId)
+    return this.messagesService.markAsRead(id, user.employeeId, dto)
   }
 
   // ── MSG-08 자동화 목록 ────────────────────────────────────────────────────────
@@ -157,5 +162,33 @@ export class MessagesController {
     @Body(new ZodValidationPipe(CreateAutomationSchema)) dto: CreateAutomationDto,
   ) {
     return this.messagesService.createAutomation(companyId, dto)
+  }
+
+  // ── MSG-10 자동화 수정 ────────────────────────────────────────────────────────
+
+  @Patch('automations/:id')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '메시지 자동화 수정 (GENERAL_ADMIN 이상)' })
+  @ApiParam({ name: 'id', type: String })
+  updateAutomation(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(UpdateAutomationSchema)) dto: UpdateAutomationDto,
+  ) {
+    return this.messagesService.updateAutomation(companyId, id, dto)
+  }
+
+  // ── MSG-11 자동화 삭제 ────────────────────────────────────────────────────────
+
+  @Delete('automations/:id')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: '메시지 자동화 삭제 (GENERAL_ADMIN 이상)' })
+  @ApiParam({ name: 'id', type: String })
+  deleteAutomation(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.messagesService.deleteAutomation(companyId, id)
   }
 }

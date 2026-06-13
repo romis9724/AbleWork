@@ -3,17 +3,53 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
+import { AccessLevel, AttendanceStatus, TimeclockAuthMethod } from '@ablework/shared-constants'
 import { PrismaService } from '../../prisma/prisma.service'
+import { CompanySettingsService } from '../companies/company-settings.service'
+import { EVENTS } from '../../events/domain-events'
+import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { ClockInDto } from './dto/clock-in.dto'
 import { ClockOutDto, BreakStartDto, BreakEndDto } from './dto/clock-out.dto'
-import { AttendanceFilterDto, ConfirmPeriodDto } from './dto/attendance-filter.dto'
+import {
+  AttendanceFilterDto,
+  ConfirmPeriodDto,
+  UnconfirmAttendancesDto,
+} from './dto/attendance-filter.dto'
 import { UpdateAttendanceDto } from './dto/update-attendance.dto'
+import { CreateAttendanceDto, UpdateBreaksDto } from './dto/create-attendance.dto'
 
 /** 출근 상태 판정에 필요한 회사 설정 키 */
 const LATE_GRACE_MINUTES_KEY = 'late_grace_minutes'
 const CLOCKIN_BEFORE_SHIFT_MINUTES_KEY = 'clockin_before_shift_minutes'
+const ALLOW_UNSCHEDULED_KEY = 'allow_unscheduled'
+
+/** 무일정 출근 정책 값 */
+const UnscheduledPolicy = {
+  ALWAYS: 'always',
+  IF_NO_SHIFT: 'if_no_shift',
+  NEVER: 'never',
+} as const
+
+/** GPS 검증이 필요한 출퇴근 장소 인증 방식 */
+const GPS_AUTH_METHODS: readonly string[] = [
+  TimeclockAuthMethod.GPS,
+  TimeclockAuthMethod.GPS_OR_WIFI,
+  TimeclockAuthMethod.GPS_AND_WIFI,
+]
+
+/** 지구 평균 반경 (m) — haversine 거리 계산용 */
+const EARTH_RADIUS_METERS = 6_371_000
+
+/** GPS 검증에 필요한 출퇴근 장소 필드 */
+interface TimeclockAreaForGps {
+  authMethod: string
+  locationLat: unknown | null
+  locationLng: unknown | null
+  locationRadiusMeters: number | null
+}
 
 /** 현재 근무 현황 7가지 상태 */
 export const WorkingStatus = {
@@ -31,18 +67,21 @@ export class AttendancesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly settingsService: CompanySettingsService,
   ) {}
 
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
 
   async findAll(companyId: string, filter: AttendanceFilterDto) {
-    const { startDate, endDate, organizationId, employeeId, status, page, limit } = filter
+    const { startDate, endDate, organizationId, employeeId, status, missingClockOut, page, limit } =
+      filter
     const skip = (page - 1) * limit
 
     const where: Record<string, unknown> = {
       employee: { companyId },
       ...(employeeId && { employeeId }),
       ...(status && { status }),
+      ...(missingClockOut && { clockOutAt: null }),
       ...(organizationId && {
         employee: {
           companyId,
@@ -86,12 +125,70 @@ export class AttendancesService {
     return { items, total, page, limit }
   }
 
+  // ── 수기 추가 (관리자) ──────────────────────────────────────────────────────
+
+  /**
+   * 관리자가 출퇴근 기록을 수기로 추가한다 (ORG_ADMIN 이상).
+   *
+   * - 직원의 회사 소속 검증 (멀티테넌시)
+   * - 출근 일자의 Shift를 자동 연결 (이미 다른 기록에 연결된 Shift는 제외 — shiftId unique)
+   * - status 미지정 시 determineStatus로 자동 판정
+   */
+  async createManual(companyId: string, dto: CreateAttendanceDto) {
+    await this.assertEmployee(companyId, dto.employeeId)
+
+    const clockInAt = new Date(dto.clockInAt)
+    const clockOutAt = dto.clockOutAt ? new Date(dto.clockOutAt) : null
+
+    // 당일 Shift 자동 연결 (clockIn과 동일 로직 재사용)
+    const shift = await this.findShiftForClockIn(dto.employeeId, clockInAt)
+    let shiftId = shift?.id ?? null
+    if (shiftId) {
+      // attendances.shift_id는 unique — 이미 연결된 기록이 있으면 연결하지 않음
+      const taken = await this.prisma.attendance.findFirst({ where: { shiftId } })
+      if (taken) {
+        shiftId = null
+      }
+    }
+
+    // status 미지정 시 자동 판정
+    let status: string | undefined = dto.status
+    let isOncall = false
+    if (status) {
+      isOncall = status === 'oncall'
+    } else {
+      const judged = await this.determineStatus(companyId, dto.employeeId, clockInAt, shift)
+      status = judged.status
+      isOncall = judged.isOncall
+    }
+
+    return this.prisma.attendance.create({
+      data: {
+        employeeId: dto.employeeId,
+        shiftId,
+        clockInAt,
+        clockOutAt,
+        clockInMethod: 'manual',
+        ...(clockOutAt && { clockOutMethod: 'manual' }),
+        status,
+        isOncall,
+        note: dto.note ?? null,
+      },
+    })
+  }
+
   // ── 출근 기록 ───────────────────────────────────────────────────────────────
 
   async clockIn(companyId: string, employeeId: string, dto: ClockInDto) {
     const { lat, lng, method, timeclockAreaId, note } = dto
 
     await this.assertEmployee(companyId, employeeId)
+
+    // 출퇴근 장소가 지정된 경우 자사 소속인지 검증 (멀티테넌시) + GPS 반경 검증
+    if (timeclockAreaId) {
+      const area = await this.assertTimeclockAreaBelongsToCompany(companyId, timeclockAreaId)
+      this.assertWithinTimeclockArea(area, lat, lng)
+    }
 
     // 이미 진행 중인 출근 기록 확인
     const openAttendance = await this.prisma.attendance.findFirst({
@@ -117,6 +214,11 @@ export class AttendancesService {
       shift,
     )
 
+    // 무일정 출근 정책 enforcement (CLAUDE.md §6)
+    if (isOncall) {
+      await this.assertUnscheduledAllowed(companyId, shift)
+    }
+
     const attendance = await this.prisma.attendance.create({
       data: {
         employeeId,
@@ -133,7 +235,7 @@ export class AttendancesService {
     })
 
     // 이벤트 발행
-    this.eventEmitter.emit('attendance.clock_in', {
+    this.eventEmitter.emit(EVENTS.ATTENDANCE_CLOCK_IN, {
       companyId,
       employeeId,
       timestamp: attendance.clockInAt,
@@ -141,7 +243,7 @@ export class AttendancesService {
     })
 
     if (status === 'late') {
-      this.eventEmitter.emit('attendance.late', {
+      this.eventEmitter.emit(EVENTS.ATTENDANCE_LATE, {
         companyId,
         employeeId,
         timestamp: attendance.clockInAt,
@@ -171,14 +273,20 @@ export class AttendancesService {
     }
     this.assertNotConfirmed(attendance)
 
+    const clockOutAt = new Date()
+
+    // 조퇴(early_leave) 판정: 연결된 Shift 종료 전 퇴근 시
+    const earlyLeaveStatus = await this.resolveClockOutStatus(attendance, clockOutAt)
+
     return this.prisma.attendance.update({
       where: { id: attendance.id },
       data: {
-        clockOutAt: new Date(),
+        clockOutAt,
         clockOutLat: dto.lat ?? undefined,
         clockOutLng: dto.lng ?? undefined,
         clockOutMethod: dto.method ?? undefined,
         note: dto.note ?? undefined,
+        ...(earlyLeaveStatus && { status: earlyLeaveStatus }),
       },
     })
   }
@@ -256,6 +364,38 @@ export class AttendancesService {
     })
   }
 
+  // ── 휴게 전체 교체 (관리자) ──────────────────────────────────────────────────
+
+  /**
+   * 휴게 기록을 전달된 목록으로 전체 교체한다 (ORG_ADMIN 이상, $transaction).
+   * 확정된 기록은 수정할 수 없다.
+   */
+  async updateBreaks(companyId: string, id: string, dto: UpdateBreaksDto) {
+    const attendance = await this.assertAttendance(companyId, id)
+    this.assertNotConfirmed(attendance)
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.attendanceBreak.deleteMany({ where: { attendanceId: id } })
+
+      if (dto.breaks.length > 0) {
+        await tx.attendanceBreak.createMany({
+          data: dto.breaks.map((b) => ({
+            attendanceId: id,
+            breakType: b.breakType,
+            startAt: new Date(b.startAt),
+            endAt: b.endAt ? new Date(b.endAt) : null,
+            isManual: true,
+          })),
+        })
+      }
+
+      return tx.attendanceBreak.findMany({
+        where: { attendanceId: id },
+        orderBy: { startAt: 'asc' },
+      })
+    })
+  }
+
   // ── 삭제 (관리자) ────────────────────────────────────────────────────────────
 
   async remove(companyId: string, id: string) {
@@ -263,6 +403,32 @@ export class AttendancesService {
     this.assertNotConfirmed(attendance)
 
     return this.prisma.attendance.delete({ where: { id } })
+  }
+
+  // ── 내 오늘 출근 상태 ────────────────────────────────────────────────────────
+
+  /**
+   * 직원 본인의 현재 출근 상태를 반환한다 (me/home 새로고침 시 상태 복원용).
+   *
+   * - attendance: 미퇴근(clockOutAt null) 레코드 (없으면 null)
+   * - openBreak: 진행 중(endAt null)인 휴게 (없으면 null)
+   */
+  async getMyToday(companyId: string, employeeId: string) {
+    const attendance = await this.prisma.attendance.findFirst({
+      where: { employeeId, employee: { companyId }, clockOutAt: null },
+      orderBy: { clockInAt: 'desc' },
+      include: { breaks: { orderBy: { startAt: 'asc' } } },
+    })
+
+    if (!attendance) {
+      return { attendance: null, openBreak: null }
+    }
+
+    type BreakRecord = (typeof attendance.breaks)[number]
+    const openBreak =
+      attendance.breaks.find((b: BreakRecord) => b.endAt === null) ?? null
+
+    return { attendance, openBreak }
   }
 
   // ── 현재 근무 현황 ───────────────────────────────────────────────────────────
@@ -337,14 +503,14 @@ export class AttendancesService {
   async confirmPeriod(companyId: string, dto: ConfirmPeriodDto, confirmedById: string) {
     const where: Record<string, unknown> = {
       employee: { companyId },
-      clockInAt: { gte: new Date(dto.startDate) },
-      ...(dto.endDate && {
+      isConfirmed: false,
+      ...(dto.attendanceIds?.length && { id: { in: dto.attendanceIds } }),
+      ...(dto.startDate && {
         clockInAt: {
           gte: new Date(dto.startDate),
-          lte: new Date(`${dto.endDate}T23:59:59.999Z`),
+          ...(dto.endDate && { lte: new Date(`${dto.endDate}T23:59:59.999Z`) }),
         },
       }),
-      isConfirmed: false,
       ...(dto.employeeIds && { employeeId: { in: dto.employeeIds } }),
     }
 
@@ -358,6 +524,42 @@ export class AttendancesService {
     })
 
     return { confirmed: result.count }
+  }
+
+  // ── 확정 해제 ───────────────────────────────────────────────────────────────
+
+  async unconfirm(companyId: string, dto: UnconfirmAttendancesDto, requester: JwtPayload) {
+    // RolesGuard로 처리하지만 서비스 레벨에서도 이중 방어 (shifts.service.unconfirm 패턴)
+    if (
+      requester.accessLevel !== AccessLevel.GENERAL_ADMIN &&
+      requester.accessLevel !== AccessLevel.SUPER_ADMIN
+    ) {
+      throw new ForbiddenException('확정 해제는 GENERAL_ADMIN 이상만 가능합니다.')
+    }
+
+    const where: Record<string, unknown> = {
+      employee: { companyId },
+      isConfirmed: true,
+      ...(dto.attendanceIds?.length && { id: { in: dto.attendanceIds } }),
+      ...(dto.startDate &&
+        dto.endDate && {
+          clockInAt: {
+            gte: new Date(dto.startDate),
+            lte: new Date(`${dto.endDate}T23:59:59.999Z`),
+          },
+        }),
+    }
+
+    const result = await this.prisma.attendance.updateMany({
+      where,
+      data: {
+        isConfirmed: false,
+        confirmedBy: null,
+        confirmedAt: null,
+      },
+    })
+
+    return { unconfirmed: result.count }
   }
 
   // ── 출근 상태 판정 ─────────────────────────────────────────────────────────
@@ -382,8 +584,8 @@ export class AttendancesService {
     }
 
     const [lateGrace, clockinBefore] = await Promise.all([
-      this.getSettingNumber(companyId, 'attendance', LATE_GRACE_MINUTES_KEY, 10),
-      this.getSettingNumber(companyId, 'attendance', CLOCKIN_BEFORE_SHIFT_MINUTES_KEY, 30),
+      this.settingsService.getNumber(companyId, 'attendance', LATE_GRACE_MINUTES_KEY, 10),
+      this.settingsService.getNumber(companyId, 'attendance', CLOCKIN_BEFORE_SHIFT_MINUTES_KEY, 30),
     ])
 
     const shiftStartMs = shift.startAt.getTime()
@@ -471,21 +673,156 @@ export class AttendancesService {
     })
   }
 
-  private async getSettingNumber(
-    companyId: string,
-    section: string,
-    key: string,
-    defaultValue: number,
-  ): Promise<number> {
-    const setting = await this.prisma.companySetting.findUnique({
-      where: { companyId_section_key: { companyId, section, key } },
+  private async assertTimeclockAreaBelongsToCompany(companyId: string, timeclockAreaId: string) {
+    const area = await this.prisma.timeclockArea.findFirst({
+      where: { id: timeclockAreaId, isActive: true, organization: { companyId } },
+      select: {
+        id: true,
+        authMethod: true,
+        locationLat: true,
+        locationLng: true,
+        locationRadiusMeters: true,
+      },
     })
-    if (!setting) return defaultValue
-    const val = setting.value
-    if (typeof val === 'number') return val
-    if (typeof val === 'object' && val !== null && 'value' in val) {
-      return Number((val as { value: unknown }).value) || defaultValue
+    if (!area) {
+      throw new NotFoundException({
+        code: 'TIMECLOCK_AREA_NOT_FOUND',
+        message: '출퇴근 장소를 찾을 수 없습니다.',
+      })
     }
-    return defaultValue
+    return area
+  }
+
+  /**
+   * 무일정 출근 정책 검증 (CLAUDE.md §6 — company_settings.attendance.allow_unscheduled)
+   *
+   * - 'always'      → 항상 허용
+   * - 'if_no_shift' → 당일 Shift가 없으면 허용, Shift가 있는데 oncall(조기 출근 케이스)이면 거부
+   * - 'never'       → 무일정 출근 거부
+   */
+  private async assertUnscheduledAllowed(
+    companyId: string,
+    shift: { id: string } | null,
+  ): Promise<void> {
+    const policy = await this.settingsService.get<string>(
+      companyId,
+      'attendance',
+      ALLOW_UNSCHEDULED_KEY,
+      UnscheduledPolicy.ALWAYS,
+    )
+
+    const isNever = policy === UnscheduledPolicy.NEVER
+    const isConditionalRejected = policy === UnscheduledPolicy.IF_NO_SHIFT && shift !== null
+
+    if (isNever || isConditionalRejected) {
+      throw new ForbiddenException({
+        code: 'ATTENDANCE_UNSCHEDULED_NOT_ALLOWED',
+        message: '무일정 출근이 허용되지 않습니다.',
+      })
+    }
+  }
+
+  /**
+   * GPS 반경 검증 (haversine)
+   *
+   * - authMethod가 gps 계열(gps, gps_or_wifi, gps_and_wifi)이 아니면 검증 생략 (none/wifi)
+   * - 장소 좌표 미설정 또는 반경 0/null → 무제한 허용
+   * - lat/lng 미전송 + gps 필수 장소 → ATTENDANCE_LOCATION_REQUIRED
+   * - 반경 초과 → ATTENDANCE_OUT_OF_RANGE
+   * - gps_or_wifi는 GPS 검증 실패해도 거부하지 않음 (현재 WiFi 검증 수단이 없으므로 통과)
+   */
+  private assertWithinTimeclockArea(
+    area: TimeclockAreaForGps,
+    lat?: number,
+    lng?: number,
+  ): void {
+    if (!GPS_AUTH_METHODS.includes(area.authMethod)) {
+      return // none / wifi → GPS 검증 생략
+    }
+    if (area.locationLat == null || area.locationLng == null) {
+      return // 좌표 미설정 장소는 거리 검증 불가 → 허용
+    }
+    const radiusMeters = area.locationRadiusMeters
+    if (!radiusMeters) {
+      return // 반경 0 또는 null = 무제한 허용
+    }
+
+    // TODO: WiFi SSID 검증 수단 도입 시 gps_or_wifi는 GPS 실패 → WiFi 검증으로 폴백할 것.
+    //       현재는 WiFi 검증 수단이 없으므로 gps_or_wifi는 GPS 실패 시 통과시킨다.
+    const isGpsOptional = area.authMethod === TimeclockAuthMethod.GPS_OR_WIFI
+
+    if (lat == null || lng == null) {
+      if (isGpsOptional) {
+        return
+      }
+      throw new BadRequestException({
+        code: 'ATTENDANCE_LOCATION_REQUIRED',
+        message: 'GPS 위치 정보(lat/lng)가 필요한 출퇴근 장소입니다.',
+      })
+    }
+
+    const distanceMeters = this.haversineDistanceMeters(
+      lat,
+      lng,
+      Number(area.locationLat),
+      Number(area.locationLng),
+    )
+
+    if (distanceMeters > radiusMeters) {
+      if (isGpsOptional) {
+        return
+      }
+      throw new BadRequestException({
+        code: 'ATTENDANCE_OUT_OF_RANGE',
+        message: `출퇴근 장소 허용 반경을 벗어났습니다. (현재 거리 ${Math.round(distanceMeters)}m, 허용 반경 ${radiusMeters}m)`,
+      })
+    }
+  }
+
+  /** 두 좌표 간 haversine 거리(m) 계산 */
+  private haversineDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const toRad = (deg: number): number => (deg * Math.PI) / 180
+
+    const dLat = toRad(lat2 - lat1)
+    const dLng = toRad(lng2 - lng1)
+
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+
+    return EARTH_RADIUS_METERS * c
+  }
+
+  /**
+   * 퇴근 시 조퇴(early_leave) 판정.
+   *
+   * - 연결된 Shift가 없으면 상태 변경 없음
+   * - clockOutAt < shift.endAt → 'early_leave'
+   * - 단, 기존 status가 'late'면 유지: 지각 + 조퇴가 모두 해당하는 경우
+   *   Shiftee 동작이 모호하므로 조퇴로 덮어쓰지 않고 'late'를 우선한다.
+   */
+  private async resolveClockOutStatus(
+    attendance: { shiftId: string | null; status: string },
+    clockOutAt: Date,
+  ): Promise<string | undefined> {
+    if (!attendance.shiftId) {
+      return undefined
+    }
+
+    const shift = await this.prisma.shift.findFirst({
+      where: { id: attendance.shiftId },
+      select: { endAt: true },
+    })
+    if (!shift || clockOutAt.getTime() >= shift.endAt.getTime()) {
+      return undefined
+    }
+
+    // 지각 + 조퇴 모두 해당 → 'late' 유지 (조퇴로 덮지 않음)
+    if (attendance.status === AttendanceStatus.LATE) {
+      return undefined
+    }
+
+    return AttendanceStatus.EARLY_LEAVE
   }
 }

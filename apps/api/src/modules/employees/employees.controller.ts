@@ -9,7 +9,6 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  ParseUUIDPipe,
 } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger'
 import { EmployeesService } from './employees.service'
@@ -96,7 +95,8 @@ export class EmployeesController {
   // HR-03-05 퇴사 처리
   @Post(':id/deactivate')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '직원 퇴사 처리' })
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '직원 퇴사 처리 (ORG_ADMIN 이상)' })
   @ApiParam({ name: 'id', type: String })
   deactivate(
     @CompanyId() companyId: string,
@@ -105,6 +105,20 @@ export class EmployeesController {
     @CurrentUser() requester: JwtPayload,
   ) {
     return this.employeesService.deactivate(companyId, id, body?.resignedAt, requester)
+  }
+
+  // HR-03-07 재활성화 처리
+  @Post(':id/activate')
+  @HttpCode(HttpStatus.OK)
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '직원 재활성화 처리 (ORG_ADMIN 이상)' })
+  @ApiParam({ name: 'id', type: String })
+  activate(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.employeesService.activate(companyId, id, requester)
   }
 
   // HR-03-06 기기 초기화

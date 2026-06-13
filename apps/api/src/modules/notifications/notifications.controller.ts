@@ -22,6 +22,10 @@ import {
   CreateNotificationRuleSchema,
   UpdateNotificationRuleDto,
   UpdateNotificationRuleSchema,
+  UpdateWebhookDto,
+  UpdateWebhookSchema,
+  UpdateEventRuleDto,
+  UpdateEventRuleSchema,
   ListNotificationRulesQueryDto,
   ListNotificationRulesQuerySchema,
   ListNotificationLogsQueryDto,
@@ -55,6 +59,28 @@ export class NotificationsController {
     @Body(new ZodValidationPipe(CreateNotificationRuleSchema)) dto: CreateNotificationRuleDto,
   ) {
     return this.notificationsService.createRule(companyId, dto)
+  }
+
+  // NT-02b 회사 Webhook URL 일괄 설정 (':id' 라우트보다 먼저 선언해야 함)
+  @Patch('rules/webhook')
+  @Roles(AccessLevel.SUPER_ADMIN)
+  @ApiOperation({ summary: '회사 알림 규칙 Webhook URL 일괄 설정 (SUPER_ADMIN)' })
+  updateWebhook(
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(UpdateWebhookSchema)) dto: UpdateWebhookDto,
+  ) {
+    return this.notificationsService.updateWebhook(companyId, dto)
+  }
+
+  // NT-02c 이벤트별 알림 활성/비활성 (':id' 라우트보다 먼저 선언해야 함)
+  @Patch('rules/event')
+  @Roles(AccessLevel.SUPER_ADMIN)
+  @ApiOperation({ summary: '이벤트별 알림 규칙 활성/비활성 (SUPER_ADMIN)' })
+  updateEventRule(
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(UpdateEventRuleSchema)) dto: UpdateEventRuleDto,
+  ) {
+    return this.notificationsService.updateEventRule(companyId, dto)
   }
 
   // NT-03 알림 규칙 수정

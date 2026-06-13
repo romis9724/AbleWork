@@ -8,17 +8,20 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
-import { AccessLevel } from '@ablework/shared-constants'
+import { CompanySettingsService } from '../companies/company-settings.service'
+import { AccessLevel, ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
 import { CreateEmployeeDto } from './dto/create-employee.dto'
 import { UpdateEmployeeDto } from './dto/update-employee.dto'
 import { EmployeeFilterDto } from './dto/employee-filter.dto'
 import { CreateWageInfoDto } from '../wage-info/dto/create-wage-info.dto'
+import { EVENTS } from '../../events/domain-events'
 
 @Injectable()
 export class EmployeesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly settingsService: CompanySettingsService,
   ) {}
 
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
@@ -153,7 +156,7 @@ export class EmployeesService {
       }
 
       // 합류코드 이메일 이벤트 emit
-      this.events.emit('employee.created', {
+      this.events.emit(EVENTS.EMPLOYEE_CREATED, {
         employeeId: employee.id,
         email,
         name: rest.name,
@@ -169,14 +172,38 @@ export class EmployeesService {
   async update(companyId: string, id: string, dto: UpdateEmployeeDto, requester: JwtPayload) {
     const existing = await this.assertEmployee(companyId, id)
     await this.guardOrgScope(requester, existing)
+    this.guardUpdatePermission(requester, id, dto)
 
-    const { organizationIds, primaryOrganizationId, positionIds, ...rest } = dto
+    // 본인 수정(이름/전화번호)은 권한 설정의 영향을 받지 않는다
+    if (requester.employeeId !== id) {
+      await this.guardOrgAdminManagePermission(requester)
+    }
+
+    const { organizationIds, primaryOrganizationId, positionIds, joinedAt, resignedAt, ...rest } = dto
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const employee = await tx.employee.update({
         where: { id },
-        data: rest,
+        data: {
+          ...rest,
+          // date-only 문자열(YYYY-MM-DD)은 Prisma에 그대로 넘기면 실패하므로 Date로 변환
+          ...(joinedAt !== undefined && { joinedAt: new Date(joinedAt) }),
+          ...(resignedAt !== undefined && {
+            resignedAt: resignedAt === null ? null : new Date(resignedAt),
+          }),
+        },
       })
+
+      // 이름/전화번호 변경 시 연결된 User 계정 정보도 동기화 (프로필 일관성)
+      if (existing.userId && (rest.name !== undefined || rest.phone !== undefined)) {
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: {
+            ...(rest.name !== undefined && { name: rest.name }),
+            ...(rest.phone !== undefined && { phone: rest.phone }),
+          },
+        })
+      }
 
       if (organizationIds) {
         await this.validateOrganizationsBelongToCompany(companyId, organizationIds)
@@ -213,6 +240,7 @@ export class EmployeesService {
   ) {
     const existing = await this.assertEmployee(companyId, id)
     await this.guardOrgScope(requester, existing)
+    await this.guardOrgAdminManagePermission(requester)
 
     if (!existing.isActive) {
       throw new BadRequestException({
@@ -226,6 +254,29 @@ export class EmployeesService {
       data: {
         isActive: false,
         resignedAt: resignedAt ? new Date(resignedAt) : new Date(),
+      },
+    })
+  }
+
+  // ── 재활성화 ────────────────────────────────────────────────────────────────
+
+  async activate(companyId: string, id: string, requester: JwtPayload) {
+    const existing = await this.assertEmployee(companyId, id)
+    await this.guardOrgScope(requester, existing)
+    await this.guardOrgAdminManagePermission(requester)
+
+    if (existing.isActive) {
+      throw new BadRequestException({
+        code: 'EMPLOYEE_ALREADY_ACTIVE',
+        message: '이미 재직 중인 직원입니다.',
+      })
+    }
+
+    return this.prisma.employee.update({
+      where: { id },
+      data: {
+        isActive: true,
+        resignedAt: null,
       },
     })
   }
@@ -279,6 +330,75 @@ export class EmployeesService {
   }
 
   // ── 내부 헬퍼 ───────────────────────────────────────────────────────────────
+
+  /**
+   * 직원 수정 권한 검증 (보안):
+   * - 본인: 이름/전화번호만 수정 가능
+   * - 타인: ORG_ADMIN 이상만 수정 가능
+   * - accessLevel 변경: GENERAL_ADMIN 이상 + 본인 권한 변경 금지 + 자신과 같거나 높은 권한 부여 금지
+   */
+  private guardUpdatePermission(requester: JwtPayload, targetId: string, dto: UpdateEmployeeDto) {
+    const requesterLevel = ACCESS_LEVEL_HIERARCHY[requester.accessLevel]
+    const isSelf = requester.employeeId === targetId
+
+    if (isSelf) {
+      const SELF_EDITABLE_FIELDS = new Set(['name', 'phone'])
+      const forbidden = Object.entries(dto)
+        .filter(([key, value]) => value !== undefined && !SELF_EDITABLE_FIELDS.has(key))
+        .map(([key]) => key)
+      if (forbidden.length > 0) {
+        throw new ForbiddenException({
+          code: 'EMPLOYEE_SELF_UPDATE_FORBIDDEN',
+          message: `본인은 이름/전화번호만 수정할 수 있습니다. (불가 필드: ${forbidden.join(', ')})`,
+        })
+      }
+      return
+    }
+
+    if (requesterLevel < ACCESS_LEVEL_HIERARCHY[AccessLevel.ORG_ADMIN]) {
+      throw new ForbiddenException({
+        code: 'EMPLOYEE_UPDATE_FORBIDDEN',
+        message: '직원 정보 수정 권한이 없습니다.',
+      })
+    }
+
+    if (dto.accessLevel !== undefined) {
+      if (requesterLevel < ACCESS_LEVEL_HIERARCHY[AccessLevel.GENERAL_ADMIN]) {
+        throw new ForbiddenException({
+          code: 'EMPLOYEE_ACCESS_LEVEL_FORBIDDEN',
+          message: '권한 변경은 GENERAL_ADMIN 이상만 가능합니다.',
+        })
+      }
+      if (ACCESS_LEVEL_HIERARCHY[dto.accessLevel] >= requesterLevel) {
+        throw new ForbiddenException({
+          code: 'EMPLOYEE_ACCESS_LEVEL_ESCALATION',
+          message: '자신과 같거나 높은 권한은 부여할 수 없습니다.',
+        })
+      }
+    }
+  }
+
+  /**
+   * 권한 설정(permission.org_admin_can_manage_employees, 기본 true)이 꺼져 있으면
+   * ORG_ADMIN의 직원 추가/수정/퇴사 처리를 차단한다.
+   */
+  private async guardOrgAdminManagePermission(requester: JwtPayload) {
+    if (requester.accessLevel !== AccessLevel.ORG_ADMIN) return
+
+    const canManage = await this.settingsService.get<boolean>(
+      requester.companyId,
+      'permission',
+      'org_admin_can_manage_employees',
+      true,
+    )
+
+    if (canManage === false) {
+      throw new ForbiddenException({
+        code: 'EMPLOYEE_MANAGE_PERMISSION_DENIED',
+        message: '조직관리자의 직원 관리 권한이 비활성화되어 있습니다.',
+      })
+    }
+  }
 
   private async assertEmployee(companyId: string, id: string) {
     const employee = await this.prisma.employee.findFirst({

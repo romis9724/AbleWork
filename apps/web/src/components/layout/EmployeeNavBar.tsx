@@ -7,6 +7,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import BeachAccessIcon from '@mui/icons-material/BeachAccess'
 import AssignmentIcon from '@mui/icons-material/Assignment'
+import ApprovalIcon from '@mui/icons-material/Approval'
 import PersonIcon from '@mui/icons-material/Person'
 
 const NAV_ITEMS = [
@@ -14,6 +15,7 @@ const NAV_ITEMS = [
   { label: '근무일정', icon: <CalendarMonthIcon />, path: '/me/shifts' },
   { label: '휴가', icon: <BeachAccessIcon />, path: '/me/leaves' },
   { label: '요청', icon: <AssignmentIcon />, path: '/me/requests' },
+  { label: '결재', icon: <ApprovalIcon />, path: '/me/documents' },
   { label: '프로필', icon: <PersonIcon />, path: '/me/profile' },
 ]
 

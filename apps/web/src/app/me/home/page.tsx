@@ -10,11 +10,15 @@ import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import AccessTimeIcon from '@mui/icons-material/AccessTime'
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast'
-import { useClockIn, useClockOut, useBreakStart, useBreakEnd } from '@/lib/query/attendances'
+import {
+  useClockIn,
+  useClockOut,
+  useBreakStart,
+  useBreakEnd,
+  useMyTodayAttendance,
+} from '@/lib/query/attendances'
 
 export default function HomePage() {
-  const [clockedIn, setClockedIn] = useState(false)
-  const [onBreak, setOnBreak] = useState(false)
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
@@ -24,12 +28,18 @@ export default function HomePage() {
   const showSnack = (message: string, severity: 'success' | 'error') =>
     setSnack({ open: true, message, severity })
 
+  // 서버 상태 기반 출근/휴게 판정 — 새로고침해도 상태가 유지된다
+  const { data: today, isLoading: isTodayLoading } = useMyTodayAttendance()
+  const clockedIn = !!today?.attendance && !today.attendance.clockOutAt
+  const onBreak = !!today?.openBreak
+
   const clockInMutation = useClockIn()
   const clockOutMutation = useClockOut()
   const breakStartMutation = useBreakStart()
   const breakEndMutation = useBreakEnd()
 
   const isLoading =
+    isTodayLoading ||
     clockInMutation.isPending ||
     clockOutMutation.isPending ||
     breakStartMutation.isPending ||
@@ -49,7 +59,6 @@ export default function HomePage() {
         lng: position.coords.longitude,
         method: 'gps',
       })
-      setClockedIn(true)
       showSnack('출근 기록이 완료됐습니다.', 'success')
     } catch (err) {
       showSnack(err instanceof Error ? err.message : '출근 처리 중 오류가 발생했습니다.', 'error')
@@ -70,8 +79,6 @@ export default function HomePage() {
         lng: position.coords.longitude,
         method: 'gps',
       })
-      setClockedIn(false)
-      setOnBreak(false)
       showSnack('퇴근 기록이 완료됐습니다.', 'success')
     } catch (err) {
       showSnack(err instanceof Error ? err.message : '퇴근 처리 중 오류가 발생했습니다.', 'error')
@@ -81,7 +88,6 @@ export default function HomePage() {
   const handleBreakStart = async () => {
     try {
       await breakStartMutation.mutateAsync()
-      setOnBreak(true)
       showSnack('휴게 시간이 시작됐습니다.', 'success')
     } catch (err) {
       showSnack(err instanceof Error ? err.message : '휴게 처리 중 오류가 발생했습니다.', 'error')
@@ -91,7 +97,6 @@ export default function HomePage() {
   const handleBreakEnd = async () => {
     try {
       await breakEndMutation.mutateAsync()
-      setOnBreak(false)
       showSnack('휴게 시간이 종료됐습니다.', 'success')
     } catch (err) {
       showSnack(err instanceof Error ? err.message : '휴게 종료 처리 중 오류가 발생했습니다.', 'error')

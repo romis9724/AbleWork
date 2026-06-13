@@ -25,6 +25,7 @@ import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import apiClient from '@/lib/api-client'
 import { useLeaveTypes } from '@/lib/query/leaves'
+import { useMessageTemplates, type MessageTemplate } from '@/lib/query/messages'
 
 interface MessageAutomation { id: string; name: string; automationType: string; triggerBasis: string; offsetDays: number; sendTime: string; isActive: boolean; leaveType?: { name: string }; template?: { name: string } }
 
@@ -32,6 +33,7 @@ export default function MessageAutomationsPage() {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
+  const [templateId, setTemplateId] = useState('')
   const [leaveTypeId, setLeaveTypeId] = useState('')
   const [trigger, setTrigger] = useState('leave_start')
   const [offset, setOffset] = useState('-1')
@@ -52,6 +54,11 @@ export default function MessageAutomationsPage() {
     ? rawLeaveTypes
     : (((rawLeaveTypes as unknown) as { items?: typeof rawLeaveTypes })?.items ?? [])
 
+  const { data: rawTemplates } = useMessageTemplates()
+  const templates: MessageTemplate[] = Array.isArray(rawTemplates)
+    ? rawTemplates
+    : (((rawTemplates as unknown) as { items?: MessageTemplate[] })?.items ?? [])
+
   const createMutation = useMutation({
     mutationFn: (d: unknown) => apiClient.post('/messages/automations', d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['message-automations'] }); setOpen(false); setSnack({ open: true, msg: '자동화 규칙이 추가됐습니다.', sev: 'success' }) },
@@ -64,12 +71,21 @@ export default function MessageAutomationsPage() {
   })
 
   function handleSave() {
-    if (!name.trim()) return
-    const today = new Date().toISOString().split('T')[0]
-    createMutation.mutate({ name: name.trim(), automationType: 'leave_reminder', leaveTypeId: leaveTypeId || undefined, triggerBasis: trigger, offsetDays: Number(offset), sendTime, timezone: 'Asia/Seoul', startsAt: today, isActive: true })
+    if (!name.trim() || !templateId) return
+    createMutation.mutate({
+      name: name.trim(),
+      automationType: 'leave_reminder',
+      templateId,
+      leaveTypeId: leaveTypeId || undefined,
+      triggerBasis: trigger,
+      offsetDays: Number(offset),
+      sendTime,
+      startsAt: new Date().toISOString(),
+      isActive: true,
+    })
   }
 
-  function openAdd() { setName(''); setLeaveTypeId(''); setTrigger('leave_start'); setOffset('-1'); setSendTime('09:00'); setOpen(true) }
+  function openAdd() { setName(''); setTemplateId(''); setLeaveTypeId(''); setTrigger('leave_start'); setOffset('-1'); setSendTime('09:00'); setOpen(true) }
 
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress /></Box>
 
@@ -101,6 +117,9 @@ export default function MessageAutomationsPage() {
         <DialogTitle>자동화 규칙 추가</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
           <TextField label="규칙명" required value={name} onChange={e => setName(e.target.value)} fullWidth autoFocus />
+          <TextField label="메시지 템플릿" required select value={templateId} onChange={e => setTemplateId(e.target.value)} fullWidth helperText={templates.length === 0 ? '먼저 메시지 템플릿을 생성하세요.' : undefined}>
+            {templates.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
+          </TextField>
           <TextField label="휴가 유형 (선택)" select value={leaveTypeId} onChange={e => setLeaveTypeId(e.target.value)} fullWidth>
             <MenuItem value="">모든 유형</MenuItem>
             {leaveTypes.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
@@ -114,7 +133,7 @@ export default function MessageAutomationsPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>취소</Button>
-          <Button onClick={handleSave} variant="contained" disabled={createMutation.isPending}>추가</Button>
+          <Button onClick={handleSave} variant="contained" disabled={createMutation.isPending || !name.trim() || !templateId}>추가</Button>
         </DialogActions>
       </Dialog>
       <Snackbar open={snack.open} autoHideDuration={4000} onClose={() => setSnack(s => ({ ...s, open: false }))}><Alert severity={snack.sev}>{snack.msg}</Alert></Snackbar>

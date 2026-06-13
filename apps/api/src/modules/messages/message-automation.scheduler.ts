@@ -13,10 +13,10 @@ export class MessageAutomationScheduler {
     @InjectQueue('message-automation') private readonly messageQueue: Queue,
   ) {}
 
-  // 매일 00:05에 실행
-  @Cron('5 0 * * *')
+  // 매시 정각에 실행 — sendTime(시간대) 매칭은 Processor가 판단한다
+  @Cron('0 * * * *')
   async triggerDailyAutomations(): Promise<void> {
-    this.logger.log('일일 자동화 확인 시작')
+    this.logger.log('자동화 확인 시작 (매시간)')
 
     // 1. 활성화된 모든 MessageAutomation 조회
     const automations = await this.prisma.messageAutomation.findMany({
@@ -37,6 +37,6 @@ export class MessageAutomationScheduler {
       })
     }
 
-    this.logger.log(`일일 자동화 ${automations.length}건 큐에 추가 완료`)
+    this.logger.log(`자동화 ${automations.length}건 큐에 추가 완료`)
   }
 }

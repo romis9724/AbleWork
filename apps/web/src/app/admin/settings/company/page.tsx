@@ -24,6 +24,8 @@ import Typography from '@mui/material/Typography'
 import { useRouter } from 'next/navigation'
 import PageHeader from '@/components/common/PageHeader'
 import apiClient from '@/lib/api-client'
+import CompanyInfoCard from './CompanyInfoCard'
+import HolidaysTab from './HolidaysTab'
 
 interface CompanySettings {
   nightShiftStart?: string
@@ -127,10 +129,16 @@ export default function CompanySettingsPage() {
         <Tab label="출퇴근" />
         <Tab label="근무일정" />
         <Tab label="휴게시간" />
+        <Tab label="휴일" />
         <Tab label="권한" />
       </Tabs>
 
       {/* 일반 탭 */}
+      {tab === 0 && (
+        <CompanyInfoCard
+          onResult={(message, severity) => setSnack({ open: true, message, severity })}
+        />
+      )}
       {tab === 0 && (
         <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
           <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -342,8 +350,15 @@ export default function CompanySettingsPage() {
         </Card>
       )}
 
-      {/* 권한 탭 */}
+      {/* 휴일 탭 */}
       {tab === 4 && (
+        <HolidaysTab
+          onResult={(message, severity) => setSnack({ open: true, message, severity })}
+        />
+      )}
+
+      {/* 권한 탭 */}
+      {tab === 5 && (
         <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
           <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Alert severity="info">권한 설정은 권한 설정 메뉴에서 변경하세요.</Alert>

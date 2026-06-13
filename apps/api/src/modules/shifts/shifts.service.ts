@@ -77,6 +77,7 @@ export class ShiftsService {
 
   async create(companyId: string, dto: CreateShiftDto, requester: JwtPayload) {
     await this.validateRelations(companyId, dto.organizationId, dto.shiftTypeId, dto.templateId)
+    await this.validateEmployeesBelongToCompany(companyId, [dto.employeeId])
 
     const shift = await this.prisma.shift.create({
       data: {
@@ -117,6 +118,7 @@ export class ShiftsService {
     }
 
     await this.validateOrganizationBelongsToCompany(companyId, dto.organizationId)
+    await this.validateEmployeesBelongToCompany(companyId, dto.employeeIds)
 
     const dates = dateRange(dto.startDate, dto.endDate)
     if (dates.length === 0) {
@@ -286,6 +288,20 @@ export class ShiftsService {
   }
 
   // ── 내부 헬퍼 ───────────────────────────────────────────────────────────────
+
+  /** 직원들이 해당 회사 소속(활성)인지 검증 — 멀티테넌시 */
+  private async validateEmployeesBelongToCompany(companyId: string, employeeIds: string[]) {
+    const uniqueIds = [...new Set(employeeIds)]
+    const count = await this.prisma.employee.count({
+      where: { id: { in: uniqueIds }, companyId, isActive: true },
+    })
+    if (count !== uniqueIds.length) {
+      throw new BadRequestException({
+        code: 'EMPLOYEE_NOT_FOUND',
+        message: '회사 소속이 아닌 직원이 포함되어 있습니다.',
+      })
+    }
+  }
 
   async assertShift(companyId: string, id: string) {
     const shift = await this.prisma.shift.findFirst({

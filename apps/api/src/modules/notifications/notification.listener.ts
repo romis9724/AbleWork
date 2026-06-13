@@ -3,6 +3,7 @@ import { OnEvent } from '@nestjs/event-emitter'
 import { NotificationsService } from './notifications.service'
 import { DiscordWebhookService } from './discord-webhook.service'
 import { PrismaService } from '../../prisma/prisma.service'
+import { EVENTS } from '../../events/domain-events'
 
 @Injectable()
 export class NotificationListener {
@@ -14,29 +15,56 @@ export class NotificationListener {
     private readonly prisma: PrismaService,
   ) {}
 
-  @OnEvent('attendance.clock_in')
+  @OnEvent(EVENTS.ATTENDANCE_CLOCK_IN)
   async handleClockIn(payload: { employeeId: string; companyId: string; clockInAt: Date }) {
     await this.handleEvent('attendance.clock_in', payload)
   }
 
-  @OnEvent('attendance.late')
+  @OnEvent(EVENTS.ATTENDANCE_LATE)
   async handleLate(payload: { employeeId: string; companyId: string; lateMinutes: number }) {
     await this.handleEvent('attendance.late', payload)
   }
 
-  @OnEvent('leave.requested')
+  @OnEvent(EVENTS.LEAVE_REQUESTED)
   async handleLeaveRequested(payload: { employeeId: string; companyId: string; leaveRequestId: string }) {
     await this.handleEvent('leave.requested', payload)
   }
 
-  @OnEvent('leave.approved')
+  @OnEvent(EVENTS.LEAVE_APPROVED)
   async handleLeaveApproved(payload: { employeeId: string; companyId: string; leaveRequestId: string }) {
     await this.handleEvent('leave.approved', payload)
   }
 
-  @OnEvent('leave.rejected')
+  @OnEvent(EVENTS.LEAVE_REJECTED)
   async handleLeaveRejected(payload: { employeeId: string; companyId: string; leaveRequestId: string }) {
     await this.handleEvent('leave.rejected', payload)
+  }
+
+  // ── 전자결재 (Phase 2) ───────────────────────────────────────────────────────
+
+  @OnEvent(EVENTS.DOCUMENT_SUBMITTED)
+  async handleDocumentSubmitted(payload: { documentId: string; companyId: string; drafterId?: string }) {
+    await this.handleEvent(EVENTS.DOCUMENT_SUBMITTED, payload)
+  }
+
+  @OnEvent(EVENTS.DOCUMENT_APPROVED)
+  async handleDocumentApproved(payload: { documentId: string; companyId: string; drafterId?: string }) {
+    await this.handleEvent(EVENTS.DOCUMENT_APPROVED, payload)
+  }
+
+  @OnEvent(EVENTS.DOCUMENT_REJECTED)
+  async handleDocumentRejected(payload: { documentId: string; companyId: string; drafterId?: string }) {
+    await this.handleEvent(EVENTS.DOCUMENT_REJECTED, payload)
+  }
+
+  @OnEvent(EVENTS.DOCUMENT_RECALLED)
+  async handleDocumentRecalled(payload: { documentId: string; companyId: string; drafterId?: string }) {
+    await this.handleEvent(EVENTS.DOCUMENT_RECALLED, payload)
+  }
+
+  @OnEvent(EVENTS.DOCUMENT_STEP_PENDING)
+  async handleDocumentStepPending(payload: { documentId: string; companyId: string; assigneeId?: string }) {
+    await this.handleEvent(EVENTS.DOCUMENT_STEP_PENDING, payload)
   }
 
   private async handleEvent(eventType: string, payload: Record<string, unknown>): Promise<void> {

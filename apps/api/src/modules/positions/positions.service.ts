@@ -34,8 +34,9 @@ export class PositionsService {
   async update(companyId: string, id: string, dto: UpdatePositionDto) {
     await this.assertPosition(companyId, id)
 
+    // 멀티테넌시 방어: where에 companyId 포함 (assertPosition 우회 시에도 타사 수정 차단)
     return this.prisma.position.update({
-      where: { id },
+      where: { id, companyId },
       data: dto,
     })
   }
@@ -46,7 +47,7 @@ export class PositionsService {
     await this.assertPosition(companyId, id)
 
     return this.prisma.position.update({
-      where: { id },
+      where: { id, companyId },
       data: { isActive: false },
     })
   }

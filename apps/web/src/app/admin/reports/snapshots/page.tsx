@@ -26,13 +26,14 @@ import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import apiClient from '@/lib/api-client'
 
-interface ReportSnapshot { id: string; periodStart: string; periodEnd: string; isLocked: boolean; createdAt: string }
+interface ReportSnapshot { id: string; name?: string | null; periodStart: string; periodEnd: string; isLocked: boolean; createdAt: string }
 
 export default function ReportSnapshotsPage() {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [name, setName] = useState('')
   const [lockTarget, setLockTarget] = useState<ReportSnapshot | null>(null)
   const [snack, setSnack] = useState<{ open: boolean; msg: string; sev: 'success' | 'error' }>({ open: false, msg: '', sev: 'success' })
 
@@ -47,7 +48,7 @@ export default function ReportSnapshotsPage() {
 
   const createMutation = useMutation({
     mutationFn: (d: unknown) => apiClient.post('/reports/snapshots', d),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['report-snapshots'] }); setOpen(false); setSnack({ open: true, msg: '스냅샷이 생성됐습니다.', sev: 'success' }) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['report-snapshots'] }); setOpen(false); setName(''); setSnack({ open: true, msg: '스냅샷이 생성됐습니다.', sev: 'success' }) },
     onError: () => setSnack({ open: true, msg: '생성에 실패했습니다.', sev: 'error' }),
   })
 
@@ -65,10 +66,11 @@ export default function ReportSnapshotsPage() {
       {snapshots.length === 0 ? <EmptyState message="생성된 스냅샷이 없습니다." action={<Button variant="outlined" onClick={() => setOpen(true)}>스냅샷 생성</Button>} /> : (
         <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
           <Table>
-            <TableHead><TableRow sx={{ bgcolor: 'background.default' }}><TableCell>기간</TableCell><TableCell>생성일</TableCell><TableCell>상태</TableCell><TableCell /></TableRow></TableHead>
+            <TableHead><TableRow sx={{ bgcolor: 'background.default' }}><TableCell>이름</TableCell><TableCell>기간</TableCell><TableCell>생성일</TableCell><TableCell>상태</TableCell><TableCell /></TableRow></TableHead>
             <TableBody>
               {snapshots.map(s => (
                 <TableRow key={s.id} hover>
+                  <TableCell sx={{ fontWeight: 600 }}>{s.name ?? '—'}</TableCell>
                   <TableCell>{s.periodStart?.slice(0,10)} ~ {s.periodEnd?.slice(0,10)}</TableCell>
                   <TableCell>{new Date(s.createdAt).toLocaleDateString('ko-KR')}</TableCell>
                   <TableCell><Chip label={s.isLocked ? '마감' : '열림'} color={s.isLocked ? 'default' : 'success'} size="small" /></TableCell>
@@ -82,12 +84,32 @@ export default function ReportSnapshotsPage() {
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>스냅샷 생성</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+          <TextField
+            label="스냅샷 이름"
+            required
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder={startDate && endDate ? `${startDate}~${endDate} 스냅샷` : '예: 2026-01 근태 스냅샷'}
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
           <TextField label="시작일" type="date" required value={startDate} onChange={e => setStartDate(e.target.value)} InputLabelProps={{ shrink: true }} fullWidth />
           <TextField label="종료일" type="date" required value={endDate} onChange={e => setEndDate(e.target.value)} InputLabelProps={{ shrink: true }} fullWidth />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>취소</Button>
-          <Button onClick={() => createMutation.mutate({ periodStart: startDate, periodEnd: endDate, columnConfig: {} })} variant="contained" disabled={createMutation.isPending || !startDate || !endDate}>생성</Button>
+          <Button
+            onClick={() => createMutation.mutate({
+              name: name.trim() || `${startDate}~${endDate} 스냅샷`,
+              periodStart: startDate,
+              periodEnd: endDate,
+              columnConfig: {},
+            })}
+            variant="contained"
+            disabled={createMutation.isPending || !startDate || !endDate}
+          >
+            생성
+          </Button>
         </DialogActions>
       </Dialog>
       <ConfirmDialog open={!!lockTarget} title="스냅샷 마감" message="마감 후에는 수정할 수 없습니다. 계속하시겠습니까?" confirmLabel="마감" onConfirm={() => lockTarget && lockMutation.mutate(lockTarget.id)} onCancel={() => setLockTarget(null)} />

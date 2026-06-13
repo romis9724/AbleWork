@@ -7,4 +7,7 @@ export const CreateLeaveGroupSchema = z.object({
   isActive: z.boolean().default(true),
 })
 
+export const UpdateLeaveGroupSchema = CreateLeaveGroupSchema.partial()
+
 export type CreateLeaveGroupDto = z.infer<typeof CreateLeaveGroupSchema>
+export type UpdateLeaveGroupDto = z.infer<typeof UpdateLeaveGroupSchema>

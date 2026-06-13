@@ -97,6 +97,100 @@ async function main() {
   })
   console.log('✅ Organization:', org.name)
 
+  // 4-1. 제2 조직 — 영업팀
+  const salesOrg = await prisma.organization.upsert({
+    where: { id: 'seed-org-sales' },
+    update: {},
+    create: {
+      id: 'seed-org-sales',
+      companyId: company.id,
+      name: '영업팀',
+      depth: 0,
+      sortOrder: 2,
+    },
+  })
+  console.log('✅ Organization:', salesOrg.name)
+
+  // 4-2. 조직관리자 (ORG_ADMIN) — 개발팀 소속 + 개발팀 결재자
+  const orgAdminHash = await bcrypt.hash('orgadmin1234!', 10)
+  const orgAdminUser = await prisma.user.upsert({
+    where: { email: 'orgadmin@ablework.io' },
+    update: {},
+    create: {
+      id: 'seed-user-orgadmin',
+      email: 'orgadmin@ablework.io',
+      passwordHash: orgAdminHash,
+      name: '김조직',
+      timezone: 'Asia/Seoul',
+    },
+  })
+
+  await prisma.employee.upsert({
+    where: { userId: orgAdminUser.id },
+    update: {},
+    create: {
+      id: 'seed-emp-orgadmin',
+      companyId: company.id,
+      userId: orgAdminUser.id,
+      name: '김조직',
+      joinedAt: new Date('2024-02-01'),
+      employmentType: 'regular',
+      accessLevel: 'ORG_ADMIN',
+    },
+  })
+
+  await prisma.employeeOrganization.upsert({
+    where: {
+      employeeId_organizationId: { employeeId: 'seed-emp-orgadmin', organizationId: org.id },
+    },
+    update: { isPrimary: true },
+    create: { employeeId: 'seed-emp-orgadmin', organizationId: org.id, isPrimary: true },
+  })
+
+  // 개발팀의 결재자(approverId)로 지정
+  await prisma.organization.update({
+    where: { id: org.id },
+    data: { approverId: 'seed-emp-orgadmin' },
+  })
+  console.log('✅ Org admin user:', orgAdminUser.email, '(개발팀 결재자)')
+
+  // 4-3. 영업팀 직원 (EMPLOYEE)
+  const salesHash = await bcrypt.hash('sales1234!', 10)
+  const salesUser = await prisma.user.upsert({
+    where: { email: 'sales@ablework.io' },
+    update: {},
+    create: {
+      id: 'seed-user-sales',
+      email: 'sales@ablework.io',
+      passwordHash: salesHash,
+      name: '박영업',
+      timezone: 'Asia/Seoul',
+    },
+  })
+
+  await prisma.employee.upsert({
+    where: { userId: salesUser.id },
+    update: {},
+    create: {
+      id: 'seed-emp-sales',
+      companyId: company.id,
+      userId: salesUser.id,
+      name: '박영업',
+      joinedAt: new Date('2024-04-01'),
+      employmentType: 'regular',
+      accessLevel: 'EMPLOYEE',
+    },
+  })
+
+  await prisma.employeeOrganization.upsert({
+    where: {
+      employeeId_organizationId: { employeeId: 'seed-emp-sales', organizationId: salesOrg.id },
+    },
+    update: { isPrimary: true },
+    create: { employeeId: 'seed-emp-sales', organizationId: salesOrg.id, isPrimary: true },
+  })
+  console.log('✅ Sales employee:', salesUser.email)
+
   // 5. 기본 근무일정 유형
   const shiftType = await prisma.shiftType.upsert({
     where: { id: 'seed-shift-type-regular' },
@@ -151,13 +245,43 @@ async function main() {
   })
   console.log('✅ LeaveGroup:', leaveGroup.name)
 
-  // 8. 회사 기본 설정
+  // 7-1. 휴가 잔액 (현재 연도 — 연차 15일)
+  const currentYear = new Date().getFullYear()
+  for (const empId of ['seed-emp-001', 'seed-emp-admin', 'seed-emp-orgadmin', 'seed-emp-sales']) {
+    await prisma.leaveBalance.upsert({
+      where: {
+        employeeId_leaveTypeId_year: {
+          employeeId: empId,
+          leaveTypeId: 'seed-leave-type-annual',
+          year: currentYear,
+        },
+      },
+      update: {},
+      create: {
+        employeeId: empId,
+        leaveTypeId: 'seed-leave-type-annual',
+        year: currentYear,
+        accruedDays: 15,
+        usedDays: 0,
+        remainingDays: 15,
+      },
+    })
+  }
+  console.log('✅ Leave balances seeded (연차 15일)')
+
+  // 8. 회사 기본 설정 (키/기본값은 company-settings.service.ts SETTING_DEFAULTS와 일치 유지)
   const defaultSettings = [
-    { section: 'attendance', key: 'late_grace_minutes', value: 0 },
+    { section: 'attendance', key: 'late_grace_minutes', value: 10 },
     { section: 'attendance', key: 'clockin_before_shift_minutes', value: 30 },
-    { section: 'attendance', key: 'oncall_policy', value: 'if_no_shift' },
+    { section: 'attendance', key: 'allow_unscheduled', value: 'if_no_shift' },
+    { section: 'attendance', key: 'pc_timeclock_enabled', value: true },
+    { section: 'attendance', key: 'enable_confirmation', value: true },
     { section: 'shift', key: 'enable_confirmation', value: true },
-    { section: 'general', key: 'week_start_day', value: 1 },
+    { section: 'shift', key: 'template_code_enabled', value: false },
+    { section: 'shift', key: 'deemed_work_enabled', value: false },
+    { section: 'break', key: 'auto_break_enabled', value: false },
+    { section: 'break', key: 'shift_break_enabled', value: false },
+    { section: 'general', key: 'week_start_day', value: 'monday' },
     { section: 'general', key: 'time_format', value: '24h' },
     { section: 'general', key: 'night_work_start', value: '22:00' },
     { section: 'general', key: 'night_work_end', value: '06:00' },
@@ -166,11 +290,65 @@ async function main() {
   for (const s of defaultSettings) {
     await prisma.companySetting.upsert({
       where: { companyId_section_key: { companyId: company.id, section: s.section, key: s.key } },
-      update: {},
+      update: { value: s.value },
       create: { companyId: company.id, section: s.section, key: s.key, value: s.value },
     })
   }
   console.log('✅ Company settings seeded')
+
+  // 8-1. 기안 양식 (요청 → 전자결재 자동 연동의 전제 — REQUEST_TYPE_CATEGORY_MAP과 일치)
+  const documentForms = [
+    { id: 'seed-form-leave', name: '휴가 신청서', category: 'leave_request' },
+    { id: 'seed-form-shift', name: '근무일정 변경 신청서', category: 'shift_change_request' },
+    { id: 'seed-form-attendance', name: '출퇴근 정정 신청서', category: 'attendance_correction_request' },
+    { id: 'seed-form-device', name: '기기 변경 신청서', category: 'device_change_request' },
+    { id: 'seed-form-offsite', name: '근무지 외 근무 신청서', category: 'offsite_work_request' },
+    { id: 'seed-form-custom', name: '일반 기안서', category: 'custom_request' },
+  ]
+
+  for (const f of documentForms) {
+    await prisma.documentForm.upsert({
+      where: { id: f.id },
+      update: { name: f.name, category: f.category, isActive: true },
+      create: {
+        id: f.id,
+        companyId: company.id,
+        name: f.name,
+        category: f.category,
+        fieldsSchema: {},
+        isActive: true,
+      },
+    })
+  }
+  console.log('✅ Document forms seeded:', documentForms.length)
+
+  // 8-2. 기본 승인 규칙 (1차 결재 — 승인자 직무 미지정 시 관리자 fallback)
+  const approvalRules = [
+    { id: 'seed-rule-leave-create', name: '휴가 신청 기본 결재', requestType: 'LEAVE_CREATE' },
+    { id: 'seed-rule-shift-create', name: '근무일정 신청 기본 결재', requestType: 'SHIFT_CREATE' },
+    { id: 'seed-rule-attendance-edit', name: '출퇴근 정정 기본 결재', requestType: 'ATTENDANCE_EDIT' },
+  ]
+
+  for (const r of approvalRules) {
+    await prisma.approvalRule.upsert({
+      where: { id: r.id },
+      update: { isActive: true },
+      create: {
+        id: r.id,
+        companyId: company.id,
+        name: r.name,
+        requestType: r.requestType,
+        priority: 0,
+        maxApprovalRounds: 1,
+        isAutoApprove: false,
+        isActive: true,
+        details: {
+          create: [{ round: 1, requiredCount: 1, sortOrder: 0 }],
+        },
+      },
+    })
+  }
+  console.log('✅ Approval rules seeded:', approvalRules.length)
 
   // 9. 기본 알림 규칙 (Discord mock URL)
   await prisma.notificationRule.upsert({
@@ -186,10 +364,34 @@ async function main() {
     },
   })
 
+  // 9-1. 전자결재 알림 규칙 (Discord mock URL — 개발 환경 비활성)
+  const documentNotificationRules = [
+    { id: 'seed-notif-doc-submitted', eventType: 'document.submitted' },
+    { id: 'seed-notif-doc-approved', eventType: 'document.approved' },
+  ]
+
+  for (const rule of documentNotificationRules) {
+    await prisma.notificationRule.upsert({
+      where: { id: rule.id },
+      update: {},
+      create: {
+        id: rule.id,
+        companyId: company.id,
+        eventType: rule.eventType,
+        channelType: 'discord',
+        webhookUrl: 'https://discord.com/api/webhooks/test/mock',
+        isActive: false, // 개발 환경에서는 비활성
+      },
+    })
+  }
+  console.log('✅ Document notification rules seeded:', documentNotificationRules.length)
+
   console.log('\n✅ Seed completed!')
   console.log('─────────────────────────────────')
-  console.log('관리자: admin@ablework.io / admin1234!')
-  console.log('직원:   employee@ablework.io / employee1234!')
+  console.log('관리자:     admin@ablework.io / admin1234!')
+  console.log('직원:       employee@ablework.io / employee1234!')
+  console.log('조직관리자: orgadmin@ablework.io / orgadmin1234! (개발팀)')
+  console.log('영업팀원:   sales@ablework.io / sales1234! (영업팀)')
 }
 
 main()

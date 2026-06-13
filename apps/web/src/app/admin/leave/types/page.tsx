@@ -39,6 +39,8 @@ import EmptyState from '@/components/common/EmptyState'
 import {
   useLeaveGroups,
   useCreateLeaveGroup,
+  useUpdateLeaveGroup,
+  useDeleteLeaveGroup,
   useLeaveTypes,
   useCreateLeaveType,
   useUpdateLeaveType,
@@ -62,20 +64,38 @@ const defaultGroupForm: GroupForm = { name: '', code: '', overageLimitDays: '0' 
 interface TypeForm {
   name: string
   displayName: string
+  code: string
   groupId: string
   timeOption: string
+  paidHours: string
   deductionDays: string
+  specialOption: string
+  minConsecutiveDays: string
+  maxConsecutiveDays: string
   isActive: boolean
 }
 
 const defaultTypeForm: TypeForm = {
   name: '',
   displayName: '',
+  code: '',
   groupId: '',
   timeOption: 'full_day',
+  paidHours: '',
   deductionDays: '1',
+  specialOption: '',
+  minConsecutiveDays: '',
+  maxConsecutiveDays: '',
   isActive: true,
 }
+
+// 특별 옵션 (SYSTEM_DESIGN: 장기/휴무/휴일)
+const SPECIAL_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: '없음' },
+  { value: 'long_term', label: '장기휴가' },
+  { value: 'day_off', label: '휴무' },
+  { value: 'holiday', label: '휴일' },
+]
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -86,13 +106,17 @@ export default function LeaveTypesPage() {
   const { data: types = [], isLoading: typesLoading } = useLeaveTypes()
 
   const createGroupMutation = useCreateLeaveGroup()
+  const updateGroupMutation = useUpdateLeaveGroup()
+  const deleteGroupMutation = useDeleteLeaveGroup()
   const createTypeMutation = useCreateLeaveType()
   const updateTypeMutation = useUpdateLeaveType()
   const deleteTypeMutation = useDeleteLeaveType()
 
   // Group dialog
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<LeaveGroup | null>(null)
   const [groupForm, setGroupForm] = useState<GroupForm>(defaultGroupForm)
+  const [deleteGroupTarget, setDeleteGroupTarget] = useState<LeaveGroup | null>(null)
 
   // Type dialog
   const [typeDialogOpen, setTypeDialogOpen] = useState(false)
@@ -115,22 +139,50 @@ export default function LeaveTypesPage() {
   // ── Group actions ────────────────────────────────────────────────────────────
 
   function openAddGroup() {
+    setEditingGroup(null)
     setGroupForm(defaultGroupForm)
+    setGroupDialogOpen(true)
+  }
+
+  function openEditGroup(g: LeaveGroup) {
+    setEditingGroup(g)
+    setGroupForm({
+      name: g.name,
+      code: g.code ?? '',
+      overageLimitDays: String(g.overageLimitDays),
+    })
     setGroupDialogOpen(true)
   }
 
   async function handleSaveGroup() {
     if (!groupForm.name.trim()) return
+    const payload = {
+      name: groupForm.name.trim(),
+      code: groupForm.code.trim() || undefined,
+      overageLimitDays: Number(groupForm.overageLimitDays),
+    }
     try {
-      await createGroupMutation.mutateAsync({
-        name: groupForm.name.trim(),
-        code: groupForm.code.trim() || undefined,
-        overageLimitDays: Number(groupForm.overageLimitDays),
-      })
+      if (editingGroup) {
+        await updateGroupMutation.mutateAsync({ id: editingGroup.id, ...payload })
+        showSnack('휴가 그룹이 수정되었습니다.')
+      } else {
+        await createGroupMutation.mutateAsync(payload)
+        showSnack('휴가 그룹이 추가되었습니다.')
+      }
       setGroupDialogOpen(false)
-      showSnack('휴가 그룹이 추가되었습니다.')
     } catch {
       showSnack('저장에 실패했습니다.', 'error')
+    }
+  }
+
+  async function handleDeleteGroup() {
+    if (!deleteGroupTarget) return
+    try {
+      await deleteGroupMutation.mutateAsync(deleteGroupTarget.id)
+      setDeleteGroupTarget(null)
+      showSnack('삭제되었습니다.')
+    } catch {
+      showSnack('삭제에 실패했습니다.', 'error')
     }
   }
 
@@ -147,9 +199,14 @@ export default function LeaveTypesPage() {
     setTypeForm({
       name: t.name,
       displayName: t.displayName ?? '',
+      code: t.code ?? '',
       groupId: t.group?.id ?? '',
       timeOption: t.timeOption,
+      paidHours: t.paidHours != null ? String(t.paidHours) : '',
       deductionDays: String(t.deductionDays),
+      specialOption: t.specialOption ?? '',
+      minConsecutiveDays: t.minConsecutiveDays != null ? String(t.minConsecutiveDays) : '',
+      maxConsecutiveDays: t.maxConsecutiveDays != null ? String(t.maxConsecutiveDays) : '',
       isActive: t.isActive,
     })
     setTypeDialogOpen(true)
@@ -160,9 +217,16 @@ export default function LeaveTypesPage() {
     const payload = {
       name: typeForm.name.trim(),
       displayName: typeForm.displayName.trim() || undefined,
+      code: typeForm.code.trim() || undefined,
       groupId: typeForm.groupId || undefined,
       timeOption: typeForm.timeOption,
+      paidHours: typeForm.paidHours !== '' ? Number(typeForm.paidHours) : undefined,
       deductionDays: Number(typeForm.deductionDays),
+      specialOption: typeForm.specialOption || undefined,
+      minConsecutiveDays:
+        typeForm.minConsecutiveDays !== '' ? Number(typeForm.minConsecutiveDays) : undefined,
+      maxConsecutiveDays:
+        typeForm.maxConsecutiveDays !== '' ? Number(typeForm.maxConsecutiveDays) : undefined,
       isActive: typeForm.isActive,
     }
     try {
@@ -234,6 +298,8 @@ export default function LeaveTypesPage() {
                     <TableCell>그룹명</TableCell>
                     <TableCell>코드</TableCell>
                     <TableCell>초과 제한 일수</TableCell>
+                    <TableCell>상태</TableCell>
+                    <TableCell align="right">액션</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -242,6 +308,22 @@ export default function LeaveTypesPage() {
                       <TableCell sx={{ fontWeight: 600 }}>{g.name}</TableCell>
                       <TableCell>{g.code ?? '—'}</TableCell>
                       <TableCell>{g.overageLimitDays}일</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={g.isActive === false ? '비활성' : '활성'}
+                          color={g.isActive === false ? 'default' : 'success'}
+                          size="small"
+                          variant="outlined"
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton size="small" onClick={() => openEditGroup(g)}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton size="small" color="error" onClick={() => setDeleteGroupTarget(g)}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -323,9 +405,9 @@ export default function LeaveTypesPage() {
         </>
       )}
 
-      {/* ── Add Group Dialog ───────────────────────────────────────────────────── */}
+      {/* ── Add/Edit Group Dialog ──────────────────────────────────────────────── */}
       <Dialog open={groupDialogOpen} onClose={() => setGroupDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>휴가 그룹 추가</DialogTitle>
+        <DialogTitle>{editingGroup ? '휴가 그룹 수정' : '휴가 그룹 추가'}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
           <TextField
             label="그룹명"
@@ -354,9 +436,13 @@ export default function LeaveTypesPage() {
           <Button
             variant="contained"
             onClick={handleSaveGroup}
-            disabled={createGroupMutation.isPending || !groupForm.name.trim()}
+            disabled={
+              createGroupMutation.isPending ||
+              updateGroupMutation.isPending ||
+              !groupForm.name.trim()
+            }
           >
-            추가
+            {editingGroup ? '수정' : '추가'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -372,12 +458,21 @@ export default function LeaveTypesPage() {
             onChange={(e) => setTypeForm((f) => ({ ...f, name: e.target.value }))}
             fullWidth
           />
-          <TextField
-            label="표시 이름 (선택)"
-            value={typeForm.displayName}
-            onChange={(e) => setTypeForm((f) => ({ ...f, displayName: e.target.value }))}
-            fullWidth
-          />
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <TextField
+              label="표시 이름 (선택)"
+              value={typeForm.displayName}
+              onChange={(e) => setTypeForm((f) => ({ ...f, displayName: e.target.value }))}
+              fullWidth
+            />
+            <TextField
+              label="코드 (선택)"
+              value={typeForm.code}
+              onChange={(e) => setTypeForm((f) => ({ ...f, code: e.target.value }))}
+              inputProps={{ maxLength: 20 }}
+              fullWidth
+            />
+          </Box>
           <FormControl fullWidth>
             <InputLabel>그룹</InputLabel>
             <Select
@@ -404,14 +499,57 @@ export default function LeaveTypesPage() {
               <FormControlLabel value="hourly" control={<Radio />} label="시간입력" />
             </RadioGroup>
           </FormControl>
-          <TextField
-            label="차감 일수"
-            type="number"
-            value={typeForm.deductionDays}
-            onChange={(e) => setTypeForm((f) => ({ ...f, deductionDays: e.target.value }))}
-            inputProps={{ min: 0, step: 0.5 }}
-            fullWidth
-          />
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <TextField
+              label="차감 일수"
+              type="number"
+              value={typeForm.deductionDays}
+              onChange={(e) => setTypeForm((f) => ({ ...f, deductionDays: e.target.value }))}
+              inputProps={{ min: 0, step: 0.5 }}
+              fullWidth
+            />
+            <TextField
+              label="유급 시간 (선택)"
+              type="number"
+              value={typeForm.paidHours}
+              onChange={(e) => setTypeForm((f) => ({ ...f, paidHours: e.target.value }))}
+              inputProps={{ min: 0, step: 1 }}
+              fullWidth
+            />
+          </Box>
+          <FormControl fullWidth>
+            <InputLabel shrink>특별 옵션</InputLabel>
+            <Select
+              displayEmpty
+              value={typeForm.specialOption}
+              label="특별 옵션"
+              onChange={(e) => setTypeForm((f) => ({ ...f, specialOption: e.target.value }))}
+            >
+              {SPECIAL_OPTIONS.map((opt) => (
+                <MenuItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <TextField
+              label="최소 연속 일수 (선택)"
+              type="number"
+              value={typeForm.minConsecutiveDays}
+              onChange={(e) => setTypeForm((f) => ({ ...f, minConsecutiveDays: e.target.value }))}
+              inputProps={{ min: 1, step: 1 }}
+              fullWidth
+            />
+            <TextField
+              label="최대 연속 일수 (선택)"
+              type="number"
+              value={typeForm.maxConsecutiveDays}
+              onChange={(e) => setTypeForm((f) => ({ ...f, maxConsecutiveDays: e.target.value }))}
+              inputProps={{ min: 1, step: 1 }}
+              fullWidth
+            />
+          </Box>
           <FormControlLabel
             control={
               <Switch
@@ -434,7 +572,19 @@ export default function LeaveTypesPage() {
         </DialogActions>
       </Dialog>
 
-      {/* ── Delete Confirm ─────────────────────────────────────────────────────── */}
+      {/* ── Delete Group Confirm ───────────────────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!deleteGroupTarget}
+        title="휴가 그룹 삭제"
+        message={`"${deleteGroupTarget?.name}" 그룹을 삭제(비활성화)하시겠습니까?`}
+        confirmLabel="삭제"
+        confirmColor="error"
+        loading={deleteGroupMutation.isPending}
+        onConfirm={handleDeleteGroup}
+        onCancel={() => setDeleteGroupTarget(null)}
+      />
+
+      {/* ── Delete Type Confirm ────────────────────────────────────────────────── */}
       <ConfirmDialog
         open={!!deleteTarget}
         title="휴가 유형 삭제"

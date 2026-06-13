@@ -152,7 +152,7 @@ describe('ShiftTemplatesService', () => {
       expect(result.isActive).toBe(false)
       expect(mockPrisma.shiftTemplate.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: TEMPLATE_ID },
+          where: { id: TEMPLATE_ID, companyId: COMPANY_ID }, // 멀티테넌시 방어
           data: { isActive: false },
         }),
       )

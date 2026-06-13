@@ -63,6 +63,9 @@ const mockPrisma = {
   organization: {
     findFirst: jest.fn(),
   },
+  employee: {
+    count: jest.fn(),
+  },
 }
 
 // ── 테스트 ────────────────────────────────────────────────────────────────────
@@ -80,6 +83,12 @@ describe('ShiftsService', () => {
 
     service = module.get<ShiftsService>(ShiftsService)
     jest.clearAllMocks()
+
+    // 멀티테넌시 검증 기본 통과: 요청된 직원 수만큼 자사 소속으로 간주
+    mockPrisma.employee.count.mockImplementation(
+      ({ where }: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(where.id.in.length),
+    )
   })
 
   // ── create ───────────────────────────────────────────────────────────────────

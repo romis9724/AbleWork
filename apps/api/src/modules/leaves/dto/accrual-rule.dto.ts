@@ -25,10 +25,14 @@ export const CreateAccrualRuleSchema = z.object({
   items: z.array(AccrualRuleItemSchema).min(1, '발생 규칙 항목을 하나 이상 추가하세요.'),
 })
 
+export const UpdateAccrualRuleSchema = CreateAccrualRuleSchema.partial()
+
 export const RunAccrualRuleSchema = z.object({
   employeeId: z.string().uuid().optional(),
+  employeeIds: z.array(z.string().uuid()).optional(),
   year: z.number().int().min(2000).max(2100).default(new Date().getFullYear()),
 })
 
 export type CreateAccrualRuleDto = z.infer<typeof CreateAccrualRuleSchema>
+export type UpdateAccrualRuleDto = z.infer<typeof UpdateAccrualRuleSchema>
 export type RunAccrualRuleDto = z.infer<typeof RunAccrualRuleSchema>

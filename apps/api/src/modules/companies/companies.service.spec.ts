@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common'
-import * as bcrypt from 'bcryptjs'
 import { CompaniesService } from './companies.service'
 import { PrismaService } from '../../prisma/prisma.service'
 

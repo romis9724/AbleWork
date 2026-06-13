@@ -69,7 +69,7 @@ export default function ProfilePage() {
     }
     setChangingPassword(true)
     try {
-      await apiClient.post('/auth/change-password', { currentPassword, newPassword })
+      await apiClient.post('/auth/change-password', { currentPassword, newPassword, confirmPassword })
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')

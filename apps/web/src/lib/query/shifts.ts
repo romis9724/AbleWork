@@ -8,7 +8,9 @@ export interface ShiftType {
   category: string
   color?: string
   isDeemedWork: boolean
+  deemedWorkHours?: number | null
   noClockInRequired: boolean
+  confirmedAlert?: string | null
   isActive: boolean
 }
 
@@ -26,6 +28,7 @@ export interface ShiftTemplate {
 export interface Shift {
   id: string
   employeeId: string
+  organizationId: string
   startAt: string
   endAt: string
   status: string
@@ -33,6 +36,9 @@ export interface Shift {
   template?: ShiftTemplate
   employee?: { name: string }
 }
+
+/** 생성/확정 응답 — 주 52시간 초과 시 warning 메시지 포함 */
+export type ShiftMutationResult = Shift & { warning?: string }
 
 const SHIFT_TYPES_KEY = ['shift-types']
 const SHIFT_TEMPLATES_KEY = ['shift-templates']
@@ -112,7 +118,8 @@ export const useShifts = (params?: Record<string, string | undefined>) =>
 export const useCreateShift = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: unknown) => apiClient.post('/shifts', data),
+    mutationFn: (data: unknown) =>
+      apiClient.post('/shifts', data) as Promise<ShiftMutationResult>,
     onSuccess: () => qc.invalidateQueries({ queryKey: SHIFTS_KEY }),
   })
 }
@@ -137,7 +144,41 @@ export const useDeleteShift = () => {
 export const useConfirmShift = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => apiClient.post(`/shifts/${id}/confirm`),
+    mutationFn: (id: string) =>
+      apiClient.post(`/shifts/${id}/confirm`) as Promise<ShiftMutationResult>,
+    onSuccess: () => qc.invalidateQueries({ queryKey: SHIFTS_KEY }),
+  })
+}
+
+/** 확정 해제 — GENERAL_ADMIN 이상 (BE: POST /shifts/:id/unconfirm) */
+export const useUnconfirmShift = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient.post(`/shifts/${id}/unconfirm`) as Promise<Shift>,
+    onSuccess: () => qc.invalidateQueries({ queryKey: SHIFTS_KEY }),
+  })
+}
+
+/** 일괄 생성 입력 — BE BulkCreateShiftSchema와 동일 구조 */
+export interface BulkCreateShiftInput {
+  templateId: string
+  organizationId: string
+  employeeIds: string[]
+  startDate: string // YYYY-MM-DD
+  endDate: string // YYYY-MM-DD
+}
+
+export interface BulkCreateShiftResult {
+  created: number
+  warnings?: string[]
+}
+
+export const useBulkCreateShifts = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: BulkCreateShiftInput) =>
+      apiClient.post('/shifts/bulk', data) as Promise<BulkCreateShiftResult>,
     onSuccess: () => qc.invalidateQueries({ queryKey: SHIFTS_KEY }),
   })
 }

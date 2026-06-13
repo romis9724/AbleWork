@@ -57,8 +57,9 @@ export class ShiftTemplatesService {
       await this.validateShiftTypeBelongsToCompany(companyId, dto.shiftTypeId)
     }
 
+    // 멀티테넌시 방어: where에 companyId 포함
     return this.prisma.shiftTemplate.update({
-      where: { id },
+      where: { id, companyId },
       data: {
         ...(dto.shiftTypeId !== undefined && { shiftTypeId: dto.shiftTypeId }),
         ...(dto.name !== undefined && { name: dto.name }),
@@ -78,7 +79,7 @@ export class ShiftTemplatesService {
     await this.assertTemplate(companyId, id)
 
     return this.prisma.shiftTemplate.update({
-      where: { id },
+      where: { id, companyId },
       data: { isActive: false },
     })
   }

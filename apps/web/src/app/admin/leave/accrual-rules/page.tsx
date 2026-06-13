@@ -30,10 +30,12 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import PageHeader from '@/components/common/PageHeader'
+import ConfirmDialog from '@/components/common/ConfirmDialog'
 import EmptyState from '@/components/common/EmptyState'
 import {
   useAccrualRules,
   useCreateAccrualRule,
+  useDeleteAccrualRule,
   useRunAccrualRule,
   useLeaveGroups,
   type AccrualRule,
@@ -54,6 +56,8 @@ interface MonthlyRow {
 interface YearlyRow {
   tenureYears: string
   days: string
+  periodStartMd: string
+  periodEndMd: string
 }
 
 // ── Form state ─────────────────────────────────────────────────────────────────
@@ -67,7 +71,14 @@ interface RuleForm {
 }
 
 const defaultMonthlyRow: MonthlyRow = { tenureMonths: '', days: '', validMonths: '' }
-const defaultYearlyRow: YearlyRow = { tenureYears: '', days: '' }
+const defaultYearlyRow: YearlyRow = {
+  tenureYears: '',
+  days: '',
+  periodStartMd: '',
+  periodEndMd: '',
+}
+
+const MD_REGEX = /^\d{2}-\d{2}$/
 
 const defaultRuleForm: RuleForm = {
   name: '',
@@ -88,7 +99,11 @@ export default function AccrualRulesPage() {
   const employees = employeeData?.items ?? []
 
   const createRuleMutation = useCreateAccrualRule()
+  const deleteRuleMutation = useDeleteAccrualRule()
   const runRuleMutation = useRunAccrualRule()
+
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState<AccrualRule | null>(null)
 
   // Add rule dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false)
@@ -145,23 +160,45 @@ export default function AccrualRulesPage() {
 
   async function handleSaveRule() {
     if (!ruleForm.name.trim()) return
+    if (!ruleForm.groupId) {
+      showSnack('휴가 그룹을 선택하세요.', 'error')
+      return
+    }
+
+    // BE CreateAccrualRuleSchema의 items[{accrualBasis,...}] 형식으로 변환
+    const monthlyItems = ruleForm.monthlyRows
+      .filter((r) => r.tenureMonths !== '' && r.days !== '')
+      .map((r, i) => ({
+        accrualBasis: 'monthly' as const,
+        tenureMonths: Number(r.tenureMonths),
+        accrualDays: Number(r.days),
+        ...(Number(r.validMonths) > 0 && { validMonths: Number(r.validMonths) }),
+        sortOrder: i,
+      }))
+
+    const yearlyItems = ruleForm.yearlyRows
+      .filter((r) => r.tenureYears !== '' && r.days !== '')
+      .map((r, i) => ({
+        accrualBasis: 'yearly' as const,
+        tenureYears: Number(r.tenureYears),
+        accrualDays: Number(r.days),
+        ...(MD_REGEX.test(r.periodStartMd) && { periodStartMd: r.periodStartMd }),
+        ...(MD_REGEX.test(r.periodEndMd) && { periodEndMd: r.periodEndMd }),
+        sortOrder: monthlyItems.length + i,
+      }))
+
+    const items = [...monthlyItems, ...yearlyItems]
+    if (items.length === 0) {
+      showSnack('발생 규칙 항목을 하나 이상 입력하세요.', 'error')
+      return
+    }
+
     const payload = {
+      leaveGroupId: ruleForm.groupId,
       name: ruleForm.name.trim(),
-      note: ruleForm.note.trim() || undefined,
-      groupId: ruleForm.groupId || undefined,
-      monthlyAccruals: ruleForm.monthlyRows
-        .filter((r) => r.tenureMonths && r.days)
-        .map((r) => ({
-          tenureMonths: Number(r.tenureMonths),
-          days: Number(r.days),
-          validMonths: Number(r.validMonths) || 0,
-        })),
-      yearlyAccruals: ruleForm.yearlyRows
-        .filter((r) => r.tenureYears && r.days)
-        .map((r) => ({
-          tenureYears: Number(r.tenureYears),
-          days: Number(r.days),
-        })),
+      memo: ruleForm.note.trim() || undefined,
+      isActive: true,
+      items,
     }
     try {
       await createRuleMutation.mutateAsync(payload)
@@ -179,6 +216,17 @@ export default function AccrualRulesPage() {
     setRunRuleId(rules[0]?.id ?? '')
     setRunEmployeeIds([])
     setRunDialogOpen(true)
+  }
+
+  async function handleDeleteRule() {
+    if (!deleteTarget) return
+    try {
+      await deleteRuleMutation.mutateAsync(deleteTarget.id)
+      setDeleteTarget(null)
+      showSnack('발생 규칙이 삭제되었습니다.')
+    } catch {
+      showSnack('삭제에 실패했습니다.', 'error')
+    }
   }
 
   async function handleRunRule() {
@@ -256,14 +304,15 @@ export default function AccrualRulesPage() {
                 <TableCell>그룹</TableCell>
                 <TableCell>메모</TableCell>
                 <TableCell>상태</TableCell>
+                <TableCell align="right">액션</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {rules.map((rule: AccrualRule) => (
                 <TableRow key={rule.id} hover>
                   <TableCell sx={{ fontWeight: 600 }}>{rule.name}</TableCell>
-                  <TableCell>{rule.group?.name ?? '—'}</TableCell>
-                  <TableCell>{rule.note ?? '—'}</TableCell>
+                  <TableCell>{rule.leaveGroup?.name ?? '—'}</TableCell>
+                  <TableCell>{rule.memo ?? '—'}</TableCell>
                   <TableCell>
                     <Chip
                       label={rule.isActive ? '활성' : '비활성'}
@@ -271,6 +320,11 @@ export default function AccrualRulesPage() {
                       size="small"
                       variant="outlined"
                     />
+                  </TableCell>
+                  <TableCell align="right">
+                    <IconButton size="small" color="error" onClick={() => setDeleteTarget(rule)}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))}
@@ -304,14 +358,13 @@ export default function AccrualRulesPage() {
             multiline
             rows={2}
           />
-          <FormControl fullWidth>
+          <FormControl fullWidth required>
             <InputLabel>휴가 그룹</InputLabel>
             <Select
               value={ruleForm.groupId}
               label="휴가 그룹"
               onChange={(e) => setRuleForm((f) => ({ ...f, groupId: e.target.value }))}
             >
-              <MenuItem value="">없음</MenuItem>
               {groups.map((g: LeaveGroup) => (
                 <MenuItem key={g.id} value={g.id}>
                   {g.name}
@@ -405,6 +458,22 @@ export default function AccrualRulesPage() {
                   inputProps={{ min: 0, step: 0.5 }}
                   sx={{ flex: 1 }}
                 />
+                <TextField
+                  label="시작 월일 (MM-DD)"
+                  size="small"
+                  placeholder="01-01"
+                  value={row.periodStartMd}
+                  onChange={(e) => updateYearlyRow(i, 'periodStartMd', e.target.value)}
+                  sx={{ flex: 1 }}
+                />
+                <TextField
+                  label="종료 월일 (MM-DD)"
+                  size="small"
+                  placeholder="12-31"
+                  value={row.periodEndMd}
+                  onChange={(e) => updateYearlyRow(i, 'periodEndMd', e.target.value)}
+                  sx={{ flex: 1 }}
+                />
                 <IconButton
                   size="small"
                   color="error"
@@ -422,7 +491,7 @@ export default function AccrualRulesPage() {
           <Button
             variant="contained"
             onClick={handleSaveRule}
-            disabled={createRuleMutation.isPending || !ruleForm.name.trim()}
+            disabled={createRuleMutation.isPending || !ruleForm.name.trim() || !ruleForm.groupId}
           >
             추가
           </Button>
@@ -474,6 +543,18 @@ export default function AccrualRulesPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* ── Delete Confirm ──────────────────────────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="발생 규칙 삭제"
+        message={`"${deleteTarget?.name}" 규칙을 삭제하시겠습니까? 규칙 항목도 함께 삭제됩니다.`}
+        confirmLabel="삭제"
+        confirmColor="error"
+        loading={deleteRuleMutation.isPending}
+        onConfirm={handleDeleteRule}
+        onCancel={() => setDeleteTarget(null)}
+      />
 
       <Snackbar
         open={snack.open}

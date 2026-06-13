@@ -10,9 +10,9 @@ export interface TimeclockArea {
   organizationId: string
   organization?: { id: string; name: string }
   authMethod: AuthMethod
-  latitude?: number | null
-  longitude?: number | null
-  radius?: number | null
+  locationLat?: number | null
+  locationLng?: number | null
+  locationRadiusMeters?: number | null
   wifiSsid?: string | null
   isActive?: boolean
 }

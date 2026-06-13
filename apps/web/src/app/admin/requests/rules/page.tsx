@@ -27,6 +27,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import IconButton from '@mui/material/IconButton'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
@@ -34,6 +35,7 @@ import {
   useApprovalRules,
   useCreateApprovalRule,
   useUpdateApprovalRule,
+  useDeleteApprovalRule,
   type ApprovalRule,
 } from '@/lib/query/requests'
 
@@ -73,10 +75,12 @@ export default function ApprovalRulesPage() {
   const { data: rules = [], isLoading } = useApprovalRules()
   const createMutation = useCreateApprovalRule()
   const updateMutation = useUpdateApprovalRule()
+  const deleteMutation = useDeleteApprovalRule()
 
   const [typeFilter, setTypeFilter] = useState<string>(TYPE_FILTER_ALL)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<ApprovalRule | null>(null)
+  const [deletingRule, setDeletingRule] = useState<ApprovalRule | null>(null)
   const [form, setForm] = useState<RuleForm>(defaultRuleForm)
 
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
@@ -124,6 +128,17 @@ export default function ApprovalRulesPage() {
       showSnack(editingRule ? '규칙이 수정되었습니다.' : '규칙이 추가되었습니다.')
     } catch {
       showSnack('저장에 실패했습니다.', 'error')
+    }
+  }
+
+  async function handleDelete() {
+    if (!deletingRule) return
+    try {
+      await deleteMutation.mutateAsync(deletingRule.id)
+      setDeletingRule(null)
+      showSnack('규칙이 삭제되었습니다.')
+    } catch {
+      showSnack('삭제에 실패했습니다.', 'error')
     }
   }
 
@@ -214,6 +229,13 @@ export default function ApprovalRulesPage() {
                     <IconButton size="small" onClick={() => openEdit(rule)}>
                       <EditIcon fontSize="small" />
                     </IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => setDeletingRule(rule)}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))}
@@ -285,6 +307,27 @@ export default function ApprovalRulesPage() {
             }
           >
             {editingRule ? '수정' : '추가'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Delete Confirm Dialog ─────────────────────────────────────────────── */}
+      <Dialog open={!!deletingRule} onClose={() => setDeletingRule(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>승인 규칙 삭제</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {`'${deletingRule?.name ?? ''}' 규칙을 삭제하시겠습니까? 삭제된 규칙은 더 이상 요청 승인에 적용되지 않습니다.`}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeletingRule(null)}>취소</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending}
+          >
+            삭제
           </Button>
         </DialogActions>
       </Dialog>

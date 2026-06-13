@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -22,6 +23,8 @@ import { AccessLevel } from '@ablework/shared-constants'
 import {
   CreateLeaveGroupDto,
   CreateLeaveGroupSchema,
+  UpdateLeaveGroupDto,
+  UpdateLeaveGroupSchema,
 } from './dto/create-leave-group.dto'
 import {
   CreateLeaveTypeDto,
@@ -32,16 +35,22 @@ import {
 import {
   CreateAccrualRuleDto,
   CreateAccrualRuleSchema,
+  UpdateAccrualRuleDto,
+  UpdateAccrualRuleSchema,
   RunAccrualRuleDto,
   RunAccrualRuleSchema,
 } from './dto/accrual-rule.dto'
 import {
+  CreateLeaveDto,
+  CreateLeaveSchema,
   ManualAccrualDto,
   ManualAccrualSchema,
   CompensationLeaveDto,
   CompensationLeaveSchema,
   LeaveFilterDto,
   LeaveFilterSchema,
+  CompanyBalanceFilterDto,
+  CompanyBalanceFilterSchema,
 } from './dto/create-leave.dto'
 
 @ApiTags('leaves')
@@ -67,6 +76,31 @@ export class LeavesController {
     @Body(new ZodValidationPipe(CreateLeaveGroupSchema)) dto: CreateLeaveGroupDto,
   ) {
     return this.leavesService.createGroup(companyId, dto)
+  }
+
+  // 휴가 그룹 수정
+  @Patch('groups/:id')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '휴가 그룹 수정 (GENERAL_ADMIN 이상)' })
+  @ApiParam({ name: 'id', type: String })
+  updateGroup(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(UpdateLeaveGroupSchema)) dto: UpdateLeaveGroupDto,
+  ) {
+    return this.leavesService.updateGroup(companyId, id, dto)
+  }
+
+  // 휴가 그룹 삭제 (소프트)
+  @Delete('groups/:id')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '휴가 그룹 삭제 (소프트 — isActive=false)' })
+  @ApiParam({ name: 'id', type: String })
+  deleteGroup(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.leavesService.deleteGroup(companyId, id)
   }
 
   // HR-06-03 휴가 유형 목록
@@ -100,6 +134,18 @@ export class LeavesController {
     return this.leavesService.updateType(companyId, id, dto)
   }
 
+  // 휴가 유형 삭제 (소프트)
+  @Delete('types/:id')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '휴가 유형 삭제 (소프트 — isActive=false)' })
+  @ApiParam({ name: 'id', type: String })
+  deleteType(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.leavesService.deleteType(companyId, id)
+  }
+
   // HR-06-06 발생 규칙 목록
   @Get('accrual-rules')
   @ApiOperation({ summary: '발생 규칙 목록 조회' })
@@ -118,6 +164,31 @@ export class LeavesController {
     return this.leavesService.createAccrualRule(companyId, dto)
   }
 
+  // 발생 규칙 수정 (items 전체 교체)
+  @Patch('accrual-rules/:id')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '발생 규칙 수정 (items 제공 시 전체 교체)' })
+  @ApiParam({ name: 'id', type: String })
+  updateAccrualRule(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(UpdateAccrualRuleSchema)) dto: UpdateAccrualRuleDto,
+  ) {
+    return this.leavesService.updateAccrualRule(companyId, id, dto)
+  }
+
+  // 발생 규칙 삭제
+  @Delete('accrual-rules/:id')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '발생 규칙 삭제' })
+  @ApiParam({ name: 'id', type: String })
+  deleteAccrualRule(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.leavesService.deleteAccrualRule(companyId, id)
+  }
+
   // HR-06-08 발생 규칙 기반 발생 실행
   @Post('accrual-rules/:id/run')
   @HttpCode(HttpStatus.OK)
@@ -130,6 +201,17 @@ export class LeavesController {
     @Body(new ZodValidationPipe(RunAccrualRuleSchema)) dto: RunAccrualRuleDto,
   ) {
     return this.leavesService.runAccrualRule(companyId, id, dto)
+  }
+
+  // 잔여 휴가 일괄 조회 (회사 전체 / 조직 필터) — N+1 제거용
+  @Get('balances')
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '회사 전체 잔여 휴가 일괄 조회 (year/organizationId 필터)' })
+  getCompanyBalances(
+    @CompanyId() companyId: string,
+    @Query(new ZodValidationPipe(CompanyBalanceFilterSchema)) filter: CompanyBalanceFilterDto,
+  ) {
+    return this.leavesService.findCompanyBalances(companyId, filter)
   }
 
   // HR-06-09 잔여 휴가 조회
@@ -152,6 +234,17 @@ export class LeavesController {
     @Body(new ZodValidationPipe(ManualAccrualSchema)) dto: ManualAccrualDto,
   ) {
     return this.leavesService.manualAccrual(companyId, dto)
+  }
+
+  // 관리자 휴가 직접 추가 (잔액 검증 + 차감)
+  @Post()
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '관리자 휴가 직접 추가 (ORG_ADMIN 이상)' })
+  createLeave(
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(CreateLeaveSchema)) dto: CreateLeaveDto,
+  ) {
+    return this.leavesService.createLeave(companyId, dto)
   }
 
   // HR-06-11 휴가 일정 조회

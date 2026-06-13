@@ -18,12 +18,28 @@ export interface Employee {
   positions?: { position: { id: string; name: string } }[]
 }
 
+export interface EmployeeFilterParams {
+  search?: string
+  organizationId?: string
+  positionId?: string
+  isActive?: boolean
+  page?: number
+  limit?: number
+}
+
+export interface EmployeeListResponse {
+  items: Employee[]
+  total: number
+  page: number
+  limit: number
+}
+
 const QUERY_KEY = ['employees']
 
-export const useEmployees = (params?: Record<string, string | boolean | undefined>) =>
+export const useEmployees = (params?: EmployeeFilterParams) =>
   useQuery({
     queryKey: [...QUERY_KEY, params],
-    queryFn: () => apiClient.get('/employees', { params }) as Promise<{ items: Employee[]; total: number }>,
+    queryFn: () => apiClient.get('/employees', { params }) as Promise<EmployeeListResponse>,
     staleTime: 30_000,
   })
 
@@ -56,6 +72,14 @@ export const useDeactivateEmployee = () => {
   return useMutation({
     mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
       apiClient.post(`/employees/${id}/deactivate`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export const useActivateEmployee = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post(`/employees/${id}/activate`),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }

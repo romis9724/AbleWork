@@ -75,6 +75,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: '유형 관리', path: '/admin/leave/types' },
       { label: '발생 규칙', path: '/admin/leave/accrual-rules' },
       { label: '휴가 현황', path: '/admin/leave/status' },
+      { label: '휴가 목록', path: '/admin/leave/list' },
       { label: '보상휴가', path: '/admin/leave/compensation' },
     ],
   },
@@ -91,8 +92,10 @@ const NAV_ITEMS: NavItem[] = [
     label: '전자결재',
     icon: <AssignmentIcon />,
     children: [
-      { label: '기안양식', path: '/admin/approval/forms' },
-      { label: '결재 현황', path: '/admin/approval/status' },
+      { label: '기안양식 관리', path: '/admin/approval/forms' },
+      { label: '공용 결재선', path: '/admin/approval/lines' },
+      { label: '문서대장', path: '/admin/approval/documents' },
+      { label: '내 문서함', path: '/admin/approval/inbox' },
     ],
   },
   {

@@ -22,14 +22,16 @@ import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
+import EventAvailableIcon from '@mui/icons-material/EventAvailable'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
+import CreateLeaveDialog from '@/components/leave/CreateLeaveDialog'
 import {
-  useLeaveBalance,
+  useCompanyLeaveBalances,
   useLeaveTypes,
   useManualAccrual,
+  type CompanyBalanceEntry,
   type LeaveBalance,
   type LeaveType,
 } from '@/lib/query/leaves'
@@ -40,40 +42,6 @@ import { useOrganizations, type Organization } from '@/lib/query/organizations'
 
 function flattenOrgs(orgs: Organization[]): Organization[] {
   return orgs.flatMap((o) => [o, ...flattenOrgs(o.children ?? [])])
-}
-
-// ── Single employee balance loader ────────────────────────────────────────────
-
-function EmployeeBalanceRows({
-  employee,
-  orgFilter,
-}: {
-  employee: Employee
-  orgFilter: string
-}) {
-  const orgIds = employee.organizations?.map((o) => o.organization.id) ?? []
-  if (orgFilter && !orgIds.includes(orgFilter)) return null
-
-  const { data: balances = [] } = useLeaveBalance(employee.id)
-
-  return (
-    <>
-      {balances.map((b: LeaveBalance) => (
-        <TableRow key={b.id} hover>
-          <TableCell sx={{ fontWeight: 500 }}>{employee.name}</TableCell>
-          <TableCell>{b.leaveType?.name ?? '—'}</TableCell>
-          <TableCell align="right">{b.accruedDays}일</TableCell>
-          <TableCell align="right">{b.usedDays}일</TableCell>
-          <TableCell align="right" sx={{ fontWeight: 600 }}>
-            {b.remainingDays}일
-          </TableCell>
-          <TableCell sx={{ color: 'text.secondary' }}>
-            {b.expiresAt ? new Date(b.expiresAt).toLocaleDateString('ko-KR') : '—'}
-          </TableCell>
-        </TableRow>
-      ))}
-    </>
-  )
 }
 
 // ── Accrual form ──────────────────────────────────────────────────────────────
@@ -108,9 +76,17 @@ export default function LeaveStatusPage() {
   const [orgFilter, setOrgFilter] = useState('')
   const [employeeFilter, setEmployeeFilter] = useState<Employee | null>(null)
 
+  // 일괄 잔액 조회 (직원 수만큼 호출하던 N+1 구조 제거)
+  const { data: balanceEntries = [], isLoading: balancesLoading } = useCompanyLeaveBalances({
+    organizationId: orgFilter || undefined,
+  })
+
   // Dialog
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<AccrualForm>(defaultAccrualForm)
+
+  // Leave create dialog (공용 컴포넌트)
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false)
 
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
@@ -143,19 +119,28 @@ export default function LeaveStatusPage() {
     }
   }
 
-  // Determine which employees to show in table
-  const displayEmployees = employeeFilter
-    ? employees.filter((e) => e.id === employeeFilter.id)
-    : employees
+  // 직원 필터 (클라이언트 측) — 조직 필터는 일괄 API에서 처리
+  const displayEntries: CompanyBalanceEntry[] = employeeFilter
+    ? balanceEntries.filter((entry) => entry.employee.id === employeeFilter.id)
+    : balanceEntries
 
   return (
     <>
       <PageHeader
         title="휴가 현황"
         actions={
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openDialog}>
-            휴가 부여
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="outlined"
+              startIcon={<EventAvailableIcon />}
+              onClick={() => setLeaveDialogOpen(true)}
+            >
+              휴가 추가
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openDialog}>
+              휴가 부여
+            </Button>
+          </Box>
         }
       />
 
@@ -188,7 +173,11 @@ export default function LeaveStatusPage() {
         />
       </Box>
 
-      {employees.length === 0 ? (
+      {balancesLoading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
+          <CircularProgress />
+        </Box>
+      ) : displayEntries.length === 0 ? (
         <EmptyState message="등록된 직원이 없습니다." />
       ) : (
         <TableContainer
@@ -208,13 +197,22 @@ export default function LeaveStatusPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {displayEmployees.map((emp) => (
-                <EmployeeBalanceRows
-                  key={emp.id}
-                  employee={emp}
-                  orgFilter={orgFilter}
-                />
-              ))}
+              {displayEntries.flatMap((entry) =>
+                entry.balances.map((b: LeaveBalance) => (
+                  <TableRow key={b.id} hover>
+                    <TableCell sx={{ fontWeight: 500 }}>{entry.employee.name}</TableCell>
+                    <TableCell>{b.leaveType?.displayName ?? b.leaveType?.name ?? '—'}</TableCell>
+                    <TableCell align="right">{b.accruedDays}일</TableCell>
+                    <TableCell align="right">{b.usedDays}일</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>
+                      {b.remainingDays}일
+                    </TableCell>
+                    <TableCell sx={{ color: 'text.secondary' }}>
+                      {b.expiresAt ? new Date(b.expiresAt).toLocaleDateString('ko-KR') : '—'}
+                    </TableCell>
+                  </TableRow>
+                )),
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -282,6 +280,13 @@ export default function LeaveStatusPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* ── Create Leave Dialog (공용) ────────────────────────────────────────── */}
+      <CreateLeaveDialog
+        open={leaveDialogOpen}
+        onClose={() => setLeaveDialogOpen(false)}
+        onResult={showSnack}
+      />
 
       <Snackbar
         open={snack.open}

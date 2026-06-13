@@ -1,0 +1,361 @@
+'use client'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import apiClient from '@/lib/api-client'
+
+// ---------- 타입 ----------
+
+export type DocumentStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'RECALLED'
+
+export type StepRole = 'APPROVER' | 'AGREEMENT' | 'REFERENCE' | 'VIEWER' | 'RECEIVER'
+
+export type StepStatus =
+  | 'PENDING'
+  | 'WAITING'
+  | 'APPROVED'
+  | 'PRE_APPROVED'
+  | 'PROXY_APPROVED'
+  | 'REJECTED'
+  | 'RETURNED'
+  | 'CANCELLED'
+  | 'SKIPPED'
+  | 'VIEWED'
+  | 'RECEIVED'
+
+export type DocumentBox =
+  | 'draft'
+  | 'in_progress'
+  | 'completed'
+  | 'pending_approval'
+  | 'reference'
+  | 'viewer'
+  | 'receiver'
+  | 'ledger'
+
+export type StepAction =
+  | 'approve'
+  | 'reject'
+  | 'pre-approve'
+  | 'return-prev'
+  | 'cancel-approval'
+  | 'agree'
+  | 'view'
+  | 'receive'
+
+export interface DocumentForm {
+  id: string
+  name: string
+  category?: string | null
+  allowReDraft: boolean
+  allowPreApproval: boolean
+  sortOrder: number
+  isActive: boolean
+}
+
+export interface DocumentNumberRule {
+  pattern: string
+  resetYearly: boolean
+}
+
+export interface ApprovalStepInput {
+  role: StepRole
+  assigneeId: string
+  stepOrder: number
+}
+
+export interface SharedApprovalLine {
+  id: string
+  name: string
+  steps: ApprovalStepInput[]
+}
+
+export interface DocumentListItem {
+  id: string
+  docNumber?: string | null
+  title: string
+  status: DocumentStatus
+  submittedAt?: string | null
+  form?: { name: string } | null
+  drafter?: { id?: string; name: string } | null
+  mySteps?: { id: string; role: StepRole; status: StepStatus }[]
+}
+
+export interface DocumentListResponse {
+  items: DocumentListItem[]
+  total: number
+  page: number
+  limit: number
+}
+
+export interface ApprovalStepDetail {
+  id: string
+  role: StepRole
+  stepOrder: number
+  status: StepStatus
+  assignee?: { id: string; name: string } | null
+  isProxy?: boolean
+  proxy?: { id?: string; name: string } | null
+  comment?: string | null
+  actedAt?: string | null
+}
+
+export interface DocumentHistoryEntry {
+  action: string
+  comment?: string | null
+  createdAt: string
+  actor?: { name: string } | null
+}
+
+export interface DocumentContent {
+  body?: string
+  [key: string]: unknown
+}
+
+export interface DocumentDetail {
+  id: string
+  docNumber?: string | null
+  title: string
+  content?: DocumentContent | null
+  status: DocumentStatus
+  form?: {
+    id?: string
+    name: string
+    allowReDraft?: boolean
+    allowPreApproval?: boolean
+  } | null
+  drafter?: { id?: string; name: string } | null
+  submittedAt?: string | null
+  approvalLines?: { steps: ApprovalStepDetail[] }[]
+  history?: DocumentHistoryEntry[]
+  requestId?: string | null
+}
+
+export interface ProxySetting {
+  id: string
+  proxyId: string
+  startDate: string
+  endDate: string
+  reason?: string | null
+  proxy?: { id?: string; name: string } | null
+}
+
+// ---------- 쿼리 키 ----------
+
+const FORMS_KEY = ['document-forms']
+const LINES_KEY = ['shared-approval-lines']
+const DOCS_KEY = ['documents']
+const PROXY_KEY = ['proxy-settings']
+
+// ---------- 기안양식 ----------
+
+export const useDocumentForms = () =>
+  useQuery({
+    queryKey: FORMS_KEY,
+    queryFn: () => apiClient.get('/document-forms') as Promise<DocumentForm[]>,
+    staleTime: 60_000,
+  })
+
+export const useCreateDocumentForm = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) => apiClient.post('/document-forms', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: FORMS_KEY }),
+  })
+}
+
+export const useUpdateDocumentForm = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
+      apiClient.patch(`/document-forms/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: FORMS_KEY }),
+  })
+}
+
+export const useDeleteDocumentForm = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/document-forms/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: FORMS_KEY }),
+  })
+}
+
+export const useDocumentNumberRule = (formId: string | null) =>
+  useQuery({
+    queryKey: [...FORMS_KEY, formId, 'number-rule'],
+    queryFn: () =>
+      apiClient.get(`/document-forms/${formId}/number-rule`) as Promise<DocumentNumberRule | null>,
+    enabled: !!formId,
+  })
+
+export const useSaveDocumentNumberRule = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ formId, ...data }: { formId: string } & DocumentNumberRule) =>
+      apiClient.put(`/document-forms/${formId}/number-rule`, data),
+    onSuccess: (_d, vars) =>
+      qc.invalidateQueries({ queryKey: [...FORMS_KEY, vars.formId, 'number-rule'] }),
+  })
+}
+
+// ---------- 공용 결재선 ----------
+
+export const useSharedApprovalLines = () =>
+  useQuery({
+    queryKey: LINES_KEY,
+    queryFn: () => apiClient.get('/shared-approval-lines') as Promise<SharedApprovalLine[]>,
+    staleTime: 60_000,
+  })
+
+export const useCreateSharedApprovalLine = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { name: string; steps: ApprovalStepInput[] }) =>
+      apiClient.post('/shared-approval-lines', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: LINES_KEY }),
+  })
+}
+
+export const useUpdateSharedApprovalLine = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; name?: string; steps?: ApprovalStepInput[] }) =>
+      apiClient.patch(`/shared-approval-lines/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: LINES_KEY }),
+  })
+}
+
+export const useDeleteSharedApprovalLine = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/shared-approval-lines/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: LINES_KEY }),
+  })
+}
+
+// ---------- 문서함 / 문서 ----------
+
+export interface DocumentListParams {
+  page?: number
+  limit?: number
+  status?: string
+}
+
+export const useDocuments = (box: DocumentBox, params?: DocumentListParams) =>
+  useQuery({
+    queryKey: [...DOCS_KEY, box, params],
+    queryFn: () =>
+      apiClient.get('/documents', {
+        params: { box, ...params },
+      }) as Promise<DocumentListResponse>,
+    staleTime: 15_000,
+  })
+
+export const useDocument = (id: string | null) =>
+  useQuery({
+    queryKey: [...DOCS_KEY, 'detail', id],
+    queryFn: () => apiClient.get(`/documents/${id}`) as Promise<DocumentDetail>,
+    enabled: !!id,
+  })
+
+export const useCreateDocument = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { formId: string; title: string; content: DocumentContent }) =>
+      apiClient.post('/documents', data) as Promise<DocumentDetail>,
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
+  })
+}
+
+export const useUpdateDocument = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; title?: string; content?: DocumentContent }) =>
+      apiClient.patch(`/documents/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
+  })
+}
+
+export const useDeleteDocument = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/documents/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
+  })
+}
+
+export const useSubmitDocument = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      steps,
+      sharedLineId,
+    }: {
+      id: string
+      steps: ApprovalStepInput[]
+      sharedLineId?: string
+    }) => apiClient.post(`/documents/${id}/submit`, { steps, sharedLineId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
+  })
+}
+
+export const useRecallDocument = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post(`/documents/${id}/recall`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
+  })
+}
+
+export const useDocumentStepAction = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      documentId,
+      stepId,
+      action,
+      comment,
+    }: {
+      documentId: string
+      stepId: string
+      action: StepAction
+      comment?: string
+    }) => apiClient.post(`/documents/${documentId}/steps/${stepId}/${action}`, { comment }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
+  })
+}
+
+// ---------- 대리결재 설정 ----------
+
+export const useProxySettings = () =>
+  useQuery({
+    queryKey: PROXY_KEY,
+    queryFn: () => apiClient.get('/proxy-settings') as Promise<ProxySetting[]>,
+    staleTime: 30_000,
+  })
+
+export const useCreateProxySetting = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { proxyId: string; startDate: string; endDate: string; reason?: string }) =>
+      apiClient.post('/proxy-settings', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: PROXY_KEY }),
+  })
+}
+
+export const useUpdateProxySetting = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
+      apiClient.patch(`/proxy-settings/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: PROXY_KEY }),
+  })
+}
+
+export const useDeleteProxySetting = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/proxy-settings/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: PROXY_KEY }),
+  })
+}
