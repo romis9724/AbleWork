@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CreateTimeclockAreaDto, UpdateTimeclockAreaDto } from './dto/create-timeclock-area.dto'
 
@@ -73,6 +78,17 @@ export class TimeclockAreasService {
 
   async remove(companyId: string, id: string) {
     await this.assertArea(companyId, id)
+
+    // 참조무결성: 이 장소로 기록된 출퇴근이 있으면 삭제 차단 (출퇴근 기록 고아 방지)
+    const attendanceCount = await this.prisma.attendance.count({
+      where: { timeclockAreaId: id },
+    })
+    if (attendanceCount > 0) {
+      throw new ForbiddenException({
+        code: 'TIMECLOCK_AREA_IN_USE',
+        message: '이 장소로 기록된 출퇴근이 있어 삭제할 수 없습니다.',
+      })
+    }
 
     return this.prisma.timeclockArea.update({
       where: { id },

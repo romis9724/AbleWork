@@ -44,6 +44,19 @@
 | `request-to-document.e2e-spec.ts` | 핵심플로우 ① | 요청→문서 자동생성 ($transaction) |
 | `approval-flow.e2e-spec.ts` | 핵심플로우 ②④ | 결재→잔액차감 원자성 + 상태전이 |
 | `tenancy-security.e2e-spec.ts` | 보안 | ORG_ADMIN 타조직 403 + 인증가드 |
+| `integrity-security.e2e-spec.ts` | 무결성·권한 | 레코드 소유권·자기결재 방지·잔액 권한 + 기초데이터 삭제 가드 |
+
+### S5/S6. 무결성·권한 (`integrity-security.e2e-spec.ts`)
+| # | 시나리오 | 기대 |
+|---|---|---|
+| 5-1 | 타 직원 휴가를 LEAVE_DELETE 요청·승인 | 소유권 불일치로 삭제 안 됨(롤백), 원본 보존 |
+| 5-2 | 외부 결재자 없는 상태에서 요청 생성 | 400 `REQUEST_NO_APPROVER` (자기결재 방지) |
+| 5-3/5-4 | EMPLOYEE 본인/타인 휴가 잔액 조회 | 본인 200 / 타인 403 `LEAVE_BALANCE_FORBIDDEN` |
+| 5-5 | SUPER_ADMIN 타 직원 잔액 조회 | 200 |
+| 5-6 | 사용 중 기안양식 삭제 | 403 `FORM_IN_USE` |
+| 5-7 | 진행 중 요청 있는 승인 규칙 삭제 | 403 `APPROVAL_RULE_IN_USE` |
+
+> 삭제 가드의 단위 테스트(정상/차단)는 각 서비스 spec에 포함: organizations/positions/shift-types/shift-templates/leaves/document-forms/custom-types/timeclock-areas/employees(deactivate).
 
 ---
 

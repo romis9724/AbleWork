@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { NotFoundException } from '@nestjs/common'
+import { ForbiddenException, NotFoundException } from '@nestjs/common'
 import { ShiftTypesService, CreateShiftTypeDto } from './shift-types.service'
 import { PrismaService } from '../../prisma/prisma.service'
 
@@ -40,6 +40,13 @@ const mockPrisma = {
     create: jest.fn(),
     update: jest.fn(),
   },
+  // 참조무결성 검사용 모델 (remove에서 사용)
+  shiftTemplate: {
+    count: jest.fn(),
+  },
+  shift: {
+    count: jest.fn(),
+  },
 }
 
 // ── 테스트 ────────────────────────────────────────────────────────────────────
@@ -57,6 +64,10 @@ describe('ShiftTypesService', () => {
 
     service = module.get<ShiftTypesService>(ShiftTypesService)
     jest.clearAllMocks()
+
+    // 참조무결성 기본값: 사용 중인 레코드 없음 → 정상 삭제 경로
+    mockPrisma.shiftTemplate.count.mockResolvedValue(0)
+    mockPrisma.shift.count.mockResolvedValue(0)
   })
 
   // ── findAll ──────────────────────────────────────────────────────────────────
@@ -213,6 +224,68 @@ describe('ShiftTypesService', () => {
       expect(mockPrisma.shiftType.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { isActive: false } }),
       )
+    })
+
+    it('[정상] 사용 중인 템플릿·근무일정이 없으면 참조무결성 검사를 통과해 삭제한다', async () => {
+      mockPrisma.shiftType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.shiftTemplate.count.mockResolvedValue(0)
+      mockPrisma.shift.count.mockResolvedValue(0)
+      mockPrisma.shiftType.update.mockResolvedValue({ ...baseType, isActive: false })
+
+      await service.remove(COMPANY_ID, TYPE_ID)
+
+      // 활성 템플릿 + 전체 근무일정 사용 여부를 shiftTypeId로 검사
+      expect(mockPrisma.shiftTemplate.count).toHaveBeenCalledWith({
+        where: { shiftTypeId: TYPE_ID, isActive: true },
+      })
+      expect(mockPrisma.shift.count).toHaveBeenCalledWith({
+        where: { shiftTypeId: TYPE_ID },
+      })
+      expect(mockPrisma.shiftType.update).toHaveBeenCalled()
+    })
+
+    it('[차단] 사용 중인 활성 템플릿이 있으면 SHIFT_TYPE_IN_USE ForbiddenException을 던지고 update를 호출하지 않는다', async () => {
+      mockPrisma.shiftType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.shiftTemplate.count.mockResolvedValue(1)
+
+      try {
+        await service.remove(COMPANY_ID, TYPE_ID)
+        fail('ForbiddenException이 발생해야 한다')
+      } catch (error) {
+        expect(error).toBeInstanceOf(ForbiddenException)
+        const response = (error as ForbiddenException).getResponse() as {
+          code: string
+          message: string
+        }
+        expect(response.code).toBe('SHIFT_TYPE_IN_USE')
+        expect(response.message).toBe('이 근무유형을 사용하는 템플릿이 있어 삭제할 수 없습니다.')
+      }
+
+      // 차단 시 soft-delete가 실행되면 안 된다
+      expect(mockPrisma.shiftType.update).not.toHaveBeenCalled()
+      // 템플릿에서 이미 차단되므로 shift 검사까지 가지 않는다
+      expect(mockPrisma.shift.count).not.toHaveBeenCalled()
+    })
+
+    it('[차단] 사용 중인 근무일정(shift)이 있으면 SHIFT_TYPE_IN_USE ForbiddenException을 던지고 update를 호출하지 않는다', async () => {
+      mockPrisma.shiftType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.shiftTemplate.count.mockResolvedValue(0)
+      mockPrisma.shift.count.mockResolvedValue(3)
+
+      try {
+        await service.remove(COMPANY_ID, TYPE_ID)
+        fail('ForbiddenException이 발생해야 한다')
+      } catch (error) {
+        expect(error).toBeInstanceOf(ForbiddenException)
+        const response = (error as ForbiddenException).getResponse() as {
+          code: string
+          message: string
+        }
+        expect(response.code).toBe('SHIFT_TYPE_IN_USE')
+        expect(response.message).toBe('이 근무유형을 사용하는 근무일정이 있어 삭제할 수 없습니다.')
+      }
+
+      expect(mockPrisma.shiftType.update).not.toHaveBeenCalled()
     })
 
     it('삭제 전 findFirst로 companyId 소유권을 검증한다', async () => {

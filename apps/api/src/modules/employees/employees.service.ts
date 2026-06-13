@@ -249,12 +249,32 @@ export class EmployeesService {
       })
     }
 
-    return this.prisma.employee.update({
-      where: { id },
-      data: {
-        isActive: false,
-        resignedAt: resignedAt ? new Date(resignedAt) : new Date(),
-      },
+    // 미결 결재가 있는 직원은 퇴사 처리 전 결재를 먼저 위임/처리해야 한다 (결재 정합성)
+    const pendingApprovals = await this.prisma.approvalStep.count({
+      where: { assigneeId: id, status: { in: ['PENDING', 'WAITING'] } },
+    })
+    if (pendingApprovals > 0) {
+      throw new ForbiddenException({
+        code: 'EMPLOYEE_HAS_PENDING_APPROVALS',
+        message: '미결 결재가 있어 퇴사 처리할 수 없습니다. 결재를 먼저 위임/처리하세요.',
+      })
+    }
+
+    // isActive=false 설정과 조직 결재자 해제를 하나의 트랜잭션으로 묶는다 (원자성)
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // 비활성 직원이 조직 결재자로 남지 않도록 approverId를 해제한다
+      await tx.organization.updateMany({
+        where: { approverId: id, companyId },
+        data: { approverId: null },
+      })
+
+      return tx.employee.update({
+        where: { id },
+        data: {
+          isActive: false,
+          resignedAt: resignedAt ? new Date(resignedAt) : new Date(),
+        },
+      })
     })
   }
 

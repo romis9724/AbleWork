@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { NotFoundException } from '@nestjs/common'
+import { NotFoundException, ForbiddenException } from '@nestjs/common'
 import { DocumentFormsService } from './document-forms.service'
 import { PrismaService } from '../../prisma/prisma.service'
 
@@ -50,6 +50,9 @@ const mockPrisma = {
     create: jest.fn(),
     update: jest.fn(),
   },
+  document: {
+    count: jest.fn(),
+  },
 }
 
 // ── 테스트 ────────────────────────────────────────────────────────────────────
@@ -67,6 +70,9 @@ describe('DocumentFormsService', () => {
 
     service = module.get<DocumentFormsService>(DocumentFormsService)
     jest.clearAllMocks()
+
+    // 삭제 가드 기본값: 참조 문서 없음(0) — 정상 케이스가 가드를 통과하도록
+    mockPrisma.document.count.mockResolvedValue(0)
   })
 
   // ── findAll ────────────────────────────────────────────────────────────────
@@ -304,6 +310,7 @@ describe('DocumentFormsService', () => {
   describe('remove', () => {
     it('소프트 삭제 — isActive를 false로 변경하고 deleted:true를 반환한다', async () => {
       mockPrisma.documentForm.findFirst.mockResolvedValue(baseForm)
+      mockPrisma.document.count.mockResolvedValue(0) // 참조 문서 없음 — 가드 통과
       mockPrisma.documentForm.update.mockResolvedValue({ ...baseForm, isActive: false })
 
       const result = await service.remove(COMPANY_ID, FORM_ID)
@@ -317,6 +324,7 @@ describe('DocumentFormsService', () => {
 
     it('멀티테넌시 — 소속 검증 시 where에 companyId가 포함된다', async () => {
       mockPrisma.documentForm.findFirst.mockResolvedValue(baseForm)
+      mockPrisma.document.count.mockResolvedValue(0) // 참조 문서 없음 — 가드 통과
       mockPrisma.documentForm.update.mockResolvedValue(baseForm)
 
       await service.remove(COMPANY_ID, FORM_ID)
@@ -326,6 +334,19 @@ describe('DocumentFormsService', () => {
           where: expect.objectContaining({ id: FORM_ID, companyId: COMPANY_ID }),
         }),
       )
+    })
+
+    it('이 양식으로 작성된 문서가 있으면 ForbiddenException(FORM_IN_USE)을 던지고 update를 호출하지 않는다', async () => {
+      mockPrisma.documentForm.findFirst.mockResolvedValue(baseForm)
+      mockPrisma.document.count.mockResolvedValue(3) // 참조 문서 존재 — 가드 차단
+
+      await expect(service.remove(COMPANY_ID, FORM_ID)).rejects.toThrow(
+        ForbiddenException,
+      )
+      await expect(service.remove(COMPANY_ID, FORM_ID)).rejects.toMatchObject({
+        response: { code: 'FORM_IN_USE' },
+      })
+      expect(mockPrisma.documentForm.update).not.toHaveBeenCalled()
     })
 
     it('존재하지 않는 formId면 NotFoundException을 던지고 update를 호출하지 않는다', async () => {

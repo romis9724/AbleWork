@@ -29,6 +29,7 @@ import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import apiClient from '@/lib/api-client'
+import { getApiErrorMessage } from '@/lib/api-error'
 import { useShiftTemplates } from '@/lib/query/shifts'
 import { useEmployees, type Employee } from '@/lib/query/employees'
 
@@ -118,7 +119,7 @@ export default function SchedulePatternsPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/schedule-patterns/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule-patterns'] }); setDeleteTarget(null); setSnack({ open: true, msg: '삭제됐습니다.', sev: 'success' }) },
-    onError: () => setSnack({ open: true, msg: '삭제에 실패했습니다.', sev: 'error' }),
+    onError: (e) => setSnack({ open: true, msg: getApiErrorMessage(e, '삭제에 실패했습니다.'), sev: 'error' }),
   })
 
   const applyMutation = useMutation({

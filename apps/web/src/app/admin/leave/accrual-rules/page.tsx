@@ -42,6 +42,7 @@ import {
   type LeaveGroup,
 } from '@/lib/query/leaves'
 import { useEmployees } from '@/lib/query/employees'
+import { getApiErrorMessage } from '@/lib/api-error'
 
 // ── Monthly accrual row ────────────────────────────────────────────────────────
 
@@ -224,8 +225,8 @@ export default function AccrualRulesPage() {
       await deleteRuleMutation.mutateAsync(deleteTarget.id)
       setDeleteTarget(null)
       showSnack('발생 규칙이 삭제되었습니다.')
-    } catch {
-      showSnack('삭제에 실패했습니다.', 'error')
+    } catch (e) {
+      showSnack(getApiErrorMessage(e, '삭제에 실패했습니다.'), 'error')
     }
   }
 

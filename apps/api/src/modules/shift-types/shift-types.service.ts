@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { z } from 'zod'
 
@@ -46,6 +46,29 @@ export class ShiftTypesService {
 
   async remove(companyId: string, id: string) {
     await this.findOneOrThrow(companyId, id)
+
+    // 참조무결성: 이 근무유형을 사용하는 활성 템플릿이 있으면 삭제 차단
+    const templateCount = await this.prisma.shiftTemplate.count({
+      where: { shiftTypeId: id, isActive: true },
+    })
+    if (templateCount > 0) {
+      throw new ForbiddenException({
+        code: 'SHIFT_TYPE_IN_USE',
+        message: '이 근무유형을 사용하는 템플릿이 있어 삭제할 수 없습니다.',
+      })
+    }
+
+    // 참조무결성: 이 근무유형을 사용하는 근무일정(shift)이 있으면 삭제 차단
+    const shiftCount = await this.prisma.shift.count({
+      where: { shiftTypeId: id },
+    })
+    if (shiftCount > 0) {
+      throw new ForbiddenException({
+        code: 'SHIFT_TYPE_IN_USE',
+        message: '이 근무유형을 사용하는 근무일정이 있어 삭제할 수 없습니다.',
+      })
+    }
+
     return this.prisma.shiftType.update({ where: { id, companyId }, data: { isActive: false } })
   }
 

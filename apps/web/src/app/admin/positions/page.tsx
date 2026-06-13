@@ -26,6 +26,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
+import { getApiErrorMessage } from '@/lib/api-error'
 import {
   usePositions,
   useCreatePosition,
@@ -159,7 +160,7 @@ export default function PositionsPage() {
     if (!deleteTarget) return
     deleteMutation.mutate(deleteTarget.id, {
       onSuccess: () => { setDeleteTarget(null); showSnack('직무가 삭제되었습니다.', 'success') },
-      onError: () => showSnack('직무 삭제에 실패했습니다.', 'error'),
+      onError: (e) => showSnack(getApiErrorMessage(e, '직무 삭제에 실패했습니다.'), 'error'),
     })
   }
 

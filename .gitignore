@@ -18,6 +18,7 @@ dist/
 .next/
 .turbo/
 coverage/
+*.tsbuildinfo
 
 # Playwright 실행 산출물 (E2E 실패 아티팩트 — 추적 제외)
 test-results/

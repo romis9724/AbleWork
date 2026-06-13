@@ -1425,3 +1425,21 @@ test 가능. |
 
 ---
 
+
+## 부록 — 무결성·권한 가드 테스트 (2026-06-13 추가)
+
+감사(132건) 후 추가된 비즈니스 가드의 단위 테스트가 각 서비스 spec에 포함된다. 정상(통과)·차단(거부) 양 경로를 검증한다.
+
+| 서비스 spec | 추가 가드 테스트 |
+|---|---|
+| organizations | 하위조직/직원/출퇴근장소/근무일정 보유 시 삭제 차단 |
+| positions | 활성 직원 배정 시 `POSITION_IN_USE` |
+| shift-types | 템플릿/근무일정 사용 시 `SHIFT_TYPE_IN_USE` |
+| shift-templates | 근무일정 사용 시 `SHIFT_TEMPLATE_IN_USE` |
+| leaves | 잔여 휴가 보유 시 `LEAVE_TYPE_IN_USE`/`LEAVE_GROUP_IN_USE`(+cascade) |
+| document-forms | 문서 보유 시 `FORM_IN_USE` |
+| custom-types | 활성 승인규칙 사용 시 `CUSTOM_TYPE_IN_USE` |
+| timeclock-areas | 출퇴근 기록 보유 시 `TIMECLOCK_AREA_IN_USE` |
+| employees | 미결 결재 보유 시 퇴사 차단 + 조직 결재자 null 해제 |
+
+> 요청 소유권/자기결재/잔액 권한은 통합(e2e) `integrity-security.e2e-spec.ts`에서 실 DB로 검증. 상세: [data-integrity-report.md](./data-integrity-report.md), [integration-test-scenarios.md](./integration-test-scenarios.md).

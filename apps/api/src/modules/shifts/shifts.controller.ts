@@ -82,7 +82,8 @@ export class ShiftsController {
   // HR-04-08 근무일정 삭제
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '근무일정 삭제 (확정된 일정 불가)' })
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '근무일정 삭제 (확정된 일정 불가, ORG_ADMIN 이상)' })
   @ApiParam({ name: 'id', type: String })
   remove(
     @CompanyId() companyId: string,

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import {
@@ -72,6 +72,18 @@ export class CustomTypesService {
 
   async remove(companyId: string, id: string) {
     await this.findOneOrThrow(companyId, id)
+
+    // 참조무결성: 이 커스텀 유형을 사용하는 활성 승인 규칙이 있으면 삭제 차단
+    const ruleCount = await this.prisma.approvalRule.count({
+      where: { customTypeId: id, companyId, isActive: true },
+    })
+    if (ruleCount > 0) {
+      throw new ForbiddenException({
+        code: 'CUSTOM_TYPE_IN_USE',
+        message: '이 유형을 사용하는 승인 규칙이 있어 삭제할 수 없습니다.',
+      })
+    }
+
     // isActive 컬럼이 있으므로 소프트 삭제
     return this.prisma.customRequestType.update({
       where: { id },

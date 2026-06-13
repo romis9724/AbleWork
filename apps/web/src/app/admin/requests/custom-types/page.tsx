@@ -31,6 +31,7 @@ import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import apiClient from '@/lib/api-client'
+import { getApiErrorMessage } from '@/lib/api-error'
 
 interface CustomField { fieldName: string; fieldType: string; isRequired: boolean }
 interface CustomRequestType { id: string; name: string; isActive: boolean; enablePdf: boolean; fields?: CustomField[] }
@@ -70,7 +71,7 @@ export default function CustomRequestTypesPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/requests/custom-types/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['custom-request-types'] }); setDeleteTarget(null); setSnack({ open: true, msg: '삭제됐습니다.', sev: 'success' }) },
-    onError: () => setSnack({ open: true, msg: '삭제에 실패했습니다.', sev: 'error' }),
+    onError: (e) => setSnack({ open: true, msg: getApiErrorMessage(e, '삭제에 실패했습니다.'), sev: 'error' }),
   })
 
   function addField() { setFields(f => [...f, { fieldName: '', fieldType: 'text', isRequired: false }]) }

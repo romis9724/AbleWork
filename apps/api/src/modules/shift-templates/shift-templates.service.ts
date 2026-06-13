@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CreateShiftTemplateDto, UpdateShiftTemplateDto } from './dto/create-shift-template.dto'
 
@@ -77,6 +82,17 @@ export class ShiftTemplatesService {
 
   async remove(companyId: string, id: string) {
     await this.assertTemplate(companyId, id)
+
+    // 참조무결성: 이 템플릿으로 생성된 근무일정이 있으면 삭제 차단
+    const shiftCount = await this.prisma.shift.count({
+      where: { templateId: id },
+    })
+    if (shiftCount > 0) {
+      throw new ForbiddenException({
+        code: 'SHIFT_TEMPLATE_IN_USE',
+        message: '이 템플릿으로 생성된 근무일정이 있어 삭제할 수 없습니다.',
+      })
+    }
 
     return this.prisma.shiftTemplate.update({
       where: { id, companyId },

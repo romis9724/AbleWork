@@ -102,6 +102,43 @@ export class OrganizationsService {
       })
     }
 
+    // 이 조직에 배정된 활성 직원이 있으면 삭제 차단
+    const employeeCount = await this.prisma.employeeOrganization.count({
+      where: { organizationId: id, employee: { isActive: true } },
+    })
+
+    if (employeeCount > 0) {
+      throw new ForbiddenException({
+        code: 'ORG_HAS_EMPLOYEES',
+        message:
+          '소속 직원이 있어 조직을 삭제할 수 없습니다. 먼저 직원을 이동하세요.',
+      })
+    }
+
+    // 이 조직의 출퇴근 장소가 있으면 삭제 차단
+    const timeclockAreaCount = await this.prisma.timeclockArea.count({
+      where: { organizationId: id, isActive: true },
+    })
+
+    if (timeclockAreaCount > 0) {
+      throw new ForbiddenException({
+        code: 'ORG_HAS_TIMECLOCK_AREAS',
+        message: '출퇴근 장소가 있어 조직을 삭제할 수 없습니다.',
+      })
+    }
+
+    // 이 조직의 근무일정이 있으면 삭제 차단
+    const shiftCount = await this.prisma.shift.count({
+      where: { organizationId: id },
+    })
+
+    if (shiftCount > 0) {
+      throw new ForbiddenException({
+        code: 'ORG_HAS_SHIFTS',
+        message: '근무일정이 있어 조직을 삭제할 수 없습니다.',
+      })
+    }
+
     await this.prisma.organization.update({
       where: { id },
       data: { isActive: false },

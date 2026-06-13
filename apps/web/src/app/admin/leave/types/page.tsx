@@ -36,6 +36,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import PageHeader from '@/components/common/PageHeader'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import EmptyState from '@/components/common/EmptyState'
+import { getApiErrorMessage } from '@/lib/api-error'
 import {
   useLeaveGroups,
   useCreateLeaveGroup,
@@ -181,8 +182,8 @@ export default function LeaveTypesPage() {
       await deleteGroupMutation.mutateAsync(deleteGroupTarget.id)
       setDeleteGroupTarget(null)
       showSnack('삭제되었습니다.')
-    } catch {
-      showSnack('삭제에 실패했습니다.', 'error')
+    } catch (e) {
+      showSnack(getApiErrorMessage(e, '삭제에 실패했습니다.'), 'error')
     }
   }
 
@@ -249,8 +250,8 @@ export default function LeaveTypesPage() {
       await deleteTypeMutation.mutateAsync(deleteTarget.id)
       setDeleteTarget(null)
       showSnack('삭제되었습니다.')
-    } catch {
-      showSnack('삭제에 실패했습니다.', 'error')
+    } catch (e) {
+      showSnack(getApiErrorMessage(e, '삭제에 실패했습니다.'), 'error')
     }
   }
 

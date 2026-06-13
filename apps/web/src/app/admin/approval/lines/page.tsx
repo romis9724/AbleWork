@@ -29,6 +29,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog'
 import ApprovalLineBuilder from '@/components/approval/ApprovalLineBuilder'
 import { STEP_ROLE_LABEL } from '@/components/approval/approval-constants'
 import { useSnackbar } from '@/hooks/useSnackbar'
+import { getApiErrorMessage } from '@/lib/api-error'
 import { useConfirm } from '@/hooks/useConfirm'
 import { useEmployees } from '@/lib/query/employees'
 import {
@@ -122,8 +123,8 @@ export default function SharedApprovalLinesPage() {
     try {
       await deleteMutation.mutateAsync(line.id)
       showSnackbar('삭제되었습니다.')
-    } catch {
-      showSnackbar('삭제 중 오류가 발생했습니다.', 'error')
+    } catch (e) {
+      showSnackbar(getApiErrorMessage(e, '삭제 중 오류가 발생했습니다.'), 'error')
     }
   }
 

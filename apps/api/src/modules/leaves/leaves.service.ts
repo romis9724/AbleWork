@@ -2,8 +2,11 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
+import { AccessLevel } from '@ablework/shared-constants'
+import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { PrismaService } from '../../prisma/prisma.service'
 import { EVENTS } from '../../events/domain-events'
 import { CreateLeaveGroupDto, UpdateLeaveGroupDto } from './dto/create-leave-group.dto'
@@ -54,14 +57,35 @@ export class LeavesService {
     return this.prisma.leaveGroup.update({ where: { id }, data: dto })
   }
 
-  // ── 휴가 그룹 삭제 (소프트 — isActive=false) ─────────────────────────────────
+  // ── 휴가 그룹 삭제 (소프트 — isActive=false, 자식 유형 cascade) ───────────────
 
   async deleteGroup(companyId: string, id: string) {
     await this.assertGroupBelongsToCompany(companyId, id)
 
-    return this.prisma.leaveGroup.update({
-      where: { id },
-      data: { isActive: false },
+    // 사용 중 검사: 그룹 내 자식 유형 중 잔여 휴가가 남은 직원이 있으면 삭제 차단.
+    // (Prisma Decimal 비교는 { gt: 0 } 사용)
+    const inUseCount = await this.prisma.leaveBalance.count({
+      where: { leaveType: { groupId: id }, remainingDays: { gt: 0 } },
+    })
+    if (inUseCount > 0) {
+      throw new ForbiddenException({
+        code: 'LEAVE_GROUP_IN_USE',
+        message: '잔여 휴가가 남은 직원이 있어 휴가 그룹을 삭제할 수 없습니다.',
+      })
+    }
+
+    // 그룹 soft-delete 시 자식 LeaveType도 함께 soft-delete (cascade)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.prisma.$transaction(async (tx: any) => {
+      await tx.leaveType.updateMany({
+        where: { groupId: id },
+        data: { isActive: false },
+      })
+
+      return tx.leaveGroup.update({
+        where: { id },
+        data: { isActive: false },
+      })
     })
   }
 
@@ -110,6 +134,18 @@ export class LeavesService {
 
   async deleteType(companyId: string, id: string) {
     await this.assertTypeBelongsToCompany(companyId, id)
+
+    // 사용 중 검사: 잔여 휴가가 남은 직원이 있으면 삭제 차단.
+    // (Prisma Decimal 비교는 { gt: 0 } 사용)
+    const inUseCount = await this.prisma.leaveBalance.count({
+      where: { leaveTypeId: id, remainingDays: { gt: 0 } },
+    })
+    if (inUseCount > 0) {
+      throw new ForbiddenException({
+        code: 'LEAVE_TYPE_IN_USE',
+        message: '잔여 휴가가 남은 직원이 있어 휴가 유형을 삭제할 수 없습니다.',
+      })
+    }
 
     return this.prisma.leaveType.update({
       where: { id },
@@ -457,7 +493,19 @@ export class LeavesService {
 
   // ── HR-06-09 잔여 휴가 조회 ──────────────────────────────────────────────────
 
-  async getBalance(companyId: string, employeeId: string) {
+  async getBalance(companyId: string, employeeId: string, requester: JwtPayload) {
+    // 권한: 본인 잔액은 누구나, 타인 잔액은 ORG_ADMIN 이상만 조회 가능
+    const isManager =
+      requester.accessLevel === AccessLevel.ORG_ADMIN ||
+      requester.accessLevel === AccessLevel.GENERAL_ADMIN ||
+      requester.accessLevel === AccessLevel.SUPER_ADMIN
+    if (employeeId !== requester.employeeId && !isManager) {
+      throw new ForbiddenException({
+        code: 'LEAVE_BALANCE_FORBIDDEN',
+        message: '본인의 휴가 잔액만 조회할 수 있습니다.',
+      })
+    }
+
     await this.assertEmployeeBelongsToCompany(companyId, employeeId)
 
     return this.prisma.leaveBalance.findMany({

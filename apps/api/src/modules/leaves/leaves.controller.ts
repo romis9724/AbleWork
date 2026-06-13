@@ -17,7 +17,9 @@ import { LeavesService } from './leaves.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { RolesGuard } from '../../common/guards/roles.guard'
 import { CompanyId } from '../../common/decorators/company-id.decorator'
+import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
+import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe'
 import { AccessLevel } from '@ablework/shared-constants'
 import {
@@ -220,9 +222,10 @@ export class LeavesController {
   @ApiParam({ name: 'employeeId', type: String })
   getBalance(
     @CompanyId() companyId: string,
-    @Param('employeeId', ParseUUIDPipe) employeeId: string,
+    @Param('employeeId') employeeId: string,
+    @CurrentUser() requester: JwtPayload,
   ) {
-    return this.leavesService.getBalance(companyId, employeeId)
+    return this.leavesService.getBalance(companyId, employeeId, requester)
   }
 
   // HR-06-10 수동 발생 (관리자 임의 부여)

@@ -45,6 +45,7 @@ import {
   type AuthMethod,
 } from '@/lib/query/timeclock-areas'
 import { useOrganizations, type Organization } from '@/lib/query/organizations'
+import { getApiErrorMessage } from '@/lib/api-error'
 
 // ──────────────────────────────────────────────
 // Schema — 폼은 문자열로 받고, submit 시 변환
@@ -368,7 +369,7 @@ export default function TimeclockAreasPage() {
     if (!deleteTarget) return
     deleteMutation.mutate(deleteTarget.id, {
       onSuccess: () => { setDeleteTarget(null); showSnack('장소가 삭제되었습니다.', 'success') },
-      onError: () => showSnack('장소 삭제에 실패했습니다.', 'error'),
+      onError: (e) => showSnack(getApiErrorMessage(e, '장소 삭제에 실패했습니다.'), 'error'),
     })
   }
 
