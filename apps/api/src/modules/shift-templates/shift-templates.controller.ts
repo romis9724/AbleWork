@@ -65,8 +65,9 @@ export class ShiftTemplatesController {
 
   // HR-04-03 템플릿 삭제 (소프트 삭제)
   @Delete(':id')
+  @Roles(AccessLevel.GENERAL_ADMIN)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '근무 템플릿 삭제 (소프트 삭제)' })
+  @ApiOperation({ summary: '근무 템플릿 삭제 (소프트 삭제, GENERAL_ADMIN 이상)' })
   @ApiParam({ name: 'id', type: String })
   remove(
     @CompanyId() companyId: string,

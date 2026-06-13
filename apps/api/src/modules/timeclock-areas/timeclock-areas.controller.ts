@@ -64,7 +64,8 @@ export class TimeclockAreasController {
 
   // HR-05-01 장소 수정
   @Patch(':id')
-  @ApiOperation({ summary: '출퇴근 장소 수정' })
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '출퇴근 장소 수정 (ORG_ADMIN 이상)' })
   @ApiParam({ name: 'id', type: String })
   update(
     @CompanyId() companyId: string,
@@ -77,7 +78,8 @@ export class TimeclockAreasController {
   // HR-05-01 장소 삭제 (소프트 삭제)
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '출퇴근 장소 삭제 (소프트 삭제)' })
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '출퇴근 장소 삭제 (소프트 삭제, ORG_ADMIN 이상)' })
   @ApiParam({ name: 'id', type: String })
   remove(
     @CompanyId() companyId: string,

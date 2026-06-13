@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { NotFoundException, BadRequestException } from '@nestjs/common'
+import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common'
 import { TimeclockAreasService } from './timeclock-areas.service'
 import { PrismaService } from '../../prisma/prisma.service'
 
@@ -34,6 +34,9 @@ const mockPrisma = {
   organization: {
     findFirst: jest.fn(),
   },
+  attendance: {
+    count: jest.fn(),
+  },
 }
 
 // ── 테스트 ────────────────────────────────────────────────────────────────────
@@ -51,6 +54,7 @@ describe('TimeclockAreasService', () => {
 
     service = module.get<TimeclockAreasService>(TimeclockAreasService)
     jest.clearAllMocks()
+    mockPrisma.attendance.count.mockResolvedValue(0)
   })
 
   // ── findAll ──────────────────────────────────────────────────────────────────
@@ -158,6 +162,7 @@ describe('TimeclockAreasService', () => {
   describe('remove', () => {
     it('isActive를 false로 설정하여 소프트 삭제한다', async () => {
       mockPrisma.timeclockArea.findFirst.mockResolvedValue(baseArea)
+      mockPrisma.attendance.count.mockResolvedValue(0)
       mockPrisma.timeclockArea.update.mockResolvedValue({ ...baseArea, isActive: false })
 
       const result = await service.remove(COMPANY_ID, AREA_ID)
@@ -169,6 +174,17 @@ describe('TimeclockAreasService', () => {
           data: { isActive: false },
         }),
       )
+    })
+
+    it('이 장소로 기록된 출퇴근이 있으면 ForbiddenException(TIMECLOCK_AREA_IN_USE)을 던지고 삭제하지 않는다', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(baseArea)
+      mockPrisma.attendance.count.mockResolvedValue(3)
+
+      await expect(service.remove(COMPANY_ID, AREA_ID)).rejects.toThrow(ForbiddenException)
+      await expect(service.remove(COMPANY_ID, AREA_ID)).rejects.toMatchObject({
+        response: { code: 'TIMECLOCK_AREA_IN_USE' },
+      })
+      expect(mockPrisma.timeclockArea.update).not.toHaveBeenCalled()
     })
 
     it('존재하지 않는 장소이면 NotFoundException을 던진다', async () => {

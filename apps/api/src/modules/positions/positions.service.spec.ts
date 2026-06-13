@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { NotFoundException } from '@nestjs/common'
+import { ForbiddenException, NotFoundException } from '@nestjs/common'
 import { PositionsService } from './positions.service'
 import { PrismaService } from '../../prisma/prisma.service'
 
@@ -21,6 +21,9 @@ const mockPrisma = {
     create: jest.fn(),
     findFirst: jest.fn(),
     update: jest.fn(),
+  },
+  employeePosition: {
+    count: jest.fn(),
   },
 }
 
@@ -94,18 +97,34 @@ describe('PositionsService', () => {
   // ── remove ───────────────────────────────────────────────────────────────────
 
   describe('remove', () => {
-    it('직무를 소프트 삭제한다 (isActive=false)', async () => {
+    it('배정된 활성 직원이 없으면 소프트 삭제한다 (isActive=false)', async () => {
       mockPrisma.position.findFirst.mockResolvedValue(basePosition)
+      mockPrisma.employeePosition.count.mockResolvedValue(0)
       mockPrisma.position.update.mockResolvedValue({ ...basePosition, isActive: false })
 
       const result = await service.remove(COMPANY_ID, POSITION_ID)
       expect(result.isActive).toBe(false)
+      // 참조무결성 검사 시 employee 관계로 companyId까지 확인 (멀티테넌시 방어)
+      expect(mockPrisma.employeePosition.count).toHaveBeenCalledWith({
+        where: { positionId: POSITION_ID, employee: { companyId: COMPANY_ID, isActive: true } },
+      })
       expect(mockPrisma.position.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: POSITION_ID, companyId: COMPANY_ID }, // 멀티테넌시 방어
           data: { isActive: false },
         }),
       )
+    })
+
+    it('배정된 활성 직원이 있으면 ForbiddenException(POSITION_IN_USE)을 던지고 삭제하지 않는다', async () => {
+      mockPrisma.position.findFirst.mockResolvedValue(basePosition)
+      mockPrisma.employeePosition.count.mockResolvedValue(2)
+
+      await expect(service.remove(COMPANY_ID, POSITION_ID)).rejects.toThrow(ForbiddenException)
+      await expect(service.remove(COMPANY_ID, POSITION_ID)).rejects.toMatchObject({
+        response: { code: 'POSITION_IN_USE' },
+      })
+      expect(mockPrisma.position.update).not.toHaveBeenCalled()
     })
 
     it('존재하지 않으면 NotFoundException을 던진다', async () => {

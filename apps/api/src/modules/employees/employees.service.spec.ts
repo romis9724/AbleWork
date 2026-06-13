@@ -63,6 +63,10 @@ const mockPrisma = {
   },
   organization: {
     count: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  approvalStep: {
+    count: jest.fn(),
   },
   wageInfo: {
     findMany: jest.fn(),
@@ -98,6 +102,9 @@ describe('EmployeesService', () => {
 
     service = module.get<EmployeesService>(EmployeesService)
     jest.clearAllMocks()
+    // 기본값: 미결 결재 없음 / org_admin_can_manage_employees = true
+    mockPrisma.approvalStep.count.mockResolvedValue(0)
+    mockSettings.get.mockResolvedValue(true)
   })
 
   // ── findOne ──────────────────────────────────────────────────────────────────
@@ -184,9 +191,18 @@ describe('EmployeesService', () => {
   })
 
   describe('deactivate', () => {
+    // deactivate는 isActive=false 설정과 결재자 해제를 $transaction으로 묶는다
+    const wireDeactivateTransaction = () => {
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma),
+      )
+    }
+
     it('활성 직원을 퇴사 처리한다', async () => {
       const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
       mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      wireDeactivateTransaction()
+      mockPrisma.organization.updateMany.mockResolvedValue({ count: 0 })
       mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, isActive: false })
 
       const result = await service.deactivate(COMPANY_ID, EMPLOYEE_ID, '2024-12-31', requester)
@@ -197,6 +213,38 @@ describe('EmployeesService', () => {
           data: expect.objectContaining({ isActive: false }),
         }),
       )
+    })
+
+    it('미결 결재(PENDING/WAITING)가 있으면 EMPLOYEE_HAS_PENDING_APPROVALS 에러를 던지고 퇴사 처리를 차단한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.approvalStep.count.mockResolvedValue(2) // 미결 결재 존재
+
+      await expect(
+        service.deactivate(COMPANY_ID, EMPLOYEE_ID, undefined, requester),
+      ).rejects.toThrow(ForbiddenException)
+
+      expect(mockPrisma.approvalStep.count).toHaveBeenCalledWith({
+        where: { assigneeId: EMPLOYEE_ID, status: { in: ['PENDING', 'WAITING'] } },
+      })
+      // 차단되었으므로 트랜잭션/업데이트는 호출되지 않는다
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+      expect(mockPrisma.employee.update).not.toHaveBeenCalled()
+    })
+
+    it('퇴사 처리 시 해당 직원을 결재자로 둔 조직의 approverId를 해제한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      wireDeactivateTransaction()
+      mockPrisma.organization.updateMany.mockResolvedValue({ count: 1 })
+      mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, isActive: false })
+
+      await service.deactivate(COMPANY_ID, EMPLOYEE_ID, undefined, requester)
+
+      expect(mockPrisma.organization.updateMany).toHaveBeenCalledWith({
+        where: { approverId: EMPLOYEE_ID, companyId: COMPANY_ID },
+        data: { approverId: null },
+      })
     })
 
     it('이미 퇴사한 직원은 EMPLOYEE_ALREADY_DEACTIVATED 에러를 던진다', async () => {
@@ -238,6 +286,8 @@ describe('EmployeesService', () => {
       const requester = makeRequester(AccessLevel.ORG_ADMIN)
       mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
       mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      wireDeactivateTransaction()
+      mockPrisma.organization.updateMany.mockResolvedValue({ count: 0 })
       mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, isActive: false })
 
       const result = await service.deactivate(COMPANY_ID, EMPLOYEE_ID, undefined, requester)
@@ -247,6 +297,8 @@ describe('EmployeesService', () => {
     it('GENERAL_ADMIN은 권한 설정과 무관하게 퇴사 처리가 가능하다', async () => {
       const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
       mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      wireDeactivateTransaction()
+      mockPrisma.organization.updateMany.mockResolvedValue({ count: 0 })
       mockPrisma.employee.update.mockResolvedValue({ ...baseEmployee, isActive: false })
       mockSettings.get.mockResolvedValue(false)
 

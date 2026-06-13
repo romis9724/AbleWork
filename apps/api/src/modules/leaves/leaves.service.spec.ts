@@ -2,7 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing'
 import {
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common'
+import { AccessLevel } from '@ablework/shared-constants'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { LeavesService } from './leaves.service'
 import { PrismaService } from '../../prisma/prisma.service'
@@ -70,6 +72,7 @@ const mockPrisma = {
     findMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
     findFirst: jest.fn(),
   },
   leaveAccrualRule: {
@@ -89,6 +92,7 @@ const mockPrisma = {
     upsert: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    count: jest.fn(),
   },
   leave: {
     findMany: jest.fn(),
@@ -223,34 +227,83 @@ describe('LeavesService', () => {
   })
 
   describe('deleteGroup', () => {
-    it('소프트 삭제 — isActive를 false로 변경한다', async () => {
+    it('사용 중이 아니면 소프트 삭제 — 자식 유형까지 cascade로 isActive를 false로 변경한다', async () => {
       mockPrisma.leaveGroup.findFirst.mockResolvedValue(baseGroup)
+      mockPrisma.leaveBalance.count.mockResolvedValue(0) // 자식 유형에 잔여 휴가 없음
+      mockPrisma.leaveType.updateMany.mockResolvedValue({ count: 2 })
       mockPrisma.leaveGroup.update.mockResolvedValue({ ...baseGroup, isActive: false })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma))
 
       const result = await service.deleteGroup(COMPANY_ID, GROUP_ID)
 
       expect(result.isActive).toBe(false)
+      // cascade: 그룹 내 자식 유형 일괄 soft-delete
+      expect(mockPrisma.leaveType.updateMany).toHaveBeenCalledWith({
+        where: { groupId: GROUP_ID },
+        data: { isActive: false },
+      })
+      // 그룹 본체 soft-delete
       expect(mockPrisma.leaveGroup.update).toHaveBeenCalledWith({
         where: { id: GROUP_ID },
         data: { isActive: false },
       })
+      // 사용 중 검사는 그룹 관계 기준으로 수행
+      expect(mockPrisma.leaveBalance.count).toHaveBeenCalledWith({
+        where: { leaveType: { groupId: GROUP_ID }, remainingDays: { gt: 0 } },
+      })
+    })
+
+    it('자식 유형에 잔여 휴가가 남은 직원이 있으면 ForbiddenException(LEAVE_GROUP_IN_USE)을 던지고 삭제하지 않는다', async () => {
+      mockPrisma.leaveGroup.findFirst.mockResolvedValue(baseGroup)
+      mockPrisma.leaveBalance.count.mockResolvedValue(1) // 잔여 휴가 남은 직원 존재
+
+      await expect(service.deleteGroup(COMPANY_ID, GROUP_ID)).rejects.toThrow(ForbiddenException)
+      await expect(service.deleteGroup(COMPANY_ID, GROUP_ID)).rejects.toMatchObject({
+        response: { code: 'LEAVE_GROUP_IN_USE' },
+      })
+      expect(mockPrisma.leaveType.updateMany).not.toHaveBeenCalled()
+      expect(mockPrisma.leaveGroup.update).not.toHaveBeenCalled()
+    })
+
+    it('타 회사 그룹이면 NotFoundException을 던진다', async () => {
+      mockPrisma.leaveGroup.findFirst.mockResolvedValue(null)
+
+      await expect(service.deleteGroup(COMPANY_ID, 'other-group')).rejects.toThrow(
+        NotFoundException,
+      )
     })
   })
 
   // ── deleteType ───────────────────────────────────────────────────────────────
 
   describe('deleteType', () => {
-    it('소프트 삭제 — isActive를 false로 변경한다', async () => {
+    it('사용 중이 아니면 소프트 삭제 — isActive를 false로 변경한다', async () => {
       mockPrisma.leaveType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.leaveBalance.count.mockResolvedValue(0) // 잔여 휴가 없음
       mockPrisma.leaveType.update.mockResolvedValue({ ...baseType, isActive: false })
 
       const result = await service.deleteType(COMPANY_ID, TYPE_ID)
 
       expect(result.isActive).toBe(false)
+      expect(mockPrisma.leaveBalance.count).toHaveBeenCalledWith({
+        where: { leaveTypeId: TYPE_ID, remainingDays: { gt: 0 } },
+      })
       expect(mockPrisma.leaveType.update).toHaveBeenCalledWith({
         where: { id: TYPE_ID },
         data: { isActive: false },
       })
+    })
+
+    it('잔여 휴가가 남은 직원이 있으면 ForbiddenException(LEAVE_TYPE_IN_USE)을 던지고 삭제하지 않는다', async () => {
+      mockPrisma.leaveType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.leaveBalance.count.mockResolvedValue(2) // 잔여 휴가 남은 직원 2명
+
+      await expect(service.deleteType(COMPANY_ID, TYPE_ID)).rejects.toThrow(ForbiddenException)
+      await expect(service.deleteType(COMPANY_ID, TYPE_ID)).rejects.toMatchObject({
+        response: { code: 'LEAVE_TYPE_IN_USE' },
+      })
+      expect(mockPrisma.leaveType.update).not.toHaveBeenCalled()
     })
 
     it('타 회사 유형이면 NotFoundException을 던진다', async () => {
@@ -404,11 +457,20 @@ describe('LeavesService', () => {
   // ── getBalance ───────────────────────────────────────────────────────────────
 
   describe('getBalance', () => {
+    // 관리자 권한 요청자 — 타인 잔액 조회 허용 경로 검증용
+    const adminRequester = {
+      sub: 'user-admin',
+      employeeId: 'admin-1',
+      companyId: COMPANY_ID,
+      accessLevel: AccessLevel.GENERAL_ADMIN,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+
     it('직원의 휴가 잔액 목록을 반환한다', async () => {
       mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
       mockPrisma.leaveBalance.findMany.mockResolvedValue([baseBalance])
 
-      const result = await service.getBalance(COMPANY_ID, EMPLOYEE_ID)
+      const result = await service.getBalance(COMPANY_ID, EMPLOYEE_ID, adminRequester)
 
       expect(result).toEqual([baseBalance])
       expect(mockPrisma.leaveBalance.findMany).toHaveBeenCalledWith(
@@ -419,7 +481,9 @@ describe('LeavesService', () => {
     it('존재하지 않는 직원이면 NotFoundException을 던진다', async () => {
       mockPrisma.employee.findFirst.mockResolvedValue(null)
 
-      await expect(service.getBalance(COMPANY_ID, 'nonexistent')).rejects.toThrow(NotFoundException)
+      await expect(
+        service.getBalance(COMPANY_ID, 'nonexistent', adminRequester),
+      ).rejects.toThrow(NotFoundException)
     })
   })
 

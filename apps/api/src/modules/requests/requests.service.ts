@@ -464,7 +464,14 @@ export class RequestsService {
               orderBy: { createdAt: 'asc' },
               select: { id: true },
             })
-            assigneeId = adminApprover?.id ?? requesterId
+            // 자기결재 방지: 본인 외 결재 가능한 관리자가 없으면 요청 자체를 거부한다.
+            if (!adminApprover) {
+              throw new BadRequestException({
+                code: 'REQUEST_NO_APPROVER',
+                message: '결재 가능한 관리자가 없습니다. 관리자에게 결재선 설정을 요청하세요.',
+              })
+            }
+            assigneeId = adminApprover.id
           }
 
           await tx.approvalStep.create({
@@ -560,7 +567,19 @@ export class RequestsService {
   // ── HR-07-04c 승인 규칙 삭제 (소프트) ────────────────────────────────────────
 
   async deleteApprovalRule(companyId: string, ruleId: string) {
-    await this.assertRuleBelongsToCompany(companyId, ruleId)
+    const rule = await this.assertRuleBelongsToCompany(companyId, ruleId)
+
+    // 참조무결성: 이 규칙 유형의 진행 중(PENDING) 요청이 있으면 삭제 차단.
+    // 진행 중 결재는 승인 시 규칙을 재참조하므로, 규칙 삭제 시 결재 흐름이 깨질 수 있다.
+    const pendingCount = await this.prisma.request.count({
+      where: { companyId, type: rule.requestType, status: 'PENDING' },
+    })
+    if (pendingCount > 0) {
+      throw new ForbiddenException({
+        code: 'APPROVAL_RULE_IN_USE',
+        message: '진행 중인 요청이 있어 승인 규칙을 삭제할 수 없습니다.',
+      })
+    }
 
     await this.prisma.approvalRule.update({
       where: { id: ruleId },
@@ -866,23 +885,23 @@ export class RequestsService {
         await this.applyLeaveModify(tx, companyId, employeeId, payload)
         break
       case 'LEAVE_DELETE':
-        await this.applyLeaveDelete(tx, companyId, payload)
+        await this.applyLeaveDelete(tx, companyId, employeeId, payload)
         break
       case 'SHIFT_CREATE':
         await this.applyShiftCreate(tx, companyId, employeeId, payload)
         break
       case 'SHIFT_MODIFY':
-        await this.applyShiftModify(tx, companyId, payload)
+        await this.applyShiftModify(tx, companyId, employeeId, payload)
         break
       case 'SHIFT_DELETE':
-        await this.applyShiftDelete(tx, companyId, payload)
+        await this.applyShiftDelete(tx, companyId, employeeId, payload)
         break
       case 'ATTENDANCE_EDIT':
       case 'ATTENDANCE_CREATE':
         await this.applyAttendanceUpsert(tx, companyId, employeeId, payload)
         break
       case 'ATTENDANCE_DELETE':
-        await this.applyAttendanceDelete(tx, companyId, payload)
+        await this.applyAttendanceDelete(tx, companyId, employeeId, payload)
         break
       case 'DEVICE_CHANGE':
         await tx.employee.update({
@@ -1022,8 +1041,9 @@ export class RequestsService {
       reason?: string
     }
 
+    // 소유권 검증: 요청자 본인의 휴가만 수정 가능 (타 직원 레코드 조작 차단)
     const leave = await tx.leave.findFirst({
-      where: { id: leaveId, employee: { companyId } },
+      where: { id: leaveId, employeeId, employee: { companyId } },
       include: { leaveType: { select: { deductionDays: true } } },
     })
     if (!leave) {
@@ -1062,12 +1082,18 @@ export class RequestsService {
   }
 
   /** LEAVE_DELETE 승인 → 휴가 삭제 + 잔액 복원 */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async applyLeaveDelete(tx: any, companyId: string, payload: Record<string, unknown>) {
+  private async applyLeaveDelete(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    companyId: string,
+    employeeId: string,
+    payload: Record<string, unknown>,
+  ) {
     const { leaveId } = payload as { leaveId: string }
 
+    // 소유권 검증: 요청자 본인의 휴가만 삭제 가능
     const leave = await tx.leave.findFirst({
-      where: { id: leaveId, employee: { companyId } },
+      where: { id: leaveId, employeeId, employee: { companyId } },
     })
     if (!leave) {
       throw new NotFoundException({ code: 'LEAVE_NOT_FOUND', message: '휴가를 찾을 수 없습니다.' })
@@ -1173,8 +1199,13 @@ export class RequestsService {
   }
 
   /** SHIFT_MODIFY 승인 → Shift 시간 수정 */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async applyShiftModify(tx: any, companyId: string, payload: Record<string, unknown>) {
+  private async applyShiftModify(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    companyId: string,
+    employeeId: string,
+    payload: Record<string, unknown>,
+  ) {
     const { shiftId, date, startTime, endTime } = payload as {
       shiftId: string
       date?: string
@@ -1182,8 +1213,9 @@ export class RequestsService {
       endTime?: string
     }
 
+    // 소유권 검증: 요청자 본인의 근무일정만 수정 가능
     const shift = await tx.shift.findFirst({
-      where: { id: shiftId, organization: { companyId } },
+      where: { id: shiftId, employeeId, organization: { companyId } },
     })
     if (!shift) {
       throw new NotFoundException({ code: 'SHIFT_NOT_FOUND', message: '근무일정을 찾을 수 없습니다.' })
@@ -1203,12 +1235,18 @@ export class RequestsService {
   }
 
   /** SHIFT_DELETE 승인 → Shift 삭제 */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async applyShiftDelete(tx: any, companyId: string, payload: Record<string, unknown>) {
+  private async applyShiftDelete(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    companyId: string,
+    employeeId: string,
+    payload: Record<string, unknown>,
+  ) {
     const { shiftId } = payload as { shiftId: string }
 
+    // 소유권 검증: 요청자 본인의 근무일정만 삭제 가능
     const shift = await tx.shift.findFirst({
-      where: { id: shiftId, organization: { companyId } },
+      where: { id: shiftId, employeeId, organization: { companyId } },
     })
     if (!shift) {
       throw new NotFoundException({ code: 'SHIFT_NOT_FOUND', message: '근무일정을 찾을 수 없습니다.' })
@@ -1244,7 +1282,8 @@ export class RequestsService {
     const dayEnd = new Date(`${date}T23:59:59.999`)
     const existing = attendanceId
       ? await tx.attendance.findFirst({
-          where: { id: attendanceId, employee: { companyId } },
+          // 소유권 검증: 요청자 본인의 출퇴근 기록만 정정 가능
+          where: { id: attendanceId, employeeId, employee: { companyId } },
         })
       : await tx.attendance.findFirst({
           where: {
@@ -1294,12 +1333,18 @@ export class RequestsService {
   }
 
   /** ATTENDANCE_DELETE 승인 → 출퇴근 기록 삭제 */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async applyAttendanceDelete(tx: any, companyId: string, payload: Record<string, unknown>) {
+  private async applyAttendanceDelete(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    companyId: string,
+    employeeId: string,
+    payload: Record<string, unknown>,
+  ) {
     const { attendanceId } = payload as { attendanceId: string }
 
+    // 소유권 검증: 요청자 본인의 출퇴근 기록만 삭제 가능
     const attendance = await tx.attendance.findFirst({
-      where: { id: attendanceId, employee: { companyId } },
+      where: { id: attendanceId, employeeId, employee: { companyId } },
     })
     if (!attendance) {
       throw new NotFoundException({
@@ -1358,6 +1403,14 @@ export class RequestsService {
     request: { id: string; companyId: string; requesterId: string; documentId: string | null },
     requester: JwtPayload,
   ) {
+    // 자기결재 방지: 본인이 신청한 요청은 본인이 결재할 수 없다 (관리자 포함).
+    if (requester.employeeId === request.requesterId) {
+      throw new ForbiddenException({
+        code: 'REQUEST_SELF_APPROVAL',
+        message: '본인이 신청한 요청은 본인이 결재할 수 없습니다.',
+      })
+    }
+
     if (
       requester.accessLevel === AccessLevel.SUPER_ADMIN ||
       requester.accessLevel === AccessLevel.GENERAL_ADMIN

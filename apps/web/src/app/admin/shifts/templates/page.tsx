@@ -33,6 +33,7 @@ import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import { useSnackbar } from '@/hooks/useSnackbar'
+import { getApiErrorMessage } from '@/lib/api-error'
 import { useConfirm } from '@/hooks/useConfirm'
 import {
   useShiftTypes,
@@ -141,8 +142,8 @@ export default function ShiftTemplatesPage() {
     try {
       await deleteMutation.mutateAsync(template.id)
       showSnackbar('삭제되었습니다.')
-    } catch {
-      showSnackbar('삭제 중 오류가 발생했습니다.', 'error')
+    } catch (e) {
+      showSnackbar(getApiErrorMessage(e, '삭제 중 오류가 발생했습니다.'), 'error')
     }
   }
 

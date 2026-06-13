@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { NotFoundException } from '@nestjs/common'
+import { NotFoundException, ForbiddenException } from '@nestjs/common'
 import { CustomTypesService } from './custom-types.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import {
@@ -49,6 +49,9 @@ const mockPrisma = {
     deleteMany: jest.fn(),
     createMany: jest.fn(),
   },
+  approvalRule: {
+    count: jest.fn(),
+  },
   $transaction: jest.fn(),
 }
 
@@ -67,6 +70,8 @@ describe('CustomTypesService', () => {
 
     service = module.get<CustomTypesService>(CustomTypesService)
     jest.clearAllMocks()
+    // 기본값: 사용 중인 승인 규칙 없음 (삭제 가드 통과)
+    mockPrisma.approvalRule.count.mockResolvedValue(0)
   })
 
   // ── findAll ────────────────────────────────────────────────────────────────
@@ -370,6 +375,7 @@ describe('CustomTypesService', () => {
   describe('remove', () => {
     it('소프트 삭제 — isActive를 false로 변경한다', async () => {
       mockPrisma.customRequestType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.approvalRule.count.mockResolvedValue(0)
       mockPrisma.customRequestType.update.mockResolvedValue({
         ...baseType,
         isActive: false,
@@ -386,6 +392,7 @@ describe('CustomTypesService', () => {
 
     it('소유 검증은 id + companyId 조건으로 수행된다', async () => {
       mockPrisma.customRequestType.findFirst.mockResolvedValue(baseType)
+      mockPrisma.approvalRule.count.mockResolvedValue(0)
       mockPrisma.customRequestType.update.mockResolvedValue(baseType)
 
       await service.remove(COMPANY_ID, TYPE_ID)
@@ -403,6 +410,26 @@ describe('CustomTypesService', () => {
         service.remove(COMPANY_ID, 'other-company-type'),
       ).rejects.toThrow(NotFoundException)
 
+      expect(mockPrisma.customRequestType.update).not.toHaveBeenCalled()
+    })
+
+    it('[참조무결성] 사용 중인 활성 승인 규칙이 있으면 ForbiddenException(CUSTOM_TYPE_IN_USE)을 던지고 update를 호출하지 않는다', async () => {
+      mockPrisma.customRequestType.findFirst.mockResolvedValue(baseType)
+      // 이 유형을 참조하는 활성 승인 규칙 존재
+      mockPrisma.approvalRule.count.mockResolvedValue(2)
+
+      await expect(service.remove(COMPANY_ID, TYPE_ID)).rejects.toThrow(
+        ForbiddenException,
+      )
+      await expect(service.remove(COMPANY_ID, TYPE_ID)).rejects.toMatchObject({
+        response: { code: 'CUSTOM_TYPE_IN_USE' },
+      })
+
+      // 활성 규칙 카운트 쿼리에 멀티테넌시 조건 포함
+      expect(mockPrisma.approvalRule.count).toHaveBeenCalledWith({
+        where: { customTypeId: TYPE_ID, companyId: COMPANY_ID, isActive: true },
+      })
+      // 삭제 차단 — 소프트 삭제 update 미호출
       expect(mockPrisma.customRequestType.update).not.toHaveBeenCalled()
     })
   })

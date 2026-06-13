@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import {
@@ -60,6 +60,16 @@ export class DocumentFormsService {
 
   async remove(companyId: string, formId: string) {
     await this.assertFormBelongsToCompany(companyId, formId)
+
+    // 참조무결성: 이 양식으로 작성된 문서가 있으면 삭제 차단.
+    // (Document.form은 onDelete: Cascade라 hard-delete 시 문서가 연쇄 삭제될 위험도 함께 방지)
+    const docCount = await this.prisma.document.count({ where: { formId, companyId } })
+    if (docCount > 0) {
+      throw new ForbiddenException({
+        code: 'FORM_IN_USE',
+        message: '이 양식으로 작성된 문서가 있어 삭제할 수 없습니다.',
+      })
+    }
 
     await this.prisma.documentForm.update({
       where: { id: formId },

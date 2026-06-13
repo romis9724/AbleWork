@@ -21,6 +21,9 @@
    - [5.5 메시지](#55-메시지)
    - [5.6 Discord 알림 연동](#56-discord-알림-연동)
 6. [권한 체계](#6-권한-체계)
+   - [6.4 데이터 무결성 · 삭제 정책](#64-데이터-무결성--삭제-정책-참조무결성)
+   - [6.5 결재 · 요청 보안 불변식](#65-결재--요청-보안-불변식)
+   - [6.6 추가 권고 (향후 과제)](#66-추가-권고-향후-과제--본-라운드-미구현)
 7. [API 설계](#7-api-설계)
 8. [모듈 간 연동 흐름](#8-모듈-간-연동-흐름)
 9. [알림 설계](#9-알림-설계)
@@ -869,6 +872,65 @@ notification_rules {
 | 메시지 자동화 설정 | | | ✓ | ✓ |
 | Discord/알림 설정 | | | | ✓ |
 | 조직관리자 권한 상세 설정 | | | | ✓ |
+
+### 6.4 데이터 무결성 · 삭제 정책 (참조무결성)
+
+마스터 엔티티는 소프트 삭제(`isActive=false`)를 원칙으로 하며, **"사용 중"이면 삭제를 차단**한다.
+차단 시 `403 Forbidden` + 도메인 에러코드/메시지를 반환한다. (멀티테넌시: 모든 검사 쿼리는 `companyId` 스코프 내에서 수행)
+프론트엔드는 이 **구체 사유 메시지를 토스트로 그대로 노출**한다(공용 `getApiErrorMessage` 헬퍼) — generic "삭제에 실패했습니다" 대신 차단 이유를 사용자에게 전달.
+
+| 엔티티 | 삭제 차단 조건 | 에러코드 |
+|---|---|---|
+| 조직 `Organization` | 하위 조직 존재 | `ORG_HAS_CHILDREN` |
+| 조직 `Organization` | 소속 활성 직원 존재 | `ORG_HAS_EMPLOYEES` |
+| 조직 `Organization` | 출퇴근 장소 존재 | `ORG_HAS_TIMECLOCK_AREAS` |
+| 조직 `Organization` | 근무일정 존재 | `ORG_HAS_SHIFTS` |
+| 직무 `Position` | 활성 직원에게 배정됨 | `POSITION_IN_USE` |
+| 근무유형 `ShiftType` | 사용 중인 템플릿/근무일정 존재 | `SHIFT_TYPE_IN_USE` |
+| 근무 템플릿 `ShiftTemplate` | 생성된 근무일정 존재 | `SHIFT_TEMPLATE_IN_USE` |
+| 휴가 유형 `LeaveType` | 잔여 휴가(`remainingDays>0`) 보유 직원 존재 | `LEAVE_TYPE_IN_USE` |
+| 휴가 그룹 `LeaveGroup` | 자식 유형에 잔여 휴가 보유 직원 존재 | `LEAVE_GROUP_IN_USE` |
+| **기안양식 `DocumentForm`** | 이 양식으로 작성된 문서 존재 (`Document.form`은 `Cascade`이므로 hard-delete 시 문서 연쇄삭제 위험까지 방지) | `FORM_IN_USE` |
+| **커스텀 요청유형 `CustomRequestType`** | 이 유형을 사용하는 활성 승인 규칙 존재 | `CUSTOM_TYPE_IN_USE` |
+| **승인 규칙 `ApprovalRule`** | 해당 유형의 진행 중(`PENDING`) 요청 존재 (승인 시 규칙 재참조) | `APPROVAL_RULE_IN_USE` |
+| **출퇴근 장소 `TimeclockArea`** | 이 장소로 기록된 출퇴근 존재 | `TIMECLOCK_AREA_IN_USE` |
+
+**휴가 그룹 cascade**: 그룹 삭제 시(사용 중이 아니면) 자식 `LeaveType`을 함께 soft-delete 한다(`$transaction`).
+
+**참조처가 없어 삭제가 안전한 기초 데이터**(가드 불필요, 검증 완료): 발생규칙 `LeaveAccrualRule`(자식 item만 `Cascade`, 잔액은 유형을 참조하므로 규칙 삭제와 무관), 표준화규칙 `StandardizationRule`(역참조 없음), 스케줄패턴 `SchedulePattern`(생성된 근무일정과 FK 분리), 공용결재선 `SharedApprovalLine`(`ApprovalLine.sharedLineRef` `SetNull`, 상신 시 단계가 복사되어 원본 삭제와 무관).
+
+**수정(update) 정책**: 기초 데이터 수정은 차단하지 않되, **기존 데이터는 스냅샷으로 보존**한다.
+- 기안양식 `fieldsSchema` 변경 → 기존 문서의 `content`는 작성 시점 값으로 보존(양식 스키마 변경이 과거 문서를 손상시키지 않음).
+- 휴가유형 `deductionDays` 변경 → 이미 승인된 휴가의 `daysUsed`는 불변(미래 신청부터 적용).
+- 커스텀 요청유형 `fields` 교체 → 기존 요청의 `payload` 스냅샷 보존.
+- 승인규칙 변경의 진행 중 요청 소급 방지(규칙 스냅샷)는 §6.6 향후 과제.
+
+**직원 퇴사(`deactivate`) 정합성:**
+- 해당 직원이 결재자(assignee)인 미결 결재(`ApprovalStep.status ∈ {PENDING, WAITING}`)가 있으면 퇴사를 차단한다 → `EMPLOYEE_HAS_PENDING_APPROVALS`. (결재 위임/처리 후 가능)
+- 퇴사 시 그 직원을 결재자(`approverId`)로 지정한 모든 조직의 `approverId`를 `null`로 해제한다(`$transaction`). → 비활성 직원이 결재자로 남는 고아 참조 방지.
+
+**삭제/수정 엔드포인트 권한 일관성** (생성과 동일 레벨로 정렬):
+- 근무 템플릿 삭제: `GENERAL_ADMIN` 이상
+- 출퇴근 장소 수정/삭제: `ORG_ADMIN` 이상
+- 근무일정 삭제: `ORG_ADMIN` 이상
+
+### 6.5 결재 · 요청 보안 불변식
+
+| 불변식 | 규칙 | 에러코드 |
+|---|---|---|
+| **레코드 소유권** | HR 요청의 승인 반영(`LEAVE/SHIFT/ATTENDANCE`의 `MODIFY/DELETE/EDIT`)은 대상 레코드가 **요청자 본인 소유**일 때만 수행한다. apply 단계 쿼리 `where`에 `employeeId`를 강제하여 타 직원 레코드 조작을 차단. | `LEAVE_NOT_FOUND` 등(소유 불일치 시 미발견 처리) |
+| **자기결재 금지 ①** | 요청 생성 시 본인 외 결재 가능한 관리자(`GENERAL_ADMIN` 이상)가 없으면 요청을 거부한다(자기 자신을 결재자로 fallback 하지 않는다). | `REQUEST_NO_APPROVER` |
+| **자기결재 금지 ②** | 결재 처리 시 `요청자 == 결재자`이면 차단한다(관리자 포함). | `REQUEST_SELF_APPROVAL` |
+| **휴가 잔액 조회** | 본인 또는 `ORG_ADMIN` 이상만 타 직원 잔액을 조회할 수 있다. | `LEAVE_BALANCE_FORBIDDEN` |
+
+### 6.6 추가 권고 (향후 과제 — 본 라운드 미구현)
+
+다음은 무결성/정합성 심화 권고로, 스키마 변경 또는 설계 결정이 필요해 별도 작업으로 분리한다:
+
+1. **스키마 FK 정책 명시화**: `Document.form` 관계가 `onDelete: Cascade` (운영상 폼은 soft-delete만 사용해 실 위험은 없으나 `Restrict` 권장). `ApprovalLine.sharedLineRef`의 `onDelete`를 스키마에 명시(`SetNull`)하여 DB 마이그레이션과 정합.
+2. **근무일정 확정(CONFIRMED) 정책 명문화**: 출퇴근 정정은 확정 시 결재로도 차단(`ATTENDANCE_ALREADY_CONFIRMED`)하나, 근무일정은 **결재가 변경의 정식 경로**이므로 확정 상태에서도 `SHIFT_MODIFY/DELETE` 승인을 허용한다(의도된 비대칭) — 정책으로 명문화.
+3. **결재 규칙 스냅샷**: 진행 중 요청에 결재 규칙 변경이 소급되지 않도록 `Request`에 `ruleId`(또는 규칙 스냅샷)를 저장.
+4. **비활성 마스터 데이터 조회 필터 일관성**: 직원 응답의 `Position.isActive`, 승인 규칙의 `CustomRequestType.isActive` 등 비활성 참조가 UI에 노출되지 않도록 조회 필터 일원화. 조직 계층 순환 참조 검출(parentId).
 
 ---
 

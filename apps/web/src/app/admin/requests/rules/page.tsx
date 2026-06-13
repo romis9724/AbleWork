@@ -31,6 +31,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import IconButton from '@mui/material/IconButton'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
+import { getApiErrorMessage } from '@/lib/api-error'
 import {
   useApprovalRules,
   useCreateApprovalRule,
@@ -137,8 +138,8 @@ export default function ApprovalRulesPage() {
       await deleteMutation.mutateAsync(deletingRule.id)
       setDeletingRule(null)
       showSnack('규칙이 삭제되었습니다.')
-    } catch {
-      showSnack('삭제에 실패했습니다.', 'error')
+    } catch (e) {
+      showSnack(getApiErrorMessage(e, '삭제에 실패했습니다.'), 'error')
     }
   }
 

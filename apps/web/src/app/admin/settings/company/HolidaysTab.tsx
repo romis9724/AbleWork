@@ -24,6 +24,7 @@ import {
   useCreateCompanyHoliday,
   useDeleteCompanyHoliday,
 } from '@/lib/query/companies'
+import { getApiErrorMessage } from '@/lib/api-error'
 
 interface HolidayForm {
   name: string
@@ -66,7 +67,7 @@ export default function HolidaysTab({ onResult }: HolidaysTabProps) {
   function handleDelete(id: string) {
     deleteMutation.mutate(id, {
       onSuccess: () => onResult('휴일이 삭제되었습니다.', 'success'),
-      onError: () => onResult('휴일 삭제에 실패했습니다.', 'error'),
+      onError: (e) => onResult(getApiErrorMessage(e, '휴일 삭제에 실패했습니다.'), 'error'),
     })
   }
 

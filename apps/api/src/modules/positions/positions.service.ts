@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CreatePositionDto } from './dto/create-position.dto'
 import { UpdatePositionDto } from './dto/create-position.dto'
@@ -45,6 +45,18 @@ export class PositionsService {
 
   async remove(companyId: string, id: string) {
     await this.assertPosition(companyId, id)
+
+    // 참조무결성: 활성 직원에게 배정된 직무는 삭제 차단
+    // (employee 관계를 통해 companyId까지 검증하여 멀티테넌시 방어)
+    const inUseCount = await this.prisma.employeePosition.count({
+      where: { positionId: id, employee: { companyId, isActive: true } },
+    })
+    if (inUseCount > 0) {
+      throw new ForbiddenException({
+        code: 'POSITION_IN_USE',
+        message: '이 직무가 배정된 직원이 있어 삭제할 수 없습니다.',
+      })
+    }
 
     return this.prisma.position.update({
       where: { id, companyId },

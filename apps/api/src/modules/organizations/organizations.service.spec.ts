@@ -36,6 +36,15 @@ const mockPrisma = {
     update: jest.fn(),
     count: jest.fn(),
   },
+  employeeOrganization: {
+    count: jest.fn(),
+  },
+  timeclockArea: {
+    count: jest.fn(),
+  },
+  shift: {
+    count: jest.fn(),
+  },
 }
 
 describe('OrganizationsService', () => {
@@ -163,9 +172,12 @@ describe('OrganizationsService', () => {
   })
 
   describe('remove', () => {
-    it('하위 조직이 없으면 소프트 삭제한다', async () => {
+    it('의존성이 없으면 소프트 삭제한다', async () => {
       mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
       mockPrisma.organization.count.mockResolvedValue(0)
+      mockPrisma.employeeOrganization.count.mockResolvedValue(0)
+      mockPrisma.timeclockArea.count.mockResolvedValue(0)
+      mockPrisma.shift.count.mockResolvedValue(0)
       mockPrisma.organization.update.mockResolvedValue(makeOrg({ isActive: false }))
 
       await service.remove('org-1', 'company-1')
@@ -180,6 +192,42 @@ describe('OrganizationsService', () => {
       mockPrisma.organization.count.mockResolvedValue(2)
 
       await expect(service.remove('org-1', 'company-1')).rejects.toThrow(ForbiddenException)
+    })
+
+    it('소속 활성 직원이 있으면 ORG_HAS_EMPLOYEES로 차단한다', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
+      mockPrisma.organization.count.mockResolvedValue(0)
+      mockPrisma.employeeOrganization.count.mockResolvedValue(3)
+
+      await expect(service.remove('org-1', 'company-1')).rejects.toMatchObject({
+        response: { code: 'ORG_HAS_EMPLOYEES' },
+      })
+      expect(mockPrisma.organization.update).not.toHaveBeenCalled()
+    })
+
+    it('출퇴근 장소가 있으면 ORG_HAS_TIMECLOCK_AREAS로 차단한다', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
+      mockPrisma.organization.count.mockResolvedValue(0)
+      mockPrisma.employeeOrganization.count.mockResolvedValue(0)
+      mockPrisma.timeclockArea.count.mockResolvedValue(1)
+
+      await expect(service.remove('org-1', 'company-1')).rejects.toMatchObject({
+        response: { code: 'ORG_HAS_TIMECLOCK_AREAS' },
+      })
+      expect(mockPrisma.organization.update).not.toHaveBeenCalled()
+    })
+
+    it('근무일정이 있으면 ORG_HAS_SHIFTS로 차단한다', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
+      mockPrisma.organization.count.mockResolvedValue(0)
+      mockPrisma.employeeOrganization.count.mockResolvedValue(0)
+      mockPrisma.timeclockArea.count.mockResolvedValue(0)
+      mockPrisma.shift.count.mockResolvedValue(5)
+
+      await expect(service.remove('org-1', 'company-1')).rejects.toMatchObject({
+        response: { code: 'ORG_HAS_SHIFTS' },
+      })
+      expect(mockPrisma.organization.update).not.toHaveBeenCalled()
     })
 
     it('존재하지 않는 조직 삭제 시 NotFoundException을 던진다', async () => {

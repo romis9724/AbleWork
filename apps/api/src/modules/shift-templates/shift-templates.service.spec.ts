@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { NotFoundException, BadRequestException } from '@nestjs/common'
+import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common'
 import { ShiftTemplatesService } from './shift-templates.service'
 import { PrismaService } from '../../prisma/prisma.service'
 
@@ -31,6 +31,9 @@ const mockPrisma = {
   },
   shiftType: {
     findFirst: jest.fn(),
+  },
+  shift: {
+    count: jest.fn(),
   },
 }
 
@@ -143,19 +146,32 @@ describe('ShiftTemplatesService', () => {
   // ── remove ───────────────────────────────────────────────────────────────────
 
   describe('remove', () => {
-    it('isActive를 false로 설정하여 소프트 삭제한다', async () => {
+    it('사용 중인 근무일정이 없으면 isActive를 false로 설정하여 소프트 삭제한다', async () => {
       mockPrisma.shiftTemplate.findFirst.mockResolvedValue(baseTemplate)
+      mockPrisma.shift.count.mockResolvedValue(0)
       mockPrisma.shiftTemplate.update.mockResolvedValue({ ...baseTemplate, isActive: false })
 
       const result = await service.remove(COMPANY_ID, TEMPLATE_ID)
 
       expect(result.isActive).toBe(false)
+      expect(mockPrisma.shift.count).toHaveBeenCalledWith({
+        where: { templateId: TEMPLATE_ID },
+      })
       expect(mockPrisma.shiftTemplate.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: TEMPLATE_ID, companyId: COMPANY_ID }, // 멀티테넌시 방어
           data: { isActive: false },
         }),
       )
+    })
+
+    it('이 템플릿으로 생성된 근무일정이 있으면 ForbiddenException(SHIFT_TEMPLATE_IN_USE)을 던진다', async () => {
+      mockPrisma.shiftTemplate.findFirst.mockResolvedValue(baseTemplate)
+      mockPrisma.shift.count.mockResolvedValue(3)
+
+      await expect(service.remove(COMPANY_ID, TEMPLATE_ID)).rejects.toThrow(ForbiddenException)
+      // 차단 시 소프트 삭제가 수행되지 않아야 한다
+      expect(mockPrisma.shiftTemplate.update).not.toHaveBeenCalled()
     })
 
     it('존재하지 않는 템플릿이면 NotFoundException을 던진다', async () => {

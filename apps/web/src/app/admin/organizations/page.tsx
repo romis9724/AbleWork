@@ -36,6 +36,7 @@ import {
   type Organization,
 } from '@/lib/query/organizations'
 import { useEmployees } from '@/lib/query/employees'
+import { getApiErrorMessage } from '@/lib/api-error'
 
 // ──────────────────────────────────────────────
 // Schema
@@ -197,7 +198,7 @@ export default function OrganizationsPage() {
         if (selectedOrg?.id === deleteTarget.id) setSelectedOrg(null)
         showSnack('조직이 삭제되었습니다.', 'success')
       },
-      onError: () => showSnack('조직 삭제에 실패했습니다.', 'error'),
+      onError: (e) => showSnack(getApiErrorMessage(e, '조직 삭제에 실패했습니다.'), 'error'),
     })
   }
 
