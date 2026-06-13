@@ -20,6 +20,12 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# 공유 패키지는 TS 소스만 사용 — src에 컴파일 산출물 emit 방지 (tsconfig noEmit이 1차 방어)
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
+
 # Playwright 실행 산출물 (E2E 실패 아티팩트 — 추적 제외)
 test-results/
 playwright-report/
