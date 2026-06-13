@@ -66,8 +66,11 @@ pnpm add -D turbo
 ```json
 // packages/shared-types/package.json
 { "name": "@ablework/shared-types", "version": "0.0.0",
-  "main": "./src/index.ts", "exports": { ".": "./src/index.ts" } }
+  "main": "./src/index.ts", "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" } }
 ```
+
+> 각 공유 패키지에는 **`tsconfig.json`이 반드시 있어야 한다**(`tsconfig.base.json` 확장, `noEmit: true`). 없으면 `tsc --noEmit`가 입력을 못 찾아 루트 `pnpm typecheck`(turbo가 전 패키지에서 실행)가 실패한다. 공유 패키지는 TS 소스만 사용하므로 컴파일 산출물(`*.js`/`*.d.ts`)을 `src`에 두지 않는다(`.gitignore`로 차단).
 
 각 앱 `package.json`에 의존성 추가:
 ```json
@@ -618,7 +621,9 @@ JWT_SECRET=your-secret-min-32-chars  # middleware.ts Edge Runtime 검증용
 pnpm infra:up                                         # docker compose up -d
 pnpm --filter api prisma migrate dev                  # 최초 마이그레이션
 pnpm --filter api prisma db seed                      # 초기 데이터
-pnpm dev                                              # turbo dev (API + Web 병렬)
+# 개발 서버: API는 ts-node 직접 실행, Web은 next dev (README §5 참조 — pnpm dev 불가)
+cd apps/api && npx ts-node --project tsconfig.json --require tsconfig-paths/register src/main.ts
+pnpm --filter web dev                                 # Web (포트 3000, 핫리로드)
 pnpm --filter api prisma migrate dev --name <name>    # 마이그레이션 신규 생성
 pnpm --filter api prisma migrate deploy               # 프로덕션 적용
 pnpm --filter api prisma studio                       # DB GUI (localhost:5555)
