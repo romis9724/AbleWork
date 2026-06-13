@@ -72,7 +72,7 @@
 - ✅ **조직 계층 순환참조 검출** — `parentId` 수정 시 자기/하위 조직을 상위로 지정하면 `ORG_PARENT_CYCLE`(400) 차단. 단위 3건(자기참조·하위참조·정상재지정) 추가.
 - ✅ **근무일정 확정 비대칭 정책 확정** — 근태=확정 시 정정 차단 / 근무일정=확정 후에도 결재로 변경 허용(의도된 비대칭, 문서화).
 - ✅ **비활성 마스터 선택 노출 차단** — 직원 휴가신청 드롭다운에서 비활성 유형 제외(FE) + 서버는 비활성 유형 신청을 `LEAVE_TYPE_INACTIVE`로 차단(BE, 단위 1건). 원칙: 선택 드롭다운=active만 / 관리·이력=보존(커스텀유형·휴가유형 관리화면은 재활성화 토글 위해 비활성 표시 유지). 결재규칙은 정적 `REQUEST_TYPES` 사용 → 비활성 노출 경로 없음.
+- ✅ **스키마 FK 정책 명시화** — `documents.form_id`는 이미 `RESTRICT`, `approval_lines.shared_line_ref_id`는 이미 `SET NULL`임을 확인(초기 마이그레이션). `schema.prisma`에 `onDelete`를 명시 선언해 의도를 고정. Prisma 기본값과 동일 → `migrate diff` *empty*(마이그레이션·클라이언트 무영향). ※ §6.6 #1의 "Cascade" 전제는 별개 테이블 `form_access_rules.form_id`와 혼동된 오기였음.
 
 **대기 (마이그레이션 필요):**
-1. ⏳ 스키마 FK 정책(마이그레이션): `Document.form` `Cascade`→`Restrict`, `ApprovalLine.sharedLineRef` `SetNull` 명시.
-2. ⏳ 결재 규칙 스냅샷(`Request.ruleId`, 마이그레이션)으로 진행 중 요청 소급 방지.
+1. ⏳ 결재 규칙 스냅샷(`Request.ruleId`, 마이그레이션)으로 진행 중 요청 소급 방지 — 컬럼 적용 후 서비스 로직/테스트 작성 가능.
