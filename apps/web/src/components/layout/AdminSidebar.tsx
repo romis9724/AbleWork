@@ -92,11 +92,14 @@ const NAV_ITEMS: NavItem[] = [
     label: '전자결재',
     icon: <AssignmentIcon />,
     children: [
-      { label: '기안양식 관리', path: '/admin/approval/forms' },
-      { label: '공용 결재선', path: '/admin/approval/lines' },
-      { label: '문서담당 관리', path: '/admin/approval/doc-managers' },
-      { label: '문서대장', path: '/admin/approval/documents' },
+      // 카카오워크 전자결재 관리자 네비 순서 정합
       { label: '결재 현황', path: '/admin/approval/status' },
+      { label: '공통 관리', path: '/admin/approval/common' },
+      { label: '기안양식 관리', path: '/admin/approval/forms' },
+      { label: '문서담당 관리', path: '/admin/approval/doc-managers' },
+      { label: '공용 결재선 관리', path: '/admin/approval/lines' },
+      { label: '서비스 사용 설정', path: '/admin/approval/service-setting' },
+      { label: '문서대장', path: '/admin/approval/documents' },
       { label: '내 문서함', path: '/admin/approval/inbox' },
     ],
   },

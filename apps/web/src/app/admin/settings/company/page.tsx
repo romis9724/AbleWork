@@ -42,8 +42,6 @@ interface CompanySettings {
   impliedWorkEnabled?: boolean
   autoBreakEnabled?: boolean
   shiftBreakEnabled?: boolean
-  approvalServiceEnabled?: boolean
-  approvalPrevStepReject?: boolean
 }
 
 const WEEK_DAYS = [
@@ -133,7 +131,6 @@ export default function CompanySettingsPage() {
         <Tab label="휴게시간" />
         <Tab label="휴일" />
         <Tab label="권한" />
-        <Tab label="전자결재" />
       </Tabs>
 
       {/* 일반 탭 */}
@@ -378,46 +375,6 @@ export default function CompanySettingsPage() {
       )}
 
       {/* 전자결재 탭 — 서비스 사용 설정 */}
-      {tab === 6 && (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-          <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <SwitchField
-              label="전자결재 서비스 사용"
-              checked={form.approvalServiceEnabled ?? true}
-              onChange={(v) => set('approvalServiceEnabled', v)}
-            />
-            <Alert severity="info">
-              사용 안 함으로 설정하면 기안 작성·결재함·양식·결재선 등 전자결재 기능 전체가
-              비활성화됩니다. (인사/근태 요청의 결재 처리는 영향받지 않습니다.)
-            </Alert>
-
-            <SwitchField
-              label="전단계 반려 허용"
-              checked={form.approvalPrevStepReject ?? true}
-              onChange={(v) => set('approvalPrevStepReject', v)}
-            />
-            <Alert severity="info">
-              전단계 반려는 결재자가 직전 결재자에게 결재를 되돌리는 기능입니다. 사용 안 함으로
-              설정하면 결재 처리 시 전단계 반려가 차단됩니다.
-            </Alert>
-            <Alert severity="info">
-              문서번호 패턴에 <b>{'{ABBR}'}</b> 토큰을 쓰면 양식의 ‘문서번호 약어’가 치환됩니다.
-              (예: <code>{'{ABBR}-{YYYY}-{SEQ:4}'}</code>)
-            </Alert>
-
-            <Box>
-              <Button
-                variant="contained"
-                onClick={() => handleSave(['approvalServiceEnabled', 'approvalPrevStepReject'])}
-                disabled={saveMutation.isPending}
-              >
-                저장
-              </Button>
-            </Box>
-          </CardContent>
-        </Card>
-      )}
-
       <Snackbar
         open={snack.open}
         autoHideDuration={3000}
