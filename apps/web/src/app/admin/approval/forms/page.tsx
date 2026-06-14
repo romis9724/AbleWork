@@ -97,12 +97,13 @@ const DEFAULT_VALUES: FormValues = {
 
 const DEFAULT_PATTERN = 'HR-{YYYY}-{SEQ:4}'
 
-/** 문서번호 패턴 미리보기 — {YYYY},{MM},{SEQ:n} 토큰 치환 */
-function previewNumber(pattern: string): string {
+/** 문서번호 패턴 미리보기 — {YYYY},{MM},{ABBR},{SEQ:n} 토큰 치환 */
+function previewNumber(pattern: string, abbr = ''): string {
   const now = new Date()
   return pattern
     .replace(/\{YYYY\}/g, String(now.getFullYear()))
     .replace(/\{MM\}/g, String(now.getMonth() + 1).padStart(2, '0'))
+    .replace(/\{ABBR\}/g, abbr)
     .replace(/\{SEQ:(\d+)\}/g, (_m, digits: string) => '1'.padStart(Number(digits), '0'))
 }
 
@@ -160,7 +161,7 @@ function NumberRuleDialog({ form, onClose, onSuccess }: NumberRuleDialogProps) {
               fullWidth
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
-              helperText="사용 가능 토큰: {YYYY} 연도, {MM} 월, {SEQ:4} 일련번호(자릿수)"
+              helperText="사용 가능 토큰: {YYYY} 연도, {MM} 월, {ABBR} 양식 약어, {SEQ:4} 일련번호(자릿수)"
             />
             <FormControlLabel
               control={
@@ -170,7 +171,7 @@ function NumberRuleDialog({ form, onClose, onSuccess }: NumberRuleDialogProps) {
             />
             <Box sx={{ p: 1.5, bgcolor: 'background.default', borderRadius: 1 }}>
               <Typography variant="caption" color="text.secondary">미리보기</Typography>
-              <Typography variant="body1" fontWeight={700}>{previewNumber(pattern)}</Typography>
+              <Typography variant="body1" fontWeight={700}>{previewNumber(pattern, form.abbreviation ?? '')}</Typography>
             </Box>
           </Box>
         )}
