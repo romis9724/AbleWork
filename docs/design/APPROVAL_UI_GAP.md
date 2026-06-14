@@ -13,7 +13,7 @@
 | 공용 결재선 관리 | partial | **등록 팝업 조직도 트리 부재**(평탄 Autocomplete), 수신/참조/공람 카운트 컬럼·DnD 부재 |
 | 서비스 사용 설정 | partial | 독립 메뉴 아님(설정 탭), 라디오 대신 스위치 |
 | 기안 작성 | **거의 match** | ✅ 풀페이지 승격(메타표+섹션+WYSIWYG)·양식함 카드그리드 진입·본인결재금지·재기안 진입. 잔여: 결재선 조직트리 [결재선 설정] 팝업(C3), 공람/참조 사후추가(task#30) |
-| 기안 결재 | partial | **좌측 계층 네비 트리 부재**(평면 탭), 통합 [결재하기] 라디오 모달 부재, 조회 필터·컬럼형 테이블 부재 |
+| 기안 결재 | partial | ✅ 상세 PAGE 승격(`DocumentDetailView`, 하단 결재 푸터). 잔여: 좌측 계층 네비 트리(B), 통합 [결재하기] 라디오 LAYER_POPUP(C1/C2) |
 
 ## 1. 최우선 — 트리 구조 (사용자 강조)
 - **조직도 트리(접기/펼치기/체크박스)**: 공용 결재선 등록 팝업·기안 작성 결재선 설정·문서 담당 관리 좌측. 공유 위젯으로 정합.
@@ -55,7 +55,7 @@
 | A2 | 기안양식 수정 위저드 | PAGE | 동일 Dialog | `/admin/approval/forms/[id]/edit` 페이지 승격 |
 | A3 | 기안 양식 선택(양식함) | PAGE(카드 그리드) | ✅ 해소 → 신규 작성 진입 시 양식함 카드 그리드(분류 필터) 표시 → 선택 시 작성 폼 전환 |
 | A4 | 기안 작성/상신 | PAGE(풀페이지) | ✅ 해소 → `DocumentComposeForm`(풀페이지: 메타정보표+결재선 섹션+기안내용 WYSIWYG+sticky 푸터) + 라우트 `/me/documents/new`·`/[id]/edit`·`/admin/approval/inbox/new`·`/[id]/edit`. 본인 결재자 지정 금지 가드, 재기안(`?from=`)·이어쓰기·재상신 일원화. `DocumentComposeDialog` 제거 |
-| A5 | 기안 상세 | PAGE(하단 목록/결재 푸터) | Dialog sm(DocumentDetailDialog) | `/me/documents/[id]`·`/admin/approval/documents/[id]` 상세 페이지 승격 (다음) |
+| A5 | 기안 상세 | PAGE(하단 목록/결재 푸터) | ✅ 해소 → `DocumentDetailView` + 라우트 `/me/documents/[id]`·`/admin/approval/inbox/[id]`·`/admin/approval/documents/[id]`·`/admin/approval/status/[id]`. 결재 액션 하단 sticky 푸터(승인/반려/전결/전단계반려/회수/결재취소), drafter 셸은 재상신·재기안 노출. 4개 호출부 네비게이션 전환, `DocumentDetailDialog` 제거 |
 | B4 | 서비스 사용 설정 | PAGE(독립 메뉴) | ✅ 해소 → `/admin/approval/service-setting` 페이지(라디오) + 공통 관리 `/admin/approval/common` 페이지 분리, 회사설정 전자결재 탭 제거, 사이드바 PDF 순서 정합 |
 | B1~B3 | 문서함(기안/결재/공람/참조/수신/대장) | PAGE(좌측 네비 트리 전환) | MUI Tabs 평면 | 좌측 네비 라우트 분리(또는 me 모바일 탭 유지 결정) |
 
@@ -72,7 +72,7 @@
 - **LAYER_POPUP**: 결재선·공람·참조·협조 대상 선택(조직 트리), 결재 처리(결재하기/반송), 기초 분류 CRUD, 공용결재선 검색, 대리결재자, 파괴적 액션 확인(ConfirmDialog).
 - **INLINE_SECTION**: 검색 필터 바, 데이터 테이블+페이지네이션, 설정 토글 행, 첨부 영역.
 - 제외: NumberRuleDialog(PDF 미수록 자체 기능), 상태 전이 다이어그램(설명 삽화).
-- 권장 처리 순서: ✅ **A3/A4(양식함 진입·작성 PAGE)** → A5(상세 PAGE) → C1/C2(결재·반송 팝업) → C3~C7(결재선 설정 팝업) → A1/A2(양식 등록·수정 페이지) → B(문서함 IA).
+- 권장 처리 순서: ✅ **A3/A4(양식함 진입·작성 PAGE)** → ✅ **A5(상세 PAGE)** → C1/C2(결재·반송 팝업) → C3~C7(결재선 설정 팝업) → A1/A2(양식 등록·수정 페이지) → B(문서함 IA).
 
 ## 보류 (NEVER/모델 사유)
 - 공용 결재선 '결재권자' 동적 탭(조직 leader 모델 신규) — 단기 보류, DEPT_* 로 부분 대응.
