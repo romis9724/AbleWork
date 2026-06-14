@@ -7,6 +7,32 @@
 
 ---
 
+## 0. 구현 현황 (2026-06-14 코드 재검증)
+
+> 본 문서는 2026-06-12 시점의 **문제 스냅샷**이다. 이후 Wave 1~7 구현으로 **대부분 해소**되었으며, 아래는 8개 클러스터 병렬 코드 검증 결과다. (✅완료 / 🟡부분·잔존 / ⏳미구현)
+
+**총평: Phase 1 핵심 결함은 사실상 모두 해소됨.** "등록만 되고 연계 안 됨"의 4대 원인(C1 승인→데이터 반영, C2 결재 시드/자동승인, C3 설정 계층, C4 계약 불일치)이 전부 ✅.
+
+| 영역 | 상태 | 비고 |
+|---|:--:|---|
+| **C1** 승인→실데이터 반영 | ✅ | `requests.service.ts` `applyApprovedRequest`가 LEAVE/SHIFT/ATTENDANCE/DEVICE를 동일 `$transaction`에서 적용(잔액 차감/복원 포함) |
+| **C2** 결재 시드 + 자동승인 폴백 | ✅ | `seed.ts` documentForm 6종·approvalRule 3종(isAutoApprove:false). 규칙 부재 시 기본 결재선 생성(무규칙 즉시승인 제거) |
+| **C3** CompanySettings + 설정 API | ✅ | `CompanySettingsService`(캐싱), GET/PATCH `/company-settings`·`/permission-settings`, `allow_unscheduled` 실제 enforcement |
+| **C4** FE↔BE 계약 21건 | ✅ | #1~#21 전부 필드명 정합 확인(좌표·근로정보·employmentType·shifts·휴가발생·요청필터·일괄승인·리포트·메시지·알림·readAt 등) |
+| **C5** 미존재 엔드포인트 | ✅ (1건 🟡) | standardization-rules·custom-types·company/permission-settings·approval-rules PATCH/DELETE·휴가 그룹/유형/규칙 수정삭제·POST /leaves·attendances/unconfirm·forgot/reset-password 전부 신설. 🟡 `wage-info`는 **독립 모듈 미신설**이나 기능은 `employees/:id/wage-info`로 제공(404 해소) |
+| **C6** 보안 | ✅ (1건 🟡) | C6-1 employees 권한가드(자기승격 차단)·C6-2 shifts 소속검증·C6-3 clock-in 소속검증·C6-5 결재 계층 정확화 ✅. 🟡 **C6-4 `GET /shifts` 서버측 직원 스코핑 미강제** — FE는 본인 employeeId 필터를 보내나 BE는 필터 생략 시 회사 전체 반환(사내 일정 가시성, 잔존) |
+| **C7** 이벤트 시스템 | ✅ (1건 🟡) | EVENTS 상수·`leave.requested` 발행명 정합·고아 이벤트(NOTIFIABLE_EVENTS SSOT)·MailService 주입 ✅. 🟡 `sendInviteCode` 호출처 부재(초대코드 이메일 데드코드 잔존) |
+| **C8** Cron/배치 | ✅ | 휴가 자동발생(`@Cron 0 1 * * *`, 근속구간·그룹중복 버그 수정)·결근 배치(30분, 멱등)·메시지 자동화(트리거 조건·당일 멱등) 전부 동작 |
+| **도메인표** 8개 | ✅ | 조직/직원/근무일정/출퇴근/휴가/요청결재/리포트메시지/회사설정 핵심 갭 해소(조직 `address` 텍스트 컬럼만 부수 미추가) |
+
+**잔존(후속 권고):**
+- 🟡 `GET /shifts` 서버측 직원 스코핑 — EMPLOYEE 호출 시 본인 일정만 반환하도록 BE 강제(C6-4)
+- 🟡 `wage-info` 독립 모듈화(현재 employees 모듈 내 제공으로 기능상 충족)
+- 🟡 `sendInviteCode` 데드코드 정리 또는 초대코드 이메일 발송 배선(C7)
+- 조직 `address` 텍스트 컬럼(부수), 양식별 기본결재선 `defaultLineId`는 Phase 2 갭(AP-01-03)로 이관
+
+---
+
 ## 1. 총평
 
 **사용자 보고("데이터 등록만 되고 실제 연계가 안 된다")는 정확하며, 구조적 원인이 확인됨.**
