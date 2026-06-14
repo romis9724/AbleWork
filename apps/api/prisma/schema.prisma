@@ -64,6 +64,8 @@ model Organization {
   depth      Int      @default(0)
   sortOrder  Int      @default(0) @map("sort_order")
   approverId String?  @map("approver_id")
+  // AP-04-07 문서담당자 (부서별). null이면 approverId(팀장)로 fallback.
+  docManagerId String? @map("doc_manager_id")
   isActive   Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
@@ -72,6 +74,8 @@ model Organization {
   parent           Organization?          @relation("OrgHierarchy", fields: [parentId], references: [id])
   children         Organization[]         @relation("OrgHierarchy")
   approver         Employee?              @relation("OrgApprover", fields: [approverId], references: [id])
+  docManager       Employee?              @relation("OrgDocManager", fields: [docManagerId], references: [id], onDelete: SetNull)
+  deptSteps        ApprovalStep[]         @relation("StepDept")
   employeeOrgs     EmployeeOrganization[]
   timeclockAreas   TimeclockArea[]
   shifts           Shift[]
@@ -179,6 +183,7 @@ model Employee {
   proxyProxySettings    ProxySettings[]            @relation("ProxyAgent")
   approvalHistories     ApprovalHistory[]
   managedOrgs           Organization[]             @relation("OrgApprover")
+  managedDocOrgs        Organization[]             @relation("OrgDocManager")
   confirmedShifts       Shift[]                    @relation("ShiftConfirmer")
   createdShifts         Shift[]                    @relation("ShiftCreator")
   confirmedAttendances  Attendance[]               @relation("AttendanceConfirmer")
@@ -801,6 +806,8 @@ model ApprovalStep {
   lineId      String    @map("line_id")
   role        String    @db.VarChar(30)
   assigneeId  String    @map("assignee_id")
+  // AP-04-02/06 부서협조·부서수신 대상 부서 (DEPT_* role에서만 설정; assignee는 해당 부서 문서담당자)
+  organizationId String? @map("organization_id")
   stepOrder   Int       @map("step_order")
   isParallel  Boolean   @default(false) @map("is_parallel")
   status      String    @default("PENDING") @db.VarChar(20)
@@ -813,6 +820,7 @@ model ApprovalStep {
 
   line     ApprovalLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
   assignee Employee     @relation("StepAssignee", fields: [assigneeId], references: [id])
+  organization Organization? @relation("StepDept", fields: [organizationId], references: [id], onDelete: SetNull)
   proxy    Employee?    @relation("StepProxy", fields: [proxyId], references: [id])
 
   @@index([assigneeId, status])

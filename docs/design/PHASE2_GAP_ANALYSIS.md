@@ -10,6 +10,7 @@
 
 ## 구현 진행 (2026-06-14 업데이트)
 
+- ✅ **G14 AP-04-07 문서담당자 완료** (마이그레이션 협업): 스키마에 `Organization.docManagerId`(+`ApprovalStep.organizationId`) 추가 — 마이그레이션 `20260614062318_g14_dept_collab_doc_manager`. 조직 관리 화면에 문서담당자 지정(미지정 시 팀장=approverId fallback 표기). 부서협조/부서수신(AP-04-02/06)에서 이 담당자로 라우팅 예정.
 - ✅ **G16 문서함 검색 UI 배선 완료**: BE `findAll`이 `search`(title/docNumber contains)를 이미 지원하나 FE 미배선이던 갭. `DocumentListParams.search` 추가 + 문서함 뷰(`DocumentBoxesView`, /me·/admin 공용)에 디바운스(300ms) 검색 입력. BE 무변경.
 - ✅ **G11/G12 AP-01-02 양식 동적 필드 설계 + 작성 시 값 입력 완료**: 알림과 동일하게 단일 출처 `DocumentFieldDef`/`readFormFields`(@ablework/shared-constants) 신설(text/textarea/number/date/select). 양식 관리 다이얼로그에 `FormFieldsBuilder`(필드 추가/유형/필수/옵션) → `fieldsSchema:{fields}` 저장(BE DTO는 이미 수용). 기안 작성 다이얼로그는 선택 양식의 필드를 `DynamicFormFields`로 동적 렌더 → 값 검증(필수) 후 `content`에 key별 저장. 상세 다이얼로그는 라벨 매핑해 제출 값 표시. (파일 업로드 타입은 스토리지 연동 필요 → 후속)
 - ✅ **G16 AP-05-06 결재 현황 + 관리자 강제 삭제 완료**: 관리자 전체 조회는 기존 `ledger` box(전 상태) 재사용. 신규 `DELETE /documents/:id/force`(GENERAL_ADMIN↑) — 임의 상태 문서 강제 삭제(이력 선삭제 후 lines→steps Cascade). **HR 요청 연결 문서는 차단**(`DOCUMENT_LINKED_TO_REQUEST` — request.documentId가 SetNull로 끊겨 워크플로 깨짐 방지). FE `/admin/approval/status` 화면(문서대장 미러 + 강제삭제 + 가드 메시지 토스트) + 사이드바 등록. 단위 4건.

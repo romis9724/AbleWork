@@ -5,6 +5,8 @@ export const CreateOrganizationSchema = z.object({
   parentId: z.string().uuid().optional(),
   sortOrder: z.number().int().min(0).default(0),
   approverId: z.string().uuid().optional(),
+  // AP-04-07 문서담당자 (미지정 시 approverId/팀장 fallback)
+  docManagerId: z.string().uuid().optional(),
 })
 
 export type CreateOrganizationDto = z.infer<typeof CreateOrganizationSchema>

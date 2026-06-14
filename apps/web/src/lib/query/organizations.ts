@@ -10,6 +10,7 @@ export interface Organization {
   depth: number
   sortOrder: number
   approverId: string | null
+  docManagerId: string | null
   isActive: boolean
   children?: Organization[]
 }
