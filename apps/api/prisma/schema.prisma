@@ -638,11 +638,14 @@ model Request {
   payload     Json
   status      String   @default("PENDING") @db.VarChar(20)
   documentId  String?  @unique @map("document_id")
+  // §6.6 #3 결재 규칙 스냅샷 — 요청 접수 시 적용된 규칙 id 기록(감사 추적, 규칙 변경 소급 방지)
+  ruleId      String?  @map("rule_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   requester  Employee         @relation(fields: [requesterId], references: [id])
   document   Document?        @relation(fields: [documentId], references: [id])
+  rule       ApprovalRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
   approvals  RequestApproval[]
 
   @@index([requesterId, status])
@@ -668,6 +671,7 @@ model ApprovalRule {
   company    Company             @relation(fields: [companyId], references: [id])
   customType CustomRequestType?  @relation(fields: [customTypeId], references: [id])
   details    ApprovalRuleDetail[]
+  requests   Request[]
 
   @@map("approval_rules")
 }
@@ -714,6 +718,8 @@ model DocumentForm {
   name            String  @db.VarChar(200)
   category        String? @db.VarChar(100)
   fieldsSchema    Json    @map("fields_schema")
+  // AP-01-03 양식별 기본 결재선 — 상신 시 결재선 미지정이면 이 공용 결재선을 기본 적용
+  defaultLineId   String? @map("default_line_id")
   sortOrder       Int     @default(0) @map("sort_order")
   allowReDraft    Boolean @default(false) @map("allow_re_draft")
   allowPreApproval Boolean @default(false) @map("allow_pre_approval")
@@ -723,6 +729,7 @@ model DocumentForm {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   company         Company              @relation(fields: [companyId], references: [id])
+  defaultLine     SharedApprovalLine?  @relation("FormDefaultLine", fields: [defaultLineId], references: [id], onDelete: SetNull)
   accessRules     FormAccessRule[]
   numberRules     DocumentNumberRule[]
   documents       Document[]
@@ -870,6 +877,7 @@ model SharedApprovalLine {
 
   company       Company        @relation(fields: [companyId], references: [id])
   approvalLines ApprovalLine[]
+  defaultForForms DocumentForm[] @relation("FormDefaultLine")
 
   @@map("shared_approval_lines")
 }

@@ -59,6 +59,8 @@ export interface DocumentForm {
   id: string
   name: string
   category?: string | null
+  /** AP-01-03 양식별 기본 결재선(공용 결재선 id) */
+  defaultLineId?: string | null
   allowReDraft: boolean
   allowPreApproval: boolean
   sortOrder: number

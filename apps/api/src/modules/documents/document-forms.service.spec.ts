@@ -50,6 +50,9 @@ const mockPrisma = {
     create: jest.fn(),
     update: jest.fn(),
   },
+  sharedApprovalLine: {
+    findFirst: jest.fn(),
+  },
   document: {
     count: jest.fn(),
   },
@@ -169,6 +172,29 @@ describe('DocumentFormsService', () => {
           }),
         }),
       )
+    })
+
+    it('기본 결재선(defaultLineId)이 자사 공용 결재선이면 저장한다 (AP-01-03)', async () => {
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue({ id: 'line-1' })
+      mockPrisma.documentForm.create.mockResolvedValue(baseForm)
+
+      await service.create(COMPANY_ID, { ...dto, defaultLineId: 'line-1' })
+
+      expect(mockPrisma.sharedApprovalLine.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'line-1', companyId: COMPANY_ID }, select: { id: true } }),
+      )
+      expect(mockPrisma.documentForm.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ defaultLineId: 'line-1' }) }),
+      )
+    })
+
+    it('기본 결재선이 타사/미존재면 SHARED_LINE_NOT_FOUND로 거부한다', async () => {
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.create(COMPANY_ID, { ...dto, defaultLineId: 'other-line' }),
+      ).rejects.toMatchObject({ response: { code: 'SHARED_LINE_NOT_FOUND' } })
+      expect(mockPrisma.documentForm.create).not.toHaveBeenCalled()
     })
 
     it('category가 없으면 null로 저장한다', async () => {

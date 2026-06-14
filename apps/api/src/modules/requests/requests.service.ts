@@ -289,18 +289,7 @@ export class RequestsService {
 
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
-      // 1. Request 레코드 생성
-      const request = await tx.request.create({
-        data: {
-          companyId,
-          requesterId,
-          type: dto.type,
-          payload: dto.payload,
-          status: 'PENDING',
-        },
-      })
-
-      // 2. 승인 규칙 조회 (type 매칭, 조직/직무 범위 필터)
+      // 1. 승인 규칙 조회 (type 매칭, 조직/직무 범위 필터) — Request보다 먼저 결정해 ruleId 스냅샷에 기록
       const requesterEmployee = await tx.employee.findFirst({
         where: { id: requesterId, companyId },
         include: {
@@ -346,6 +335,18 @@ export class RequestsService {
           requesterPositionIds.some((id: string) => posScope.includes(id))
 
         return orgMatch && posMatch
+      })
+
+      // 2. Request 레코드 생성 (§6.6 #3 적용 규칙 id 스냅샷 — 규칙 변경 소급 방지·감사)
+      const request = await tx.request.create({
+        data: {
+          companyId,
+          requesterId,
+          type: dto.type,
+          payload: dto.payload,
+          status: 'PENDING',
+          ruleId: applicableRule?.id ?? null,
+        },
       })
 
       // 3. 명시적으로 자동 승인이 설정된 규칙만 자동 승인.

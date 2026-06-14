@@ -383,6 +383,31 @@ describe('DocumentsService', () => {
       })
     })
 
+    it('결재선 미지정 시 양식 기본 결재선(defaultLineId)을 적용한다 (AP-01-03)', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(
+        makeDocument({
+          form: { id: FORM_ID, allowReDraft: false, allowPreApproval: false, defaultLineId: 'def-line' },
+        }),
+      )
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue({
+        id: 'def-line',
+        companyId: COMPANY_ID,
+        steps: [{ role: 'APPROVER', assigneeId: 'approver-1', stepOrder: 0 }],
+      })
+      mockPrisma.documentNumberRule.findFirst.mockResolvedValue(null)
+      mockPrisma.document.count.mockResolvedValue(0)
+
+      // dto.steps/sharedLineId 없이, DRAFT 보관 steps도 없음(approvalLines: [])
+      await service.submit(COMPANY_ID, DOCUMENT_ID, {}, makeUser())
+
+      expect(mockPrisma.sharedApprovalLine.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'def-line', companyId: COMPANY_ID } }),
+      )
+      expect(mockPrisma.approvalLine.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ isShared: true, sharedLineRefId: 'def-line' }),
+      })
+    })
+
     it('기안자 본인이 아니면 403', async () => {
       mockPrisma.document.findFirst.mockResolvedValue(makeDocument())
 

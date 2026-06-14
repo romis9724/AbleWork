@@ -26,12 +26,14 @@ export class DocumentFormsService {
   // ── 양식 생성 (GENERAL_ADMIN) ────────────────────────────────────────────────
 
   async create(companyId: string, dto: CreateDocumentFormDto) {
+    await this.assertDefaultLineValid(companyId, dto.defaultLineId)
     return this.prisma.documentForm.create({
       data: {
         companyId,
         name: dto.name,
         category: dto.category ?? null,
         fieldsSchema: dto.fieldsSchema as Prisma.InputJsonValue,
+        defaultLineId: dto.defaultLineId ?? null,
         sortOrder: dto.sortOrder,
         allowReDraft: dto.allowReDraft,
         allowPreApproval: dto.allowPreApproval,
@@ -43,6 +45,9 @@ export class DocumentFormsService {
 
   async update(companyId: string, formId: string, dto: UpdateDocumentFormDto) {
     await this.assertFormBelongsToCompany(companyId, formId)
+    if (dto.defaultLineId !== undefined) {
+      await this.assertDefaultLineValid(companyId, dto.defaultLineId)
+    }
 
     const { fieldsSchema, ...rest } = dto
     return this.prisma.documentForm.update({
@@ -111,6 +116,21 @@ export class DocumentFormsService {
   }
 
   // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
+
+  /** 양식별 기본 결재선이 지정된 경우 자사 공용 결재선인지 검증 (AP-01-03) */
+  private async assertDefaultLineValid(companyId: string, defaultLineId?: string | null) {
+    if (!defaultLineId) return
+    const line = await this.prisma.sharedApprovalLine.findFirst({
+      where: { id: defaultLineId, companyId },
+      select: { id: true },
+    })
+    if (!line) {
+      throw new NotFoundException({
+        code: 'SHARED_LINE_NOT_FOUND',
+        message: '기본 결재선으로 지정한 공용 결재선을 찾을 수 없습니다.',
+      })
+    }
+  }
 
   /** 양식이 해당 회사 소속인지 검증 — 멀티테넌시 */
   private async assertFormBelongsToCompany(companyId: string, formId: string) {

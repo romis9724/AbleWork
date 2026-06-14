@@ -15,6 +15,7 @@ import Divider from '@mui/material/Divider'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
+import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
@@ -44,6 +45,7 @@ import {
   useDeleteDocumentForm,
   useDocumentNumberRule,
   useSaveDocumentNumberRule,
+  useSharedApprovalLines,
   type DocumentForm,
 } from '@/lib/query/documents'
 import FormFieldsBuilder from '@/components/approval/FormFieldsBuilder'
@@ -52,6 +54,7 @@ import { readFormFields, type DocumentFieldDef } from '@ablework/shared-constant
 const schema = z.object({
   name: z.string().min(1, '양식명을 입력해주세요'),
   category: z.string().optional(),
+  defaultLineId: z.string().optional(),
   sortOrder: z.number().int().min(0),
   allowReDraft: z.boolean(),
   allowPreApproval: z.boolean(),
@@ -62,6 +65,7 @@ type FormValues = z.infer<typeof schema>
 const DEFAULT_VALUES: FormValues = {
   name: '',
   category: '',
+  defaultLineId: '',
   sortOrder: 0,
   allowReDraft: true,
   allowPreApproval: false,
@@ -160,6 +164,7 @@ function NumberRuleDialog({ form, onClose, onSuccess }: NumberRuleDialogProps) {
 
 export default function ApprovalFormsPage() {
   const { data: forms = [], isLoading } = useDocumentForms()
+  const { data: sharedLines = [] } = useSharedApprovalLines()
   const createMutation = useCreateDocumentForm()
   const updateMutation = useUpdateDocumentForm()
   const deleteMutation = useDeleteDocumentForm()
@@ -192,6 +197,7 @@ export default function ApprovalFormsPage() {
     reset({
       name: form.name,
       category: form.category ?? '',
+      defaultLineId: form.defaultLineId ?? '',
       sortOrder: form.sortOrder,
       allowReDraft: form.allowReDraft,
       allowPreApproval: form.allowPreApproval,
@@ -209,6 +215,8 @@ export default function ApprovalFormsPage() {
       allowReDraft: values.allowReDraft,
       allowPreApproval: values.allowPreApproval,
       ...(values.category ? { category: values.category } : {}),
+      // AP-01-03 양식별 기본 결재선 (빈 값=해제 → null)
+      defaultLineId: values.defaultLineId || null,
       // 동적 입력 필드 설계 저장 (AP-01-02)
       fieldsSchema: { fields },
     }
@@ -366,6 +374,24 @@ export default function ApprovalFormsPage() {
               control={control}
               render={({ field }) => (
                 <TextField {...field} label="카테고리" fullWidth placeholder="예: 인사, 총무" />
+              )}
+            />
+            <Controller
+              name="defaultLineId"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="기본 결재선"
+                  fullWidth
+                  helperText="작성 시 결재선을 비워두면 이 공용 결재선이 기본 적용됩니다 (선택)"
+                >
+                  <MenuItem value="">지정 안 함</MenuItem>
+                  {sharedLines.map((l) => (
+                    <MenuItem key={l.id} value={l.id}>{l.name}</MenuItem>
+                  ))}
+                </TextField>
               )}
             />
             <Controller

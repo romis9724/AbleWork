@@ -5,6 +5,8 @@ export const CreateDocumentFormSchema = z.object({
   name: z.string().min(1, '양식명을 입력하세요.').max(200),
   category: z.string().max(100).optional(),
   fieldsSchema: z.record(z.unknown()).default({}),
+  // AP-01-03 양식별 기본 결재선 (공용 결재선 id, 미지정 가능)
+  defaultLineId: z.string().uuid().nullable().optional(),
   sortOrder: z.number().int().min(0).default(0),
   allowReDraft: z.boolean().default(false),
   allowPreApproval: z.boolean().default(false),
@@ -15,6 +17,7 @@ export const UpdateDocumentFormSchema = z
     name: z.string().min(1).max(200).optional(),
     category: z.string().max(100).optional(),
     fieldsSchema: z.record(z.unknown()).optional(),
+    defaultLineId: z.string().uuid().nullable().optional(),
     sortOrder: z.number().int().min(0).optional(),
     allowReDraft: z.boolean().optional(),
     allowPreApproval: z.boolean().optional(),
