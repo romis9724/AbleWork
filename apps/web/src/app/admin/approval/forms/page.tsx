@@ -19,6 +19,8 @@ import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
+import Tab from '@mui/material/Tab'
+import Tabs from '@mui/material/Tabs'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -46,16 +48,28 @@ import {
   useDocumentNumberRule,
   useSaveDocumentNumberRule,
   useSharedApprovalLines,
+  useFormCategories,
   type DocumentForm,
 } from '@/lib/query/documents'
 import FormFieldsBuilder from '@/components/approval/FormFieldsBuilder'
 import FormAccessRulesPanel from '@/components/approval/FormAccessRulesPanel'
+import FormCategoryManagerDialog from '@/components/approval/FormCategoryManagerDialog'
 import { useEmployees } from '@/lib/query/employees'
 import { readFormFields, type DocumentFieldDef } from '@ablework/shared-constants'
 
+const VISIBILITY_OPTIONS = [
+  { value: 'PUBLIC', label: '공개 (전 직원)' },
+  { value: 'DEPARTMENT', label: '부서공개 (접근 권한 지정)' },
+  { value: 'PRIVATE', label: '비공개 (담당자/권한 지정)' },
+] as const
+
 const schema = z.object({
   name: z.string().min(1, '양식명을 입력해주세요'),
-  category: z.string().optional(),
+  categoryId: z.string().optional(),
+  visibilityScope: z.enum(['PUBLIC', 'DEPARTMENT', 'PRIVATE']),
+  abbreviation: z.string().max(20).optional(),
+  retentionYears: z.number().int().min(0).max(100),
+  description: z.string().max(1000).optional(),
   defaultLineId: z.string().optional(),
   formOwnerId: z.string().optional(),
   allowZipUpload: z.boolean(),
@@ -68,7 +82,11 @@ type FormValues = z.infer<typeof schema>
 
 const DEFAULT_VALUES: FormValues = {
   name: '',
-  category: '',
+  categoryId: '',
+  visibilityScope: 'PUBLIC',
+  abbreviation: '',
+  retentionYears: 0,
+  description: '',
   defaultLineId: '',
   formOwnerId: '',
   allowZipUpload: false,
@@ -171,6 +189,7 @@ function NumberRuleDialog({ form, onClose, onSuccess }: NumberRuleDialogProps) {
 export default function ApprovalFormsPage() {
   const { data: forms = [], isLoading } = useDocumentForms()
   const { data: sharedLines = [] } = useSharedApprovalLines()
+  const { data: categories = [] } = useFormCategories()
   const { data: employeeData } = useEmployees({ limit: 200, isActive: true })
   const employeeOptions = employeeData?.items ?? []
   const createMutation = useCreateDocumentForm()
@@ -184,6 +203,8 @@ export default function ApprovalFormsPage() {
     open: false,
     editing: null,
   })
+  const [dialogTab, setDialogTab] = useState(0)
+  const [catManagerOpen, setCatManagerOpen] = useState(false)
   const [ruleTarget, setRuleTarget] = useState<DocumentForm | null>(null)
 
   const { control, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({
@@ -198,13 +219,18 @@ export default function ApprovalFormsPage() {
   const openCreate = () => {
     reset(DEFAULT_VALUES)
     setFields([])
+    setDialogTab(0)
     setDialog({ open: true, editing: null })
   }
 
   const openEdit = (form: DocumentForm) => {
     reset({
       name: form.name,
-      category: form.category ?? '',
+      categoryId: form.categoryId ?? '',
+      visibilityScope: form.visibilityScope ?? 'PUBLIC',
+      abbreviation: form.abbreviation ?? '',
+      retentionYears: form.retentionYears ?? 0,
+      description: form.description ?? '',
       defaultLineId: form.defaultLineId ?? '',
       formOwnerId: form.formOwnerId ?? '',
       allowZipUpload: form.allowZipUpload ?? false,
@@ -213,6 +239,7 @@ export default function ApprovalFormsPage() {
       allowPreApproval: form.allowPreApproval,
     })
     setFields(readFormFields(form.fieldsSchema))
+    setDialogTab(0)
     setDialog({ open: true, editing: form })
   }
 
@@ -224,7 +251,13 @@ export default function ApprovalFormsPage() {
       sortOrder: values.sortOrder,
       allowReDraft: values.allowReDraft,
       allowPreApproval: values.allowPreApproval,
-      ...(values.category ? { category: values.category } : {}),
+      // AP-01 양식함 분류 (빈 값=미지정 → null)
+      categoryId: values.categoryId || null,
+      // AP-01 공개범위·메타
+      visibilityScope: values.visibilityScope,
+      abbreviation: values.abbreviation || null,
+      retentionYears: values.retentionYears > 0 ? values.retentionYears : null,
+      description: values.description || null,
       // AP-01-03 양식별 기본 결재선 (빈 값=해제 → null)
       defaultLineId: values.defaultLineId || null,
       // AP-01-07 양식 담당자 (빈 값=해제 → null)
@@ -287,9 +320,14 @@ export default function ApprovalFormsPage() {
         title="기안양식 관리"
         subtitle="전자결재 기안양식과 문서번호 규칙을 관리합니다."
         actions={
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-            양식 추가
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button variant="outlined" onClick={() => setCatManagerOpen(true)}>
+              분류 관리
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+              양식 추가
+            </Button>
+          </Box>
         }
       />
 
@@ -320,11 +358,15 @@ export default function ApprovalFormsPage() {
                 <TableRow key={form.id} hover>
                   <TableCell sx={{ fontWeight: 600 }}>{form.name}</TableCell>
                   <TableCell>
-                    {form.category ? (
-                      <Chip label={form.category} size="small" variant="outlined" />
-                    ) : (
-                      <Typography variant="body2" color="text.disabled">—</Typography>
-                    )}
+                    {(() => {
+                      const catName =
+                        categories.find((c) => c.id === form.categoryId)?.name ?? form.category
+                      return catName ? (
+                        <Chip label={catName} size="small" variant="outlined" />
+                      ) : (
+                        <Typography variant="body2" color="text.disabled">—</Typography>
+                      )
+                    })()}
                   </TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
@@ -364,11 +406,25 @@ export default function ApprovalFormsPage() {
         </TableContainer>
       )}
 
-      {/* 추가/수정 다이얼로그 */}
-      <Dialog open={dialog.open} onClose={closeDialog} maxWidth="xs" fullWidth>
+      {/* 추가/수정 다이얼로그 — 3탭 위저드 (기본정보 / 입력필드 / 권한·옵션) */}
+      <Dialog open={dialog.open} onClose={closeDialog} maxWidth="sm" fullWidth>
         <DialogTitle>{dialog.editing ? '양식 수정' : '양식 추가'}</DialogTitle>
+        <Tabs
+          value={dialogTab}
+          onChange={(_, v) => setDialogTab(v)}
+          variant="fullWidth"
+          sx={{ borderBottom: 1, borderColor: 'divider' }}
+        >
+          <Tab label="기본정보" />
+          <Tab label="입력필드" />
+          <Tab label="권한·옵션" />
+        </Tabs>
         <DialogContent dividers>
-          <Box component="form" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 0.5 }}>
+          {/* 탭 0 — 기본정보 */}
+          <Box
+            component="form"
+            sx={{ display: dialogTab === 0 ? 'flex' : 'none', flexDirection: 'column', gap: 2.5, pt: 0.5 }}
+          >
             <Controller
               name="name"
               control={control}
@@ -383,13 +439,88 @@ export default function ApprovalFormsPage() {
                 />
               )}
             />
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              <Controller
+                name="categoryId"
+                control={control}
+                render={({ field }) => (
+                  <TextField {...field} select label="양식함(분류)" sx={{ flexGrow: 1, minWidth: 160 }}>
+                    <MenuItem value="">미분류</MenuItem>
+                    {categories.map((c) => (
+                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                    ))}
+                  </TextField>
+                )}
+              />
+              <Controller
+                name="visibilityScope"
+                control={control}
+                render={({ field }) => (
+                  <TextField {...field} select label="공개범위" sx={{ flexGrow: 1, minWidth: 200 }}>
+                    {VISIBILITY_OPTIONS.map((v) => (
+                      <MenuItem key={v.value} value={v.value}>{v.label}</MenuItem>
+                    ))}
+                  </TextField>
+                )}
+              />
+            </Box>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              <Controller
+                name="abbreviation"
+                control={control}
+                render={({ field }) => (
+                  <TextField {...field} label="문서번호 약어" placeholder="예: HR" sx={{ width: 160 }} />
+                )}
+              />
+              <Controller
+                name="retentionYears"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    label="보존연한 (년, 0=미설정)"
+                    type="number"
+                    inputProps={{ min: 0, max: 100 }}
+                    value={field.value}
+                    onChange={(e) => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+                    sx={{ width: 200 }}
+                  />
+                )}
+              />
+            </Box>
             <Controller
-              name="category"
+              name="description"
               control={control}
               render={({ field }) => (
-                <TextField {...field} label="카테고리" fullWidth placeholder="예: 인사, 총무" />
+                <TextField {...field} label="설명" fullWidth multiline rows={2} placeholder="양식 용도 설명 (선택)" />
               )}
             />
+            <Controller
+              name="sortOrder"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  label="정렬 순서"
+                  type="number"
+                  fullWidth
+                  inputProps={{ min: 0 }}
+                  value={field.value}
+                  onChange={(e) => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+                  error={!!errors.sortOrder}
+                  helperText={errors.sortOrder?.message}
+                />
+              )}
+            />
+          </Box>
+
+          {/* 탭 1 — 입력필드 설계 */}
+          <Box sx={{ display: dialogTab === 1 ? 'block' : 'none', pt: 0.5 }}>
+            <FormFieldsBuilder fields={fields} onChange={setFields} disabled={isSubmitting} />
+          </Box>
+
+          {/* 탭 2 — 권한·옵션 (결재선/담당자/옵션 + 접근규칙) */}
+          <Box
+            sx={{ display: dialogTab === 2 ? 'flex' : 'none', flexDirection: 'column', gap: 2.5, pt: 0.5 }}
+          >
             <Controller
               name="defaultLineId"
               control={control}
@@ -418,22 +549,6 @@ export default function ApprovalFormsPage() {
                     <MenuItem key={e.id} value={e.id}>{e.name}</MenuItem>
                   ))}
                 </TextField>
-              )}
-            />
-            <Controller
-              name="sortOrder"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  label="정렬 순서"
-                  type="number"
-                  fullWidth
-                  inputProps={{ min: 0 }}
-                  value={field.value}
-                  onChange={(e) => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
-                  error={!!errors.sortOrder}
-                  helperText={errors.sortOrder?.message}
-                />
               )}
             />
             <Controller
@@ -467,16 +582,17 @@ export default function ApprovalFormsPage() {
               )}
             />
 
-            <Divider sx={{ my: 0.5 }} />
-            <FormFieldsBuilder fields={fields} onChange={setFields} disabled={isSubmitting} />
-
             {/* AP-01-07 접근규칙 — 저장된 양식에만 (formId 필요) */}
-            {dialog.editing && (
+            {dialog.editing ? (
               <>
                 <Divider sx={{ my: 0.5 }} />
                 <Typography variant="subtitle2" fontWeight={700}>작성 권한 (접근규칙)</Typography>
                 <FormAccessRulesPanel formId={dialog.editing.id} />
               </>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                접근규칙은 양식 저장 후 수정 화면에서 지정할 수 있습니다.
+              </Typography>
             )}
           </Box>
         </DialogContent>
@@ -497,6 +613,13 @@ export default function ApprovalFormsPage() {
           onSuccess={(msg) => showSnackbar(msg)}
         />
       )}
+
+      {/* 양식함(분류) 관리 다이얼로그 */}
+      <FormCategoryManagerDialog
+        open={catManagerOpen}
+        onClose={() => setCatManagerOpen(false)}
+        onResult={(msg, severity) => showSnackbar(msg, severity)}
+      />
 
       <ConfirmDialog
         open={confirmState.open}
