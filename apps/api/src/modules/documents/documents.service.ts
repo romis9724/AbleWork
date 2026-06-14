@@ -199,6 +199,60 @@ export class DocumentsService {
     return { deleted: true }
   }
 
+  // ── AP-05-06 결재 현황 다중 삭제 (GENERAL_ADMIN+, 상신/진행중/반려만) ─────────────
+  // 카카오워크 동일: 체크박스 다중선택 + [선택 삭제]. 대상 상태를 PENDING/REJECTED로 제한.
+  async bulkForceDelete(companyId: string, ids: string[], user: JwtPayload) {
+    if (!this.isCompanyAdmin(user)) {
+      throw new ForbiddenException({
+        code: 'DOCUMENT_FORCE_DELETE_FORBIDDEN',
+        message: '문서 강제 삭제는 관리자(GENERAL_ADMIN 이상)만 가능합니다.',
+      })
+    }
+
+    const uniqueIds = Array.from(new Set(ids))
+    const docs = await this.prisma.document.findMany({
+      where: { id: { in: uniqueIds }, companyId },
+      select: { id: true, status: true },
+    })
+    const docMap = new Map(docs.map((d: { id: string; status: string }) => [d.id, d.status]))
+
+    // HR 요청 연동 문서는 차단 (요청 취소 흐름으로 처리)
+    const linkedRequests = await this.prisma.request.findMany({
+      where: { documentId: { in: uniqueIds }, companyId },
+      select: { documentId: true },
+    })
+    const linkedSet = new Set(
+      linkedRequests.map((r: { documentId: string | null }) => r.documentId),
+    )
+
+    const DELETABLE: string[] = [DocStatus.PENDING, DocStatus.REJECTED]
+    const deletable: string[] = []
+    const skipped: Array<{ id: string; reason: string }> = []
+
+    for (const id of uniqueIds) {
+      const status = docMap.get(id)
+      if (!status) {
+        skipped.push({ id, reason: 'NOT_FOUND' })
+      } else if (linkedSet.has(id)) {
+        skipped.push({ id, reason: 'LINKED_TO_REQUEST' })
+      } else if (!DELETABLE.includes(status)) {
+        skipped.push({ id, reason: 'STATUS_NOT_DELETABLE' })
+      } else {
+        deletable.push(id)
+      }
+    }
+
+    if (deletable.length) {
+      await this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async (tx: any) => {
+        await tx.approvalHistory.deleteMany({ where: { documentId: { in: deletable } } })
+        await tx.document.deleteMany({ where: { id: { in: deletable }, companyId } })
+      })
+    }
+
+    return { deletedCount: deletable.length, deletedIds: deletable, skipped }
+  }
+
   // ── AP-02-04 상신 / 재상신 ───────────────────────────────────────────────────
 
   async submit(companyId: string, documentId: string, dto: SubmitDocumentDto, user: JwtPayload) {
@@ -369,7 +423,14 @@ export class DocumentsService {
           approvalLines: {
             select: {
               steps: {
-                select: { id: true, role: true, status: true, stepOrder: true, assigneeId: true },
+                select: {
+                  id: true,
+                  role: true,
+                  status: true,
+                  stepOrder: true,
+                  assigneeId: true,
+                  assignee: { select: { id: true, name: true } },
+                },
                 orderBy: { stepOrder: 'asc' },
               },
             },
@@ -380,10 +441,11 @@ export class DocumentsService {
     ])
 
     const assigneeIdSet = new Set(myAssigneeIds)
+    type StepWithAssignee = StepRecord & { assignee?: { id: string; name: string } | null }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items = rows.map((doc: any) => {
-      const steps: StepRecord[] = doc.approvalLines.flatMap(
-        (line: { steps: StepRecord[] }) => line.steps,
+      const steps: StepWithAssignee[] = doc.approvalLines.flatMap(
+        (line: { steps: StepWithAssignee[] }) => line.steps,
       )
       return {
         id: doc.id,
@@ -396,10 +458,38 @@ export class DocumentsService {
         form: doc.form,
         drafter: doc.drafter,
         mySteps: steps.filter((s) => assigneeIdSet.has(s.assigneeId)),
+        // 결재 현황용: 상신(미처리)/진행중(일부 승인) 구분 + 현재 결재자
+        phase: this.derivePhase(doc.status, steps),
+        currentApprover: this.deriveCurrentApprover(steps),
       }
     })
 
     return { items, total, page, limit }
+  }
+
+  /** 결재 현황 phase: PENDING + 액티드 step 없음=상신 / 있음=진행중 / 그 외=null */
+  private derivePhase(
+    status: string,
+    steps: Array<{ status: string }>,
+  ): 'SUBMITTED' | 'IN_PROGRESS' | null {
+    if (status !== DocStatus.PENDING) return null
+    const hasActed = steps.some((s) => ACTED_STEP_STATUSES.includes(s.status))
+    return hasActed ? 'IN_PROGRESS' : 'SUBMITTED'
+  }
+
+  /** 현재 결재 차례인 결재(승인/협조) 단계의 담당자 이름 (stepOrder 오름차순 첫 PENDING) */
+  private deriveCurrentApprover(
+    steps: Array<{
+      role: string
+      status: string
+      stepOrder: number
+      assignee?: { id: string; name: string } | null
+    }>,
+  ): { id: string; name: string } | null {
+    const current = steps
+      .filter((s) => APPROVAL_FLOW_ROLES.includes(s.role) && s.status === StepStatus.PENDING)
+      .sort((a, b) => a.stepOrder - b.stepOrder)[0]
+    return current?.assignee ?? null
   }
 
   // ── AP-04-02 문서 상세 ───────────────────────────────────────────────────────
@@ -727,6 +817,43 @@ export class DocumentsService {
           },
           myAssigneeIds,
         }
+      case 'status': {
+        // AP-05-06 결재 현황 (관리자 — 카카오워크 동일: 상신/진행중/반려만)
+        if (!this.isCompanyAdmin(user)) {
+          throw new ForbiddenException({
+            code: 'DOCUMENT_STATUS_FORBIDDEN',
+            message: '결재 현황은 관리자만 조회할 수 있습니다.',
+          })
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const where: Record<string, any> = { companyId }
+
+        // 액티드 step 유무로 상신(미처리)/진행중(일부 승인) 구분
+        const actedSome = {
+          some: { steps: { some: { status: { in: ACTED_STEP_STATUSES } } } },
+        }
+        if (filter.status === 'REJECTED') {
+          where.status = DocStatus.REJECTED
+        } else if (filter.status === 'SUBMITTED') {
+          where.status = DocStatus.PENDING
+          where.approvalLines = { none: { steps: { some: { status: { in: ACTED_STEP_STATUSES } } } } }
+        } else if (filter.status === 'IN_PROGRESS') {
+          where.status = DocStatus.PENDING
+          where.approvalLines = actedSome
+        } else {
+          // 전체: 상신/진행중(PENDING) + 반려(REJECTED)
+          where.status = { in: [DocStatus.PENDING, DocStatus.REJECTED] }
+        }
+
+        if (filter.formId) where.formId = filter.formId
+        if (filter.dateFrom || filter.dateTo) {
+          where.submittedAt = {
+            ...(filter.dateFrom && { gte: new Date(`${filter.dateFrom}T00:00:00.000Z`) }),
+            ...(filter.dateTo && { lte: new Date(`${filter.dateTo}T23:59:59.999Z`) }),
+          }
+        }
+        return { where, myAssigneeIds }
+      }
       case 'ledger': {
         if (!this.isCompanyAdmin(user)) {
           throw new ForbiddenException({
