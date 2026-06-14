@@ -82,6 +82,12 @@ const REQUEST_TYPE_REJECTED_EVENT: Record<string, string> = {
   CUSTOM: EVENTS.CUSTOM_REJECTED,
 }
 
+/** 결재 규칙(라운드별 필수 승인 수 details 포함) — 다결재자/병렬(M-of-N) 판정용 */
+type RuleWithDetails = {
+  maxApprovalRounds?: number
+  details?: Array<{ round: number; requiredCount: number }>
+} | null
+
 @Injectable()
 export class RequestsService {
   constructor(
@@ -483,7 +489,8 @@ export class RequestsService {
               role: `APPROVER_R${round}`,
               assigneeId,
               stepOrder: stepOrder++,
-              isParallel: false,
+              // 같은 라운드에 승인자가 여럿이면 병렬(동시 활성)
+              isParallel: details.length > 1,
               status: round === 1 ? 'PENDING' : 'WAITING',
             },
           })
@@ -620,7 +627,20 @@ export class RequestsService {
 
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
-      const currentRound = await this.getCurrentRound(tx, requestId)
+      // 다결재자/병렬(M-of-N): rule.details의 requiredCount 기반으로 활성 라운드 판정
+      const rule = await this.findApplicableRule(tx, companyId, request.type)
+      const currentRound = await this.getCurrentRound(tx, requestId, rule)
+
+      // 같은 라운드 중복 승인 방지 (M-of-N에서 한 사람이 정원을 채우는 것 차단)
+      const alreadyApproved = await tx.requestApproval.findFirst({
+        where: { requestId, round: currentRound, approverId: requester.employeeId, status: 'APPROVED' },
+      })
+      if (alreadyApproved) {
+        throw new BadRequestException({
+          code: 'REQUEST_ALREADY_APPROVED',
+          message: '이미 이 결재 단계를 승인했습니다.',
+        })
+      }
 
       await tx.requestApproval.create({
         data: {
@@ -633,11 +653,10 @@ export class RequestsService {
         },
       })
 
-      // 현재 round의 모든 필수 승인 완료 여부 확인
-      const rule = await this.findApplicableRule(tx, companyId, request.type)
+      // 현재 round의 필수 승인 수(requiredCount) 충족 여부 확인
       const isRoundComplete = await this.isRoundComplete(tx, requestId, currentRound, rule)
 
-      const maxRounds = rule?.maxApprovalRounds ?? 1
+      const maxRounds = this.getMaxRounds(rule)
       const isLastRound = currentRound >= maxRounds
 
       if (isRoundComplete && isLastRound) {
@@ -701,7 +720,8 @@ export class RequestsService {
 
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
-      const currentRound = await this.getCurrentRound(tx, requestId)
+      const rule = await this.findApplicableRule(tx, companyId, request.type)
+      const currentRound = await this.getCurrentRound(tx, requestId, rule)
 
       await tx.requestApproval.create({
         data: {
@@ -1478,13 +1498,20 @@ export class RequestsService {
     return orgs.map((o: { organizationId: string }) => o.organizationId)
   }
 
+  /**
+   * 현재 활성 라운드 = 아직 필수 승인 수(requiredCount)를 못 채운 가장 낮은 라운드.
+   * M-of-N/병렬을 지원하려면 "마지막 승인 round + 1"이 아니라 미완료 라운드를 찾아야 한다.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async getCurrentRound(tx: any, requestId: string): Promise<number> {
-    const lastApproval = await tx.requestApproval.findFirst({
-      where: { requestId },
-      orderBy: { round: 'desc' },
-    })
-    return lastApproval ? lastApproval.round + 1 : 1
+  private async getCurrentRound(tx: any, requestId: string, rule: RuleWithDetails): Promise<number> {
+    const maxRounds = this.getMaxRounds(rule)
+    for (let r = 1; r <= maxRounds; r++) {
+      const approved = await tx.requestApproval.count({
+        where: { requestId, round: r, status: 'APPROVED' },
+      })
+      if (approved < this.roundRequiredCount(rule, r)) return r
+    }
+    return maxRounds
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1492,7 +1519,21 @@ export class RequestsService {
     return tx.approvalRule.findFirst({
       where: { companyId, requestType, isActive: true },
       orderBy: { priority: 'desc' },
+      include: { details: true },
     })
+  }
+
+  /** 라운드 r의 필수 승인 수 (해당 라운드 details의 requiredCount 최대값, 기본 1) */
+  private roundRequiredCount(rule: RuleWithDetails, round: number): number {
+    const details = (rule?.details ?? []).filter((d) => d.round === round)
+    if (details.length === 0) return 1
+    return Math.max(1, ...details.map((d) => d.requiredCount ?? 1))
+  }
+
+  /** 총 결재 라운드 수 (rule.maxApprovalRounds와 details의 최대 round 중 큰 값) */
+  private getMaxRounds(rule: RuleWithDetails): number {
+    const detailMax = (rule?.details ?? []).reduce((m, d) => Math.max(m, d.round), 0)
+    return Math.max(1, rule?.maxApprovalRounds ?? 1, detailMax)
   }
 
   private async isRoundComplete(
@@ -1500,12 +1541,11 @@ export class RequestsService {
     tx: any,
     requestId: string,
     round: number,
-    rule: { maxApprovalRounds: number } | null,
+    rule: RuleWithDetails,
   ): Promise<boolean> {
-    const approvals = await tx.requestApproval.findMany({
+    const approved = await tx.requestApproval.count({
       where: { requestId, round, status: 'APPROVED' },
     })
-    const requiredCount = rule ? 1 : 1 // 단순화: 1명 승인으로 round 완료 처리
-    return approvals.length >= requiredCount
+    return approved >= this.roundRequiredCount(rule, round)
   }
 }

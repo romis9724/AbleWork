@@ -72,6 +72,7 @@ const mockPrisma = {
     create: jest.fn(),
     findFirst: jest.fn(),
     findMany: jest.fn(),
+    count: jest.fn().mockResolvedValue(0),
   },
   approvalRule: {
     findFirst: jest.fn(),
@@ -475,7 +476,7 @@ describe('RequestsService', () => {
       mockPrisma.requestApproval.findFirst.mockResolvedValue(null) // round = 1
       mockPrisma.requestApproval.create.mockResolvedValue({})
       mockPrisma.approvalRule.findFirst.mockResolvedValue(baseApprovalRule)
-      mockPrisma.requestApproval.findMany.mockResolvedValue([{ status: 'APPROVED' }])
+      mockPrisma.requestApproval.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1)
       mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest, status: 'APPROVED' })
       mockPrisma.document.update.mockResolvedValue({})
 
@@ -519,6 +520,66 @@ describe('RequestsService', () => {
         NotFoundException,
       )
     })
+
+    // ── M1 다결재자/병렬 (M-of-N) ────────────────────────────────────────────────
+
+    const mofnRule = {
+      ...baseApprovalRule,
+      maxApprovalRounds: 1,
+      details: [
+        { round: 1, requiredCount: 2, approverPositionId: null, sortOrder: 0 },
+        { round: 1, requiredCount: 2, approverPositionId: null, sortOrder: 1 },
+      ],
+    }
+
+    const setupApprove = (rule: unknown) => {
+      mockPrisma.request.findFirst.mockResolvedValue(basePendingRequest)
+      mockPrisma.$transaction.mockImplementation(
+        async (cb: (tx: typeof mockPrisma) => Promise<unknown>) => cb(mockPrisma),
+      )
+      mockPrisma.requestApproval.findFirst.mockResolvedValue(null) // 중복 아님
+      mockPrisma.requestApproval.create.mockResolvedValue({})
+      mockPrisma.approvalRule.findFirst.mockResolvedValue(rule)
+      mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest, status: 'APPROVED' })
+      mockPrisma.document.update.mockResolvedValue({})
+    }
+
+    it('M-of-2: 첫 승인은 라운드를 완료하지 않아 요청이 APPROVED 되지 않는다', async () => {
+      setupApprove(mofnRule)
+      // getCurrentRound(승인 전 0 → 라운드1) → isRoundComplete(승인 후 1 < 2 → 미완료)
+      mockPrisma.requestApproval.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1)
+
+      await service.approve(COMPANY_ID, REQUEST_ID, {}, makeApprover())
+
+      expect(mockPrisma.requestApproval.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ round: 1, status: 'APPROVED' }) }),
+      )
+      expect(mockPrisma.request.update).not.toHaveBeenCalled() // 아직 미완료
+      expect(mockPrisma.document.update).not.toHaveBeenCalled()
+    })
+
+    it('M-of-2: 두 번째 승인으로 requiredCount(2)를 채우면 최종 APPROVED 된다', async () => {
+      setupApprove(mofnRule)
+      // getCurrentRound(승인 전 1 < 2 → 여전히 라운드1) → isRoundComplete(승인 후 2 >= 2 → 완료)
+      mockPrisma.requestApproval.count.mockResolvedValueOnce(1).mockResolvedValueOnce(2)
+
+      await service.approve(COMPANY_ID, REQUEST_ID, {}, makeApprover())
+
+      expect(mockPrisma.request.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) }),
+      )
+    })
+
+    it('같은 라운드를 같은 사람이 다시 승인하면 REQUEST_ALREADY_APPROVED로 거부한다', async () => {
+      setupApprove(mofnRule)
+      mockPrisma.requestApproval.count.mockResolvedValueOnce(1) // 라운드1 진행 중
+      mockPrisma.requestApproval.findFirst.mockResolvedValue({ id: 'existing' }) // 이미 승인함
+
+      await expect(
+        service.approve(COMPANY_ID, REQUEST_ID, {}, makeApprover()),
+      ).rejects.toMatchObject({ response: { code: 'REQUEST_ALREADY_APPROVED' } })
+      expect(mockPrisma.requestApproval.create).not.toHaveBeenCalled()
+    })
   })
 
   // ── ORG_ADMIN 조직 스코프 (CLAUDE.md 필수 통합 테스트: 타 조직 접근 → 403) ──
@@ -551,7 +612,7 @@ describe('RequestsService', () => {
       mockPrisma.requestApproval.findFirst.mockResolvedValue(null) // round = 1
       mockPrisma.requestApproval.create.mockResolvedValue({})
       mockPrisma.approvalRule.findFirst.mockResolvedValue(baseApprovalRule)
-      mockPrisma.requestApproval.findMany.mockResolvedValue([{ status: 'APPROVED' }])
+      mockPrisma.requestApproval.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1)
       mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest, status: 'APPROVED' })
       mockPrisma.document.update.mockResolvedValue({})
 
@@ -596,7 +657,7 @@ describe('RequestsService', () => {
       mockPrisma.requestApproval.findFirst.mockResolvedValue(null)
       mockPrisma.requestApproval.create.mockResolvedValue({})
       mockPrisma.approvalRule.findFirst.mockResolvedValue(baseApprovalRule)
-      mockPrisma.requestApproval.findMany.mockResolvedValue([{ status: 'APPROVED' }])
+      mockPrisma.requestApproval.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1)
       mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest, status: 'APPROVED' })
       mockPrisma.document.update.mockResolvedValue({})
 
@@ -744,7 +805,7 @@ describe('RequestsService', () => {
       )
       mockPrisma.requestApproval.findFirst.mockResolvedValue(null)
       mockPrisma.requestApproval.create.mockResolvedValue({})
-      mockPrisma.requestApproval.findMany.mockResolvedValue([{ status: 'APPROVED' }])
+      mockPrisma.requestApproval.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1)
       mockPrisma.approvalRule.findFirst.mockResolvedValue(baseApprovalRule)
       mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest, status: 'APPROVED' })
       mockPrisma.document.update.mockResolvedValue({})

@@ -39,6 +39,7 @@ import {
   useDeleteApprovalRule,
   type ApprovalRule,
 } from '@/lib/query/requests'
+import { usePositions } from '@/lib/query/positions'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -56,11 +57,18 @@ const TYPE_FILTER_ALL = '전체'
 
 // ── Form state ────────────────────────────────────────────────────────────────
 
+interface RuleDetailForm {
+  round: number
+  requiredCount: number
+  approverPositionId: string
+}
+
 interface RuleForm {
   name: string
   requestType: RequestTypeValue
   maxApprovalRounds: string
   isAutoApprove: boolean
+  details: RuleDetailForm[]
 }
 
 const defaultRuleForm: RuleForm = {
@@ -68,12 +76,14 @@ const defaultRuleForm: RuleForm = {
   requestType: '',
   maxApprovalRounds: '1',
   isAutoApprove: false,
+  details: [],
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function ApprovalRulesPage() {
   const { data: rules = [], isLoading } = useApprovalRules()
+  const { data: positions = [] } = usePositions()
   const createMutation = useCreateApprovalRule()
   const updateMutation = useUpdateApprovalRule()
   const deleteMutation = useDeleteApprovalRule()
@@ -107,6 +117,11 @@ export default function ApprovalRulesPage() {
       requestType: rule.requestType as RequestTypeValue,
       maxApprovalRounds: String(rule.maxApprovalRounds),
       isAutoApprove: rule.isAutoApprove,
+      details: (rule.details ?? []).map((d) => ({
+        round: d.round,
+        requiredCount: d.requiredCount,
+        approverPositionId: d.approverPositionId ?? '',
+      })),
     })
     setDialogOpen(true)
   }
@@ -118,6 +133,12 @@ export default function ApprovalRulesPage() {
       requestType: form.requestType,
       maxApprovalRounds: Number(form.maxApprovalRounds),
       isAutoApprove: form.isAutoApprove,
+      // M1 다결재자/병렬: 차수별 필수 승인 수(requiredCount)·승인 직무
+      details: form.details.map((d) => ({
+        round: d.round,
+        requiredCount: d.requiredCount,
+        ...(d.approverPositionId ? { approverPositionId: d.approverPositionId } : {}),
+      })),
     }
     try {
       if (editingRule) {
@@ -289,10 +310,97 @@ export default function ApprovalRulesPage() {
             }
             label="자동 승인"
           />
-          {!form.isAutoApprove && Number(form.maxApprovalRounds) > 1 && (
-            <Typography variant="caption" color="text.secondary">
-              자동 승인이 꺼진 경우, 차수별 승인자 직무는 조직 설정에서 별도로 구성할 수 있습니다.
-            </Typography>
+          {!form.isAutoApprove && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <Typography variant="subtitle2" fontWeight={700}>
+                차수별 결재 단계 (다결재자/병렬)
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                같은 차수에 여러 행을 추가하면 병렬 결재가 되며, 필수 승인 수(requiredCount)만큼 승인되면 다음 차수로 진행합니다.
+                비워두면 차수당 관리자 1명 승인으로 동작합니다.
+              </Typography>
+              {form.details.map((d, i) => (
+                <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                  <TextField
+                    label="차수"
+                    type="number"
+                    size="small"
+                    value={d.round}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        details: f.details.map((x, j) =>
+                          j === i ? { ...x, round: Math.max(1, Number(e.target.value) || 1) } : x,
+                        ),
+                      }))
+                    }
+                    inputProps={{ min: 1 }}
+                    sx={{ width: 80 }}
+                  />
+                  <TextField
+                    label="필수 승인 수"
+                    type="number"
+                    size="small"
+                    value={d.requiredCount}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        details: f.details.map((x, j) =>
+                          j === i ? { ...x, requiredCount: Math.max(1, Number(e.target.value) || 1) } : x,
+                        ),
+                      }))
+                    }
+                    inputProps={{ min: 1 }}
+                    sx={{ width: 120 }}
+                  />
+                  <FormControl size="small" sx={{ flexGrow: 1, minWidth: 120 }}>
+                    <InputLabel>승인 직무</InputLabel>
+                    <Select
+                      label="승인 직무"
+                      value={d.approverPositionId}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          details: f.details.map((x, j) =>
+                            j === i ? { ...x, approverPositionId: e.target.value } : x,
+                          ),
+                        }))
+                      }
+                    >
+                      <MenuItem value="">관리자(기본)</MenuItem>
+                      {positions.map((p) => (
+                        <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Button
+                    size="small"
+                    color="error"
+                    onClick={() =>
+                      setForm((f) => ({ ...f, details: f.details.filter((_, j) => j !== i) }))
+                    }
+                  >
+                    삭제
+                  </Button>
+                </Box>
+              ))}
+              <Button
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    details: [
+                      ...f.details,
+                      { round: Number(f.maxApprovalRounds) || 1, requiredCount: 1, approverPositionId: '' },
+                    ],
+                  }))
+                }
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                결재 단계 추가
+              </Button>
+            </Box>
           )}
         </DialogContent>
         <DialogActions>
