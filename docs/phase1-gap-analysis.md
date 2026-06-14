@@ -20,16 +20,14 @@
 | **C3** CompanySettings + 설정 API | ✅ | `CompanySettingsService`(캐싱), GET/PATCH `/company-settings`·`/permission-settings`, `allow_unscheduled` 실제 enforcement |
 | **C4** FE↔BE 계약 21건 | ✅ | #1~#21 전부 필드명 정합 확인(좌표·근로정보·employmentType·shifts·휴가발생·요청필터·일괄승인·리포트·메시지·알림·readAt 등) |
 | **C5** 미존재 엔드포인트 | ✅ (1건 🟡) | standardization-rules·custom-types·company/permission-settings·approval-rules PATCH/DELETE·휴가 그룹/유형/규칙 수정삭제·POST /leaves·attendances/unconfirm·forgot/reset-password 전부 신설. 🟡 `wage-info`는 **독립 모듈 미신설**이나 기능은 `employees/:id/wage-info`로 제공(404 해소) |
-| **C6** 보안 | ✅ (1건 🟡) | C6-1 employees 권한가드(자기승격 차단)·C6-2 shifts 소속검증·C6-3 clock-in 소속검증·C6-5 결재 계층 정확화 ✅. 🟡 **C6-4 `GET /shifts` 서버측 직원 스코핑 미강제** — FE는 본인 employeeId 필터를 보내나 BE는 필터 생략 시 회사 전체 반환(사내 일정 가시성, 잔존) |
-| **C7** 이벤트 시스템 | ✅ (1건 🟡) | EVENTS 상수·`leave.requested` 발행명 정합·고아 이벤트(NOTIFIABLE_EVENTS SSOT)·MailService 주입 ✅. 🟡 `sendInviteCode` 호출처 부재(초대코드 이메일 데드코드 잔존) |
+| **C6** 보안 | ✅ | C6-1 employees 권한가드(자기승격 차단)·C6-2 shifts 소속검증·C6-3 clock-in 소속검증·C6-5 결재 계층 정확화 ✅. **C6-4 `GET /shifts` 서버측 직원 스코핑 ✅(PR#21)** — 비관리자는 본인 일정만 반환 |
+| **C7** 이벤트 시스템 | ✅ | EVENTS 상수·`leave.requested` 발행명 정합·고아 이벤트(NOTIFIABLE_EVENTS SSOT)·MailService 주입 ✅. `sendInviteCode` 데드코드 제거 ✅(PR#21 — 회사 초대는 공유 코드 방식) |
 | **C8** Cron/배치 | ✅ | 휴가 자동발생(`@Cron 0 1 * * *`, 근속구간·그룹중복 버그 수정)·결근 배치(30분, 멱등)·메시지 자동화(트리거 조건·당일 멱등) 전부 동작 |
 | **도메인표** 8개 | ✅ | 조직/직원/근무일정/출퇴근/휴가/요청결재/리포트메시지/회사설정 핵심 갭 해소(조직 `address` 텍스트 컬럼만 부수 미추가) |
 
-**잔존(후속 권고):**
-- 🟡 `GET /shifts` 서버측 직원 스코핑 — EMPLOYEE 호출 시 본인 일정만 반환하도록 BE 강제(C6-4)
-- 🟡 `wage-info` 독립 모듈화(현재 employees 모듈 내 제공으로 기능상 충족)
-- 🟡 `sendInviteCode` 데드코드 정리 또는 초대코드 이메일 발송 배선(C7)
-- 조직 `address` 텍스트 컬럼(부수), 양식별 기본결재선 `defaultLineId`는 Phase 2 갭(AP-01-03)로 이관
+**잔존(경미):**
+- 🟡 `wage-info` 독립 모듈화 — 현재 employees 모듈 내 `/:id/wage-info`로 기능 충족(구조 정리는 선택)
+- 조직 `address` 텍스트 컬럼(부수). 양식별 기본결재선 `defaultLineId`는 Phase 2 AP-01-03로 ✅ 완료(PR#20).
 
 ---
 
