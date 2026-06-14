@@ -11,13 +11,21 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { useEmployees } from '@/lib/query/employees'
+import { useOrganizations, type Organization } from '@/lib/query/organizations'
 import type { ApprovalStepInput, StepRole } from '@/lib/query/documents'
-import { STEP_ROLE_OPTIONS } from './approval-constants'
+import { STEP_ROLE_OPTIONS, isDeptRole } from './approval-constants'
 
-interface EmployeeOption {
+interface PickOption {
   id: string
   name: string
 }
+
+/** 조직 트리를 플랫 옵션으로 (depth 들여쓰기 표기) */
+const flattenOrgs = (orgs: Organization[], depth = 0): PickOption[] =>
+  orgs.flatMap((o) => [
+    { id: o.id, name: `${'  '.repeat(depth)}${o.name}` },
+    ...(o.children?.length ? flattenOrgs(o.children, depth + 1) : []),
+  ])
 
 interface Props {
   steps: ApprovalStepInput[]
@@ -35,13 +43,24 @@ const normalize = (steps: ApprovalStepInput[]): ApprovalStepInput[] =>
  */
 export default function ApprovalLineBuilder({ steps, onChange, disabled = false }: Props) {
   const { data: employeeData } = useEmployees({ limit: 200, isActive: true })
-  const options: EmployeeOption[] = (employeeData?.items ?? []).map((e) => ({
+  const options: PickOption[] = (employeeData?.items ?? []).map((e) => ({
     id: e.id,
     name: e.name,
   }))
 
+  const { data: orgData } = useOrganizations()
+  const orgOptions: PickOption[] = flattenOrgs(orgData ?? [])
+
   const updateStep = (index: number, patch: Partial<ApprovalStepInput>) => {
     onChange(normalize(steps.map((s, i) => (i === index ? { ...s, ...patch } : s))))
+  }
+
+  /** 역할 변경 시 대상 필드를 초기화 (개인↔부서 전환) */
+  const changeRole = (index: number, role: StepRole) => {
+    const patch: Partial<ApprovalStepInput> = isDeptRole(role)
+      ? { role, organizationId: '', assigneeId: undefined }
+      : { role, assigneeId: '', organizationId: undefined }
+    updateStep(index, patch)
   }
 
   const moveStep = (index: number, direction: -1 | 1) => {
@@ -72,7 +91,10 @@ export default function ApprovalLineBuilder({ steps, onChange, disabled = false 
       )}
 
       {steps.map((step, index) => {
-        const selected = options.find((o) => o.id === step.assigneeId) ?? null
+        const dept = isDeptRole(step.role)
+        const pickOptions = dept ? orgOptions : options
+        const selectedId = dept ? step.organizationId : step.assigneeId
+        const selected = pickOptions.find((o) => o.id === selectedId) ?? null
         return (
           <Box
             key={`step-${index}`}
@@ -91,8 +113,8 @@ export default function ApprovalLineBuilder({ steps, onChange, disabled = false 
               label="역할"
               value={step.role}
               disabled={disabled}
-              onChange={(e) => updateStep(index, { role: e.target.value as StepRole })}
-              sx={{ width: 110, flexShrink: 0 }}
+              onChange={(e) => changeRole(index, e.target.value as StepRole)}
+              sx={{ width: 120, flexShrink: 0 }}
             >
               {STEP_ROLE_OPTIONS.map((opt) => (
                 <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
@@ -101,13 +123,17 @@ export default function ApprovalLineBuilder({ steps, onChange, disabled = false 
 
             <Autocomplete
               size="small"
-              options={options}
+              options={pickOptions}
               value={selected}
               disabled={disabled}
               getOptionLabel={(o) => o.name}
               isOptionEqualToValue={(o, v) => o.id === v.id}
-              onChange={(_, value) => updateStep(index, { assigneeId: value?.id ?? '' })}
-              renderInput={(params) => <TextField {...params} label="담당자" />}
+              onChange={(_, value) =>
+                updateStep(index, dept ? { organizationId: value?.id ?? '' } : { assigneeId: value?.id ?? '' })
+              }
+              renderInput={(params) => (
+                <TextField {...params} label={dept ? '부서' : '담당자'} />
+              )}
               sx={{ flexGrow: 1, minWidth: 140 }}
             />
 

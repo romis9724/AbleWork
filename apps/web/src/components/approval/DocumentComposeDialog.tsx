@@ -24,6 +24,7 @@ import {
 } from '@/lib/query/documents'
 import ApprovalLineBuilder from './ApprovalLineBuilder'
 import DynamicFormFields from './DynamicFormFields'
+import { isDeptRole } from './approval-constants'
 import { readFormFields } from '@ablework/shared-constants'
 
 interface Props {
@@ -93,9 +94,13 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
     }
     setSteps(
       (editingDoc.approvalLines?.flatMap((l) => l.steps) ?? [])
-        .filter((s) => !!s.assignee?.id)
+        .filter((s) => (isDeptRole(s.role) ? !!s.organization?.id : !!s.assignee?.id))
         .sort((a, b) => a.stepOrder - b.stepOrder)
-        .map((s, i) => ({ role: s.role, assigneeId: s.assignee!.id, stepOrder: i + 1 })),
+        .map((s, i) =>
+          isDeptRole(s.role)
+            ? { role: s.role, organizationId: s.organization!.id, stepOrder: i + 1 }
+            : { role: s.role, assigneeId: s.assignee!.id, stepOrder: i + 1 },
+        ),
     )
     setSharedLineId('')
     setErrorMessage('')
@@ -156,8 +161,10 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
   const handleSubmit = async () => {
     setErrorMessage('')
     if (!validateBase()) return
-    if (steps.length === 0 || steps.some((s) => !s.assigneeId)) {
-      setErrorMessage('결재선 단계의 담당자를 모두 지정해주세요.')
+    const incomplete = (s: ApprovalStepInput) =>
+      isDeptRole(s.role) ? !s.organizationId : !s.assigneeId
+    if (steps.length === 0 || steps.some(incomplete)) {
+      setErrorMessage('결재선 단계의 담당자(또는 부서)를 모두 지정해주세요.')
       return
     }
     if (!steps.some((s) => s.role === 'APPROVER')) {

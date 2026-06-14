@@ -69,14 +69,31 @@ function buildStepActions(
     }
     case 'AGREEMENT':
       return [{ action: 'agree', label: '협조', color: 'primary' }]
+    case 'DEPT_COLLABORATOR':
+      return [
+        { action: 'dept-collab', label: '부서협조 완료', color: 'primary' },
+        { action: 'reject', label: '반려', color: 'error', needsConfirm: true },
+      ]
     case 'REFERENCE':
     case 'VIEWER':
       return [{ action: 'view', label: '확인', color: 'info' }]
     case 'RECEIVER':
       return [{ action: 'receive', label: '수신 처리', color: 'primary' }]
+    case 'DEPT_RECEIVER':
+      return [
+        { action: 'receive', label: '수신확인', color: 'primary' },
+        { action: 'bounce', label: '반송', color: 'error', needsConfirm: true },
+      ]
     default:
       return []
   }
+}
+
+/** 역할별 액션 노출 문서 상태 — 수신류는 APPROVED, 참조/공람은 무관, 결재 흐름은 PENDING */
+function actionsVisibleForStatus(role: ApprovalStepDetail['role'], status?: string): boolean {
+  if (role === 'RECEIVER' || role === 'DEPT_RECEIVER') return status === 'APPROVED'
+  if (role === 'REFERENCE' || role === 'VIEWER') return true // 비차단 — 상태 무관 확인 가능
+  return status === 'PENDING' // APPROVER/AGREEMENT/DEPT_COLLABORATOR
 }
 
 /** 문서 상세 다이얼로그 — 내용 + 결재선 타임라인 + 이력 + 내 차례 액션 */
@@ -124,8 +141,8 @@ export default function DocumentDetailDialog({
     doc?.form?.allowReDraft !== false
 
   const stepActions =
-    !isHrLinked && doc?.status === 'PENDING' && myPendingStep
-      ? buildStepActions(myPendingStep, doc.form?.allowPreApproval ?? false)
+    !isHrLinked && myPendingStep && actionsVisibleForStatus(myPendingStep.role, doc?.status)
+      ? buildStepActions(myPendingStep, doc?.form?.allowPreApproval ?? false)
       : []
 
   const hasAnyAction = stepActions.length > 0 || canRecall || (canCancelApproval && !isHrLinked)
@@ -341,7 +358,7 @@ export default function DocumentDetailDialog({
           {stepActions.map((def) => (
             <Button
               key={def.action}
-              variant={def.action === 'approve' || def.action === 'agree' || def.action === 'receive' || def.action === 'view' ? 'contained' : 'outlined'}
+              variant={['approve', 'agree', 'receive', 'view', 'dept-collab'].includes(def.action) ? 'contained' : 'outlined'}
               color={def.color}
               disabled={busy}
               onClick={() => runStepAction(def, myPendingStep!.id)}

@@ -27,11 +27,12 @@ import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import ApprovalLineBuilder from '@/components/approval/ApprovalLineBuilder'
-import { STEP_ROLE_LABEL } from '@/components/approval/approval-constants'
+import { STEP_ROLE_LABEL, isDeptRole } from '@/components/approval/approval-constants'
 import { useSnackbar } from '@/hooks/useSnackbar'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { useConfirm } from '@/hooks/useConfirm'
 import { useEmployees } from '@/lib/query/employees'
+import { useOrganizations, type Organization } from '@/lib/query/organizations'
 import {
   useSharedApprovalLines,
   useCreateSharedApprovalLine,
@@ -49,6 +50,7 @@ interface DialogState {
 export default function SharedApprovalLinesPage() {
   const { data: lines = [], isLoading } = useSharedApprovalLines()
   const { data: employeeData } = useEmployees({ limit: 200, isActive: true })
+  const { data: orgTree = [] } = useOrganizations()
   const createMutation = useCreateSharedApprovalLine()
   const updateMutation = useUpdateSharedApprovalLine()
   const deleteMutation = useDeleteSharedApprovalLine()
@@ -61,8 +63,26 @@ export default function SharedApprovalLinesPage() {
   const [steps, setSteps] = useState<ApprovalStepInput[]>([])
   const [errorMessage, setErrorMessage] = useState('')
 
-  const employeeName = (id: string) =>
+  const employeeName = (id?: string) =>
     employeeData?.items.find((e) => e.id === id)?.name ?? '미지정'
+
+  // 조직 트리 평탄화 후 id→이름 조회
+  const flatOrgs = (() => {
+    const acc: Organization[] = []
+    const walk = (nodes: Organization[]) => {
+      for (const n of nodes) {
+        acc.push(n)
+        if (n.children?.length) walk(n.children)
+      }
+    }
+    walk(orgTree)
+    return acc
+  })()
+  const orgName = (id?: string) => flatOrgs.find((o) => o.id === id)?.name ?? '미지정'
+
+  /** 단계 표시 라벨 — 부서 단계는 부서명, 개인 단계는 직원명 */
+  const stepTargetName = (s: ApprovalStepInput) =>
+    isDeptRole(s.role) ? orgName(s.organizationId) : employeeName(s.assigneeId)
 
   const openCreate = () => {
     setName('')
@@ -90,8 +110,10 @@ export default function SharedApprovalLinesPage() {
       setErrorMessage('결재선 이름을 입력해주세요.')
       return
     }
-    if (steps.length === 0 || steps.some((s) => !s.assigneeId)) {
-      setErrorMessage('모든 단계의 담당자를 지정해주세요.')
+    const incomplete = (s: ApprovalStepInput) =>
+      isDeptRole(s.role) ? !s.organizationId : !s.assigneeId
+    if (steps.length === 0 || steps.some(incomplete)) {
+      setErrorMessage('모든 단계의 담당자(또는 부서)를 지정해주세요.')
       return
     }
     const payload = {
@@ -185,7 +207,7 @@ export default function SharedApprovalLinesPage() {
                             <Chip
                               size="small"
                               variant="outlined"
-                              label={`${STEP_ROLE_LABEL[s.role] ?? s.role} · ${employeeName(s.assigneeId)}`}
+                              label={`${STEP_ROLE_LABEL[s.role] ?? s.role} · ${stepTargetName(s)}`}
                             />
                           </Box>
                         ))}
