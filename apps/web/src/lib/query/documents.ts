@@ -59,10 +59,22 @@ export type StepAction =
   | 'dept-collab'
   | 'bounce'
 
+export type FormVisibilityScope = 'PUBLIC' | 'DEPARTMENT' | 'PRIVATE'
+
 export interface DocumentForm {
   id: string
   name: string
   category?: string | null
+  /** AP-01 양식함 분류 id */
+  categoryId?: string | null
+  /** AP-01 공개범위 (공개/부서공개/비공개) */
+  visibilityScope?: FormVisibilityScope
+  /** AP-01 보존연한(년) */
+  retentionYears?: number | null
+  /** AP-01 문서번호 약어 */
+  abbreviation?: string | null
+  /** AP-01 양식 설명 */
+  description?: string | null
   /** AP-01-03 양식별 기본 결재선(공용 결재선 id) */
   defaultLineId?: string | null
   /** AP-01-07 양식 담당자(직원 id) */
@@ -74,6 +86,13 @@ export interface DocumentForm {
   sortOrder: number
   isActive: boolean
   fieldsSchema?: { fields?: DocumentFieldDef[] } | null
+}
+
+export interface FormCategory {
+  id: string
+  name: string
+  sortOrder: number
+  isActive: boolean
 }
 
 export interface FormAccessRule {
@@ -227,6 +246,42 @@ export const useDeleteDocumentForm = () => {
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/document-forms/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: FORMS_KEY }),
+  })
+}
+
+// AP-01 양식함(분류) CRUD
+const CATEGORIES_KEY = ['form-categories']
+
+export const useFormCategories = () =>
+  useQuery({
+    queryKey: CATEGORIES_KEY,
+    queryFn: () => apiClient.get('/form-categories') as Promise<FormCategory[]>,
+    staleTime: 60_000,
+  })
+
+export const useCreateFormCategory = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { name: string; sortOrder?: number }) =>
+      apiClient.post('/form-categories', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: CATEGORIES_KEY }),
+  })
+}
+
+export const useUpdateFormCategory = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; name?: string; sortOrder?: number; isActive?: boolean }) =>
+      apiClient.patch(`/form-categories/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: CATEGORIES_KEY }),
+  })
+}
+
+export const useDeleteFormCategory = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/form-categories/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: CATEGORIES_KEY }),
   })
 }
 

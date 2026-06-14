@@ -934,6 +934,11 @@ notification_rules {
 - 회사 설정 API(`/company-settings`)는 게이트하지 않으므로 **재활성화 경로는 항상 열려 있다**.
 - HR 요청(`/requests`) 내부의 문서 자동생성·결재는 컨트롤러를 거치지 않으므로 **영향받지 않는다**(인사/근태 결재 흐름 유지). 설정 화면: 회사 설정 > 전자결재 탭(`approvalServiceEnabled`).
 
+**기안양식 풀세트(AP-01)**: 양식을 분류·메타·공개범위로 관리한다.
+- **양식함(분류, `form_categories`)**: `/form-categories` CRUD(목록 전 직원, 생성/수정/삭제 GENERAL_ADMIN). 분류를 사용하는 양식이 있으면 삭제 차단(`FORM_CATEGORY_IN_USE`). 양식은 `categoryId`로 분류에 소속(삭제 시 SetNull).
+- **양식 메타**: `visibilityScope`(PUBLIC/DEPARTMENT/PRIVATE)·`retentionYears`(보존연한, 백업 retention과 연동)·`abbreviation`(문서번호 약어)·`description`(설명).
+- **공개범위 enforcement**(`assertCanUseForm`): 접근규칙(`form_access_rules`)이 있으면 규칙 매칭(기존 동작). 규칙이 **없을 때** `PUBLIC`은 전체 허용(기존 동작 유지), `DEPARTMENT`/`PRIVATE`은 양식 담당자(`formOwnerId`)만 작성 가능(그 외 `FORM_ACCESS_DENIED`). 기존 양식은 마이그레이션 기본값 `PUBLIC`이라 동작 변화 없음.
+
 ### 6.5 결재 · 요청 보안 불변식
 
 | 불변식 | 규칙 | 에러코드 |

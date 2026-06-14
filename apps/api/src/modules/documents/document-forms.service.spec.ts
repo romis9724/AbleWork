@@ -16,6 +16,7 @@ const baseForm = {
   formOwnerId: null as string | null,
   name: '휴가 신청서',
   category: 'HR',
+  visibilityScope: 'PUBLIC',
   fieldsSchema: { fields: [{ key: 'reason', type: 'text' }] },
   sortOrder: 0,
   allowReDraft: false,
@@ -146,6 +147,7 @@ describe('DocumentFormsService', () => {
       name: '휴가 신청서',
       category: 'HR',
       fieldsSchema: { fields: [{ key: 'reason', type: 'text' }] },
+      visibilityScope: 'PUBLIC' as const,
       sortOrder: 0,
       allowReDraft: false,
       allowPreApproval: false,
@@ -573,8 +575,8 @@ describe('DocumentFormsService', () => {
       mockPrisma.documentForm.create.mockResolvedValue(baseForm)
 
       await service.create(COMPANY_ID, {
-        name: 'x', fieldsSchema: {}, sortOrder: 0, allowReDraft: false, allowPreApproval: false,
-        allowZipUpload: false, formOwnerId: 'emp-1',
+        name: 'x', fieldsSchema: {}, visibilityScope: 'PUBLIC', sortOrder: 0, allowReDraft: false,
+        allowPreApproval: false, allowZipUpload: false, formOwnerId: 'emp-1',
       })
 
       expect(mockPrisma.documentForm.create).toHaveBeenCalledWith(
@@ -587,8 +589,8 @@ describe('DocumentFormsService', () => {
 
       await expect(
         service.create(COMPANY_ID, {
-          name: 'x', fieldsSchema: {}, sortOrder: 0, allowReDraft: false, allowPreApproval: false,
-          allowZipUpload: false, formOwnerId: 'ghost',
+          name: 'x', fieldsSchema: {}, visibilityScope: 'PUBLIC', sortOrder: 0, allowReDraft: false,
+          allowPreApproval: false, allowZipUpload: false, formOwnerId: 'ghost',
         }),
       ).rejects.toMatchObject({ response: { code: 'EMPLOYEE_NOT_FOUND' } })
     })
@@ -643,6 +645,28 @@ describe('DocumentFormsService', () => {
       await expect(
         service.assertCanUseForm(COMPANY_ID, FORM_ID, { employeeId: 'emp-9' }),
       ).rejects.toMatchObject({ response: { code: 'FORM_ACCESS_DENIED' } })
+    })
+
+    it('assertCanUseForm: 규칙 없음 + 비공개(PRIVATE) + 담당자 아니면 FORM_ACCESS_DENIED', async () => {
+      mockPrisma.formAccessRule.findMany.mockResolvedValue([])
+      mockPrisma.documentForm.findFirst.mockResolvedValue({
+        visibilityScope: 'PRIVATE',
+        formOwnerId: 'owner-1',
+      })
+      await expect(
+        service.assertCanUseForm(COMPANY_ID, FORM_ID, { employeeId: 'emp-9' }),
+      ).rejects.toMatchObject({ response: { code: 'FORM_ACCESS_DENIED' } })
+    })
+
+    it('assertCanUseForm: 규칙 없음 + 부서공개(DEPARTMENT) + 양식 담당자면 통과', async () => {
+      mockPrisma.formAccessRule.findMany.mockResolvedValue([])
+      mockPrisma.documentForm.findFirst.mockResolvedValue({
+        visibilityScope: 'DEPARTMENT',
+        formOwnerId: 'owner-1',
+      })
+      await expect(
+        service.assertCanUseForm(COMPANY_ID, FORM_ID, { employeeId: 'owner-1' }),
+      ).resolves.toBeUndefined()
     })
   })
 })
