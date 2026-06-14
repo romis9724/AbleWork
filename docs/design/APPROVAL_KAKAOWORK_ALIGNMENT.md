@@ -31,7 +31,7 @@
 3. ✅ **서비스 사용 설정** — 회사 설정 `approval.enable_service`(기본 ON) + `ApprovalEnabledGuard`가 전자결재 5개 컨트롤러 게이트(`APPROVAL_SERVICE_DISABLED` 403, 재활성화 경로/HR요청 결재는 비게이트). FE 회사 설정 > 전자결재 탭 토글. 단위 3건(666 pass). ERD `approval.enable_service`·SYSTEM_DESIGN §6.4 동기화.
 4. ✅ **양식 풀세트** — 25a(BE: form_categories·공개범위·메타·enforcement, PR#35) + 25b(FE: 3탭 위저드·양식함 분류 관리 다이얼로그·확장 필드타입 richtext/table 빌더+렌더러). 단위 673 pass.
 5. ✅ **문서담당관리** — `organization_doc_managers`(다중, sortOrder) + `/organizations/:id/doc-managers` 관리 API + 전용 페이지(전자결재>문서담당 관리, 조직트리+Autocomplete) + 조직 다이얼로그 단일 필드 제거. resolveSteps=대표 담당자 우선, resolveActor=부서 담당자 누구나, dept-docs box=담당부서 포함. 마이그레이션(backfill docManagerId→조인). 단위 5건(678 pass).
-6. **공용 결재선 관리** 정합(필터·작성자·중복체크·검증·동적결재자).
+6. ✅ **공용 결재선 관리** 정합 — 작성자(`createdById`)·작성일 노출 + `search` 필터 + 이름 중복체크(`SHARED_LINE_DUPLICATE_NAME`) + 최종결재자=협조자 금지(`FINAL_APPROVER_IS_COLLABORATOR`). FE 검색·작성자/작성일 컬럼·에러 노출. 단위 681 pass. ⏸ 소속부서 팀장 동적결재자 토큰은 보류(assigneeId NOT NULL + 상신시점 해석 필요 → 별도 단계).
 7. **공통 관리** 통합 페이지(채번 약어·정책토글·알림 2계층·표시형식).
 8. **기안 작성** 정합(첨부 UI·본인결재금지·재기안·양식함 진입·리치텍스트).
 9. **기안 결재** 정합(공람/협조 사후추가·부서협조 2단계·라벨).

@@ -2,6 +2,10 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service'
 import { CreateSharedLineDto, UpdateSharedLineDto } from './dto/document-form.dto'
 import { StepInput } from './dto/document.dto'
+import { StepRole } from './documents.constants'
+
+/** 협조 역할 — 최종결재자가 동시에 협조자로 지정되는 것을 금지 */
+const COLLAB_ROLES: string[] = [StepRole.AGREEMENT, StepRole.DEPT_COLLABORATOR]
 
 /**
  * AP — 공용 결재선 (Goal 11)
@@ -11,18 +15,21 @@ import { StepInput } from './dto/document.dto'
 export class SharedApprovalLinesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(companyId: string) {
+  async findAll(companyId: string, search?: string) {
     return this.prisma.sharedApprovalLine.findMany({
-      where: { companyId },
+      where: { companyId, ...(search ? { name: { contains: search } } : {}) },
       orderBy: { name: 'asc' },
+      include: { createdBy: { select: { id: true, name: true } } },
     })
   }
 
-  async create(companyId: string, dto: CreateSharedLineDto) {
+  async create(companyId: string, dto: CreateSharedLineDto, createdById: string) {
     await this.assertAssigneesInCompany(companyId, dto.steps)
+    this.assertNoFinalApproverConflict(dto.steps)
+    await this.assertNameUnique(companyId, dto.name)
 
     return this.prisma.sharedApprovalLine.create({
-      data: { companyId, name: dto.name, steps: dto.steps },
+      data: { companyId, name: dto.name, steps: dto.steps, createdById },
     })
   }
 
@@ -31,6 +38,10 @@ export class SharedApprovalLinesService {
 
     if (dto.steps) {
       await this.assertAssigneesInCompany(companyId, dto.steps)
+      this.assertNoFinalApproverConflict(dto.steps)
+    }
+    if (dto.name !== undefined) {
+      await this.assertNameUnique(companyId, dto.name, lineId)
     }
 
     return this.prisma.sharedApprovalLine.update({
@@ -65,6 +76,44 @@ export class SharedApprovalLinesService {
   }
 
   // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
+
+  /** 같은 회사 내 결재선 이름 중복 차단 (수정 시 자기 자신 제외) */
+  private async assertNameUnique(companyId: string, name: string, excludeId?: string) {
+    const existing = await this.prisma.sharedApprovalLine.findFirst({
+      where: { companyId, name, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      select: { id: true },
+    })
+    if (existing) {
+      throw new BadRequestException({
+        code: 'SHARED_LINE_DUPLICATE_NAME',
+        message: '같은 이름의 공용 결재선이 이미 있습니다.',
+      })
+    }
+  }
+
+  /**
+   * 최종 결재자(마지막 APPROVER/AGREEMENT 흐름 단계 중 최대 stepOrder의 APPROVER)가
+   * 동일 결재선에서 협조자(AGREEMENT/부서협조)로도 지정되면 거부한다.
+   */
+  private assertNoFinalApproverConflict(steps: StepInput[]) {
+    const approvers = steps
+      .filter((s) => s.role === StepRole.APPROVER && s.assigneeId)
+      .sort((a, b) => a.stepOrder - b.stepOrder)
+    const finalApprover = approvers[approvers.length - 1]
+    if (!finalApprover?.assigneeId) return
+
+    const collaboratorIds = new Set(
+      steps
+        .filter((s) => COLLAB_ROLES.includes(s.role) && s.assigneeId)
+        .map((s) => s.assigneeId as string),
+    )
+    if (collaboratorIds.has(finalApprover.assigneeId)) {
+      throw new BadRequestException({
+        code: 'FINAL_APPROVER_IS_COLLABORATOR',
+        message: '최종 결재자는 협조자로 함께 지정할 수 없습니다.',
+      })
+    }
+  }
 
   private async assertLineBelongsToCompany(companyId: string, lineId: string) {
     const line = await this.prisma.sharedApprovalLine.findFirst({

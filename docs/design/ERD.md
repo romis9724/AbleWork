@@ -595,9 +595,11 @@ erDiagram
   shared_approval_lines {
     uuid   id PK
     uuid   company_id FK
+    uuid   created_by_id FK
     string name
     jsonb  steps
     int    version
+    timestamptz created_at
     timestamptz updated_at
   }
 

@@ -6,16 +6,19 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common'
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger'
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger'
 import { SharedApprovalLinesService } from './shared-approval-lines.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { RolesGuard } from '../../common/guards/roles.guard'
 import { ApprovalEnabledGuard } from '../../common/guards/approval-enabled.guard'
 import { CompanyId } from '../../common/decorators/company-id.decorator'
+import { CurrentUser } from '../../common/decorators/current-user.decorator'
+import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe'
 import { AccessLevel } from '@ablework/shared-constants'
@@ -33,11 +36,12 @@ import {
 export class SharedApprovalLinesController {
   constructor(private readonly sharedApprovalLinesService: SharedApprovalLinesService) {}
 
-  // AP-01-07 공용 결재선 목록 (전 직원)
+  // AP-01-07 공용 결재선 목록 (전 직원) — name 부분검색 필터
   @Get()
-  @ApiOperation({ summary: '공용 결재선 목록 조회' })
-  findAll(@CompanyId() companyId: string) {
-    return this.sharedApprovalLinesService.findAll(companyId)
+  @ApiOperation({ summary: '공용 결재선 목록 조회 (search 필터)' })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  findAll(@CompanyId() companyId: string, @Query('search') search?: string) {
+    return this.sharedApprovalLinesService.findAll(companyId, search?.trim() || undefined)
   }
 
   // AP-01-08 공용 결재선 생성
@@ -47,8 +51,9 @@ export class SharedApprovalLinesController {
   create(
     @CompanyId() companyId: string,
     @Body(new ZodValidationPipe(CreateSharedLineSchema)) dto: CreateSharedLineDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.sharedApprovalLinesService.create(companyId, dto)
+    return this.sharedApprovalLinesService.create(companyId, dto, user.employeeId)
   }
 
   // AP-01-09 공용 결재선 수정
