@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -9,13 +9,16 @@ import CardContent from '@mui/material/CardContent'
 import CircularProgress from '@mui/material/CircularProgress'
 import Fab from '@mui/material/Fab'
 import IconButton from '@mui/material/IconButton'
+import InputAdornment from '@mui/material/InputAdornment'
 import Pagination from '@mui/material/Pagination'
 import Snackbar from '@mui/material/Snackbar'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
+import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
+import SearchIcon from '@mui/icons-material/Search'
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount'
 import EmptyState from '@/components/common/EmptyState'
 import { useSnackbar } from '@/hooks/useSnackbar'
@@ -44,9 +47,24 @@ export default function DocumentBoxesView({ variant }: Props) {
     editingId: null,
   })
   const [proxyOpen, setProxyOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
   const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
 
-  const { data, isLoading } = useDocuments(box, { page, limit: PAGE_LIMIT })
+  // 검색어 디바운스 — 입력 멈춤 후 300ms에 적용, 페이지 초기화
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setAppliedSearch(search.trim())
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const { data, isLoading } = useDocuments(box, {
+    page,
+    limit: PAGE_LIMIT,
+    ...(appliedSearch ? { search: appliedSearch } : {}),
+  })
   const items = data?.items ?? []
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_LIMIT))
   const isMineBox = MINE_BOXES.includes(box)
@@ -105,15 +123,31 @@ export default function DocumentBoxesView({ variant }: Props) {
         ))}
       </Tabs>
 
+      <TextField
+        size="small"
+        fullWidth
+        placeholder="제목 · 문서번호 검색"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        sx={{ mb: 2 }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon fontSize="small" color="action" />
+            </InputAdornment>
+          ),
+        }}
+      />
+
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
           <CircularProgress />
         </Box>
       ) : items.length === 0 ? (
         <EmptyState
-          message="문서가 없습니다."
+          message={appliedSearch ? '검색 결과가 없습니다.' : '문서가 없습니다.'}
           action={
-            box === 'draft' ? (
+            box === 'draft' && !appliedSearch ? (
               <Button variant="outlined" startIcon={<AddIcon />} onClick={openCompose}>
                 기안 작성
               </Button>

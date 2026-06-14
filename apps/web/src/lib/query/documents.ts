@@ -242,6 +242,8 @@ export interface DocumentListParams {
   page?: number
   limit?: number
   status?: string
+  /** 제목·문서번호 부분검색 (BE: title/docNumber contains) */
+  search?: string
 }
 
 export const useDocuments = (box: DocumentBox, params?: DocumentListParams) =>
