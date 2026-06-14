@@ -45,6 +45,7 @@ const orgSchema = z.object({
   name: z.string().min(1, '조직명을 입력해 주세요.'),
   parentId: z.string().nullable().optional(),
   approverId: z.string().nullable().optional(),
+  docManagerId: z.string().nullable().optional(),
 })
 
 type OrgFormValues = z.infer<typeof orgSchema>
@@ -79,6 +80,7 @@ function OrgDialog({ open, initial, organizations, employees, loading, onSubmit,
       name: initial?.name ?? '',
       parentId: initial?.parentId ?? null,
       approverId: initial?.approverId ?? null,
+      docManagerId: initial?.docManagerId ?? null,
     },
   })
 
@@ -130,6 +132,26 @@ function OrgDialog({ open, initial, organizations, employees, loading, onSubmit,
             />
           )}
         />
+        <Controller
+          name="docManagerId"
+          control={control}
+          render={({ field }) => (
+            <Autocomplete
+              options={employees}
+              getOptionLabel={(e) => e.name}
+              value={employees.find((e) => e.id === field.value) ?? null}
+              onChange={(_, v) => field.onChange(v?.id ?? null)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="문서담당자"
+                  helperText="미지정 시 결재권자(팀장)가 부서협조·부서수신을 처리합니다."
+                />
+              )}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+            />
+          )}
+        />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>취소</Button>
@@ -174,6 +196,7 @@ export default function OrganizationsPage() {
       ...values,
       parentId: values.parentId ?? undefined,
       approverId: values.approverId ?? undefined,
+      docManagerId: values.docManagerId ?? undefined,
     }, {
       onSuccess: () => { setDialogOpen(false); showSnack('조직이 추가되었습니다.', 'success') },
       onError: () => showSnack('조직 추가에 실패했습니다.', 'error'),
@@ -204,6 +227,11 @@ export default function OrganizationsPage() {
 
   const approverName = (org: Organization) =>
     employees.find((e) => e.id === org.approverId)?.name ?? '—'
+  const docManagerName = (org: Organization) => {
+    if (org.docManagerId) return employees.find((e) => e.id === org.docManagerId)?.name ?? '—'
+    const lead = employees.find((e) => e.id === org.approverId)?.name
+    return lead ? `${lead} (팀장 기본)` : '미지정'
+  }
   const parentName = (org: Organization) =>
     flatOrgs.find((o) => o.id === org.parentId)?.name ?? '—'
 
@@ -304,6 +332,10 @@ export default function OrganizationsPage() {
                   <Box sx={{ display: 'flex', gap: 2 }}>
                     <Typography variant="body2" color="text.secondary" sx={{ minWidth: 80 }}>결재권자</Typography>
                     <Typography variant="body2">{approverName(selectedOrg)}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ minWidth: 80 }}>문서담당자</Typography>
+                    <Typography variant="body2">{docManagerName(selectedOrg)}</Typography>
                   </Box>
                   <Box sx={{ display: 'flex', gap: 2 }}>
                     <Typography variant="body2" color="text.secondary" sx={{ minWidth: 80 }}>계층 깊이</Typography>

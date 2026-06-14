@@ -170,6 +170,22 @@ describe('OrganizationsService', () => {
       ).rejects.toThrow(NotFoundException)
     })
 
+    it('문서담당자(docManagerId)를 지정/해제할 수 있다 (AP-04-07)', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
+      mockPrisma.organization.update.mockResolvedValue(makeOrg())
+
+      // 지정
+      await service.update('org-1', 'company-1', { docManagerId: 'emp-9' })
+      expect(mockPrisma.organization.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ docManagerId: 'emp-9' }) }),
+      )
+      // 해제(null)
+      await service.update('org-1', 'company-1', { docManagerId: null })
+      expect(mockPrisma.organization.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ docManagerId: null }) }),
+      )
+    })
+
     it('자기 자신을 상위 조직으로 지정하면 ORG_PARENT_CYCLE로 차단한다', async () => {
       // findOneOrThrow + 부모 존재확인 모두 org-1 반환 → 순환 검증 첫 단계에서 차단
       mockPrisma.organization.findFirst.mockResolvedValue(
