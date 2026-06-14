@@ -612,6 +612,14 @@ describe('DocumentsService', () => {
       expect(where.status).toBe('PENDING')
     })
 
+    it('reference 박스: 상신 전(DRAFT) 문서는 제외한다 (L2)', async () => {
+      await service.findAll(COMPANY_ID, { box: 'reference', page: 1, limit: 20 }, makeUser())
+
+      const where = mockPrisma.document.findMany.mock.calls[0][0].where
+      expect(where.status).toEqual({ not: 'DRAFT' })
+      expect(where.approvalLines.some.steps.some).toEqual({ role: 'REFERENCE', assigneeId: DRAFTER_ID })
+    })
+
     it('dept-docs 박스: 내가 부서 담당자인 부서협조/부서수신 문서만 조회한다', async () => {
       await service.findAll(COMPANY_ID, { box: 'dept-docs', page: 1, limit: 20 }, makeUser())
 

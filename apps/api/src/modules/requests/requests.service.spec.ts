@@ -298,6 +298,65 @@ describe('RequestsService', () => {
       )
     })
 
+    it('DEVICE_CHANGE 자동승인: payload.newDeviceId가 있으면 기기를 즉시 바인딩한다 (L1)', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      const dto = { type: 'DEVICE_CHANGE' as const, payload: { newDeviceId: 'device-XYZ', reason: '기기 교체' } }
+
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.request.create.mockResolvedValue({ ...basePendingRequest, type: 'DEVICE_CHANGE' })
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        id: EMPLOYEE_ID, companyId: COMPANY_ID, name: '홍길동',
+        organizations: [{ organizationId: 'org-1' }], positions: [],
+      })
+      mockPrisma.approvalRule.findMany.mockResolvedValue([
+        { ...baseApprovalRule, requestType: 'DEVICE_CHANGE', isAutoApprove: true },
+      ])
+      mockPrisma.request.update.mockResolvedValue({
+        ...basePendingRequest, type: 'DEVICE_CHANGE', payload: dto.payload, status: 'APPROVED',
+      })
+      mockPrisma.employee.update.mockResolvedValue({})
+
+      await service.createRequest(COMPANY_ID, dto, requester)
+
+      expect(mockPrisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: EMPLOYEE_ID },
+          data: expect.objectContaining({ deviceId: 'device-XYZ' }),
+        }),
+      )
+    })
+
+    it('DEVICE_CHANGE 자동승인: newDeviceId가 없으면 기존 기기를 해제(null)한다 (재바인딩)', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      const dto = { type: 'DEVICE_CHANGE' as const, payload: { reason: '분실' } }
+
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.request.create.mockResolvedValue({ ...basePendingRequest, type: 'DEVICE_CHANGE' })
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        id: EMPLOYEE_ID, companyId: COMPANY_ID, name: '홍길동',
+        organizations: [{ organizationId: 'org-1' }], positions: [],
+      })
+      mockPrisma.approvalRule.findMany.mockResolvedValue([
+        { ...baseApprovalRule, requestType: 'DEVICE_CHANGE', isAutoApprove: true },
+      ])
+      mockPrisma.request.update.mockResolvedValue({
+        ...basePendingRequest, type: 'DEVICE_CHANGE', payload: dto.payload, status: 'APPROVED',
+      })
+      mockPrisma.employee.update.mockResolvedValue({})
+
+      await service.createRequest(COMPANY_ID, dto, requester)
+
+      expect(mockPrisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { deviceId: null, deviceBoundAt: null },
+        }),
+      )
+    })
+
     it('승인 규칙 있으면 Document + ApprovalLine + ApprovalStep을 생성하고 이벤트를 emit한다', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
       const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' } }

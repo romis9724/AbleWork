@@ -906,12 +906,22 @@ export class RequestsService {
       case 'ATTENDANCE_DELETE':
         await this.applyAttendanceDelete(tx, companyId, employeeId, payload)
         break
-      case 'DEVICE_CHANGE':
+      case 'DEVICE_CHANGE': {
+        // payload.newDeviceId가 있으면 새 기기를 즉시 바인딩, 없으면 기존 기기 해제
+        // (다음 출근 시 재바인딩). 둘 다 출근 인증 기기를 교체하는 정상 경로.
+        const newDeviceId =
+          typeof payload.newDeviceId === 'string' && payload.newDeviceId.trim()
+            ? payload.newDeviceId.trim()
+            : null
         await tx.employee.update({
           where: { id: employeeId },
-          data: { deviceId: null, deviceBoundAt: null },
+          data: {
+            deviceId: newDeviceId,
+            deviceBoundAt: newDeviceId ? new Date() : null,
+          },
         })
         break
+      }
       // OFFSITE_WORK / CUSTOM: Phase 1에서는 데이터 반영 없음 (기록·결재만)
       default:
         break
