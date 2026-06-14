@@ -26,7 +26,7 @@
 - 전자결재 홈 대시보드: 나의 결재현황 카운트 타일 + 결재 미리보기 3탭(상신/결재할/최근 결재의견) + 최근 사용 양식 + summary 엔드포인트.
 
 ### 실행 로드맵 (단계별 PR, 의존성 순)
-1. **인프라**: MinIO StorageModule + `document_attachments` 모델/엔드포인트.
+1. ✅ **인프라**: MinIO `StorageModule`(`StorageService`, 버킷 자동생성·미가용 graceful) + `document_attachments` 모델/마이그레이션 + 첨부 API(업로드/목록/다운로드/삭제, 20MB·10개·zip 게이트) + FE `AttachmentPanel`(드래그앤드롭, 상세·기안 작성 다이얼로그 연동). 단위 14건 추가(663 pass). ERD 53테이블·SYSTEM_DESIGN §6.4 동기화.
 2. ✅ **결재 현황** 재구성 — `box=status`(상신/진행중/반려만, `phase`·`currentApprover` 파생), 필터바(상신일·양식·결재상태·제목), 체크박스 다중선택 + `POST /documents/bulk-force-delete`(PENDING/REJECTED 한정·HR연동 제외·skipped 반환). 단위 테스트 9건 추가(649 pass). 설계서 §5.3.5/§6.4 동기화 완료.  ← 사용자 최초 요청
 3. **서비스 사용 설정**(전자결재 on/off + 게이트).
 4. **양식 풀세트**(FormCategory·공개범위·메타·확장템플릿·3탭 위저드).

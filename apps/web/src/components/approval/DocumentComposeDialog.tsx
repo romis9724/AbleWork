@@ -24,6 +24,7 @@ import {
 } from '@/lib/query/documents'
 import ApprovalLineBuilder from './ApprovalLineBuilder'
 import DynamicFormFields from './DynamicFormFields'
+import AttachmentPanel from './AttachmentPanel'
 import { isDeptRole } from './approval-constants'
 import { readFormFields } from '@ablework/shared-constants'
 
@@ -278,6 +279,20 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />
+
+            {/* 첨부파일 (AP-02-01) — 문서가 저장된 뒤(editingId)에만 첨부 가능 */}
+            {editingId ? (
+              <AttachmentPanel
+                documentId={editingId}
+                editable
+                allowZipUpload={editingDoc?.form?.allowZipUpload}
+                onError={setErrorMessage}
+              />
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                첨부파일은 임시저장 후 등록할 수 있습니다.
+              </Typography>
+            )}
 
             <Divider />
 

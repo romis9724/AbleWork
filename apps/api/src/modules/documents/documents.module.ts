@@ -8,6 +8,8 @@ import { SharedApprovalLinesController } from './shared-approval-lines.controlle
 import { SharedApprovalLinesService } from './shared-approval-lines.service'
 import { ProxySettingsController } from './proxy-settings.controller'
 import { ProxySettingsService } from './proxy-settings.service'
+import { AttachmentsController } from './attachments.controller'
+import { AttachmentsService } from './attachments.service'
 
 /**
  * Phase 2 전자결재 (Goal 11~16)
@@ -21,6 +23,7 @@ import { ProxySettingsService } from './proxy-settings.service'
     DocumentFormsController,
     SharedApprovalLinesController,
     ProxySettingsController,
+    AttachmentsController,
     DocumentsController,
   ],
   providers: [
@@ -29,6 +32,7 @@ import { ProxySettingsService } from './proxy-settings.service'
     DocumentFormsService,
     SharedApprovalLinesService,
     ProxySettingsService,
+    AttachmentsService,
   ],
   exports: [DocumentsService, ApprovalActionsService],
 })

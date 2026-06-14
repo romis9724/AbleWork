@@ -512,6 +512,18 @@ erDiagram
     timestamptz created_at
   }
 
+  document_attachments {
+    uuid   id PK
+    uuid   company_id FK
+    uuid   document_id FK
+    uuid   uploader_id FK
+    string file_name
+    string storage_key
+    string content_type
+    int    size
+    timestamptz created_at
+  }
+
   approval_lines {
     uuid   id PK
     uuid   document_id FK
@@ -570,6 +582,8 @@ erDiagram
   document_forms ||--o{ document_number_rules : "has"
   document_forms ||--o{ documents : "used by"
   employees ||--o{ documents : "drafts"
+  documents ||--o{ document_attachments : "attaches"
+  employees ||--o{ document_attachments : "uploads"
   documents ||--o{ approval_lines : "has"
   approval_lines ||--o{ approval_steps : "contains"
   documents ||--o{ approval_history : "logged in"
@@ -742,7 +756,7 @@ erDiagram
 
 ---
 
-## 테이블 목록 (52개 도메인 테이블)
+## 테이블 목록 (53개 도메인 테이블)
 
 | # | 테이블 | 설명 |
 |---|---|---|
@@ -798,6 +812,7 @@ erDiagram
 | 50 | **message_recipients** | **메시지 수신자** |
 | 51 | notification_rules | Discord/이메일 알림 규칙 |
 | 52 | notification_logs | 알림 발송 이력 |
+| 53 | **document_attachments** | **기안 첨부파일 (MinIO 오브젝트 메타)** |
 
 ---
 

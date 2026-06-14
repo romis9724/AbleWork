@@ -923,6 +923,13 @@ notification_rules {
 - **필터**: `status`(전체/`SUBMITTED`/`IN_PROGRESS`/`REJECTED`), `formId`(기안양식), `dateFrom`/`dateTo`(상신일 기간, `submittedAt` gte/lte), `search`(제목·문서번호).
 - **다중 삭제**(`POST /documents/bulk-force-delete`, 최대 100건): 체크박스 다중선택 후 일괄 삭제. **대상 상태를 `PENDING`/`REJECTED`로 제한**하고, HR 연동·미존재·삭제불가 상태는 삭제하지 않고 `skipped[{id, reason}]`(`STATUS_NOT_DELETABLE`/`LINKED_TO_REQUEST`/`NOT_FOUND`)로 반환한다. 응답 `{ deletedCount, deletedIds, skipped }`.
 
+**기안 첨부파일(AP-02-01) — MinIO 오브젝트 스토리지**: 첨부 바이너리는 MinIO(S3 호환)에 저장하고 `document_attachments`에는 메타데이터(파일명·`storage_key`·MIME·크기·업로더)만 보관한다.
+- 전역 `StorageModule`(`StorageService`)이 버킷을 부팅 시 자동 생성하며, 스토리지 미가용 시 부팅을 막지 않고 첨부 업로드 시점에 `STORAGE_UNAVAILABLE`(503)로만 실패한다.
+- 엔드포인트: `POST /documents/:id/attachments`(multipart, field=`file`), `GET /documents/:id/attachments`(목록), `GET /documents/:id/attachments/:attId/download`(스트리밍, `Content-Disposition` RFC5987), `DELETE /documents/:id/attachments/:attId`.
+- 권한: **업로드/삭제는 기안자 본인 + 작성 가능 상태(DRAFT/RECALLED/REJECTED)**, **목록/다운로드는 문서 열람 권한자(기안자/결재 관계자/관리자)**.
+- 제약: 1건 최대 20MB, 문서당 최대 10개. 양식의 `allowZipUpload=false`이면 zip 첨부 차단(`ATTACHMENT_ZIP_NOT_ALLOWED`). 문서 삭제 시 `document_attachments`는 Cascade로 함께 제거(오브젝트는 삭제 API 경로에서 best-effort 제거).
+- 환경변수(기본값=docker-compose): `MINIO_ENDPOINT`(localhost)·`MINIO_PORT`(9000)·`MINIO_USE_SSL`(false)·`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`(minioadmin)·`MINIO_BUCKET`(ablework).
+
 ### 6.5 결재 · 요청 보안 불변식
 
 | 불변식 | 규칙 | 에러코드 |

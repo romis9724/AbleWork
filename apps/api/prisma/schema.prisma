@@ -52,6 +52,7 @@ model Company {
   messages             Message[]
   notificationRules    NotificationRule[]
   employeeCustomFields EmployeeCustomField[]
+  documentAttachments  DocumentAttachment[]
 
   @@map("companies")
 }
@@ -191,6 +192,7 @@ model Employee {
   confirmedAttendances  Attendance[]               @relation("AttendanceConfirmer")
   lockedSnapshots       ReportSnapshot[]
   sentMessages          Message[]
+  uploadedAttachments   DocumentAttachment[]       @relation("AttachmentUploader")
 
   @@index([companyId, isActive])
   @@index([companyId, accessLevel])
@@ -789,10 +791,31 @@ model Document {
   drafter       Employee         @relation("DocumentDrafter", fields: [drafterId], references: [id])
   approvalLines ApprovalLine[]
   history       ApprovalHistory[]
+  attachments   DocumentAttachment[]
 
   @@index([companyId, status])
   @@index([drafterId, status])
   @@map("documents")
+}
+
+// AP-02-01 기안 첨부파일 (MinIO 오브젝트 스토리지) — 문서 삭제 시 Cascade
+model DocumentAttachment {
+  id          String   @id @default(uuid())
+  companyId   String   @map("company_id")
+  documentId  String   @map("document_id")
+  uploaderId  String   @map("uploader_id")
+  fileName    String   @map("file_name") @db.VarChar(255)
+  storageKey  String   @unique @map("storage_key") @db.VarChar(500)
+  contentType String   @map("content_type") @db.VarChar(150)
+  size        Int
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company   Company  @relation(fields: [companyId], references: [id])
+  document  Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploader  Employee @relation("AttachmentUploader", fields: [uploaderId], references: [id])
+
+  @@index([documentId])
+  @@map("document_attachments")
 }
 
 model ApprovalLine {
