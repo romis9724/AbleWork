@@ -80,9 +80,8 @@
 - G17 알림 규칙 email/in_app 채널이 Discord 리스너에서 데드 옵션 · BE · S
 - G11 양식 접근규칙 `form_access_rules` CRUD 부재 (AP-01-07 선택) · BE · M · ⚠
 - G11 양식 담당자 `formOwnerId` 지정 (AP-01-07 선택) · BE · S
-- (§6.6 #3) 결재 규칙 스냅샷 `Request.ruleId` · BE · S · ⚠마이그레이션
 
-> ✅ 해소됨: G12 동적 필드 값 입력(PR#13), G14 협조 반려 비차단성·수신 반송(PR#17 — bounce=BOUNCED), G16 검색 UI(PR#14).
+> ✅ 해소됨: G12 동적 필드 값 입력(PR#13), G14 협조 반려 비차단성·수신 반송(PR#17), G16 검색 UI(PR#14), §6.6#3 결재규칙 스냅샷(PR#20), AP-01-03 기본결재선(PR#20), G13 결재처리 E2E(PR#21).
 
 ### ⚪ Low
 - G17 Discord embed 구조화 템플릿 미적용 · G14 참조/공람 box 상신 후 제한 미적용 · G15 DEVICE_CHANGE 승인 시 `newDeviceId` 미갱신+거절 이벤트 고아화 · G11 `allowZipUpload`(AP-01-06 선택) · G16 FE 경로 FEATURE_LIST 불일치 · G13 전단계반려 전용 안내 다이얼로그 부재
