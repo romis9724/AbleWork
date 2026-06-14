@@ -58,7 +58,9 @@ export default function ApprovalTimeline({ steps }: Props) {
                   sx={{ height: 22 }}
                 />
                 <Typography variant="body2" fontWeight={600}>
-                  {step.assignee?.name ?? '—'}
+                  {step.organization?.name
+                    ? `${step.organization.name}${step.assignee?.name ? ` · ${step.assignee.name}` : ''}`
+                    : (step.assignee?.name ?? '—')}
                 </Typography>
                 <StepStatusChip status={step.status} />
                 {step.isProxy && step.proxy && (

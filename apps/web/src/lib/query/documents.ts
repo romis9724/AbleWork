@@ -9,7 +9,14 @@ export type { DocumentFieldDef }
 
 export type DocumentStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'RECALLED'
 
-export type StepRole = 'APPROVER' | 'AGREEMENT' | 'REFERENCE' | 'VIEWER' | 'RECEIVER'
+export type StepRole =
+  | 'APPROVER'
+  | 'AGREEMENT'
+  | 'REFERENCE'
+  | 'VIEWER'
+  | 'RECEIVER'
+  | 'DEPT_COLLABORATOR'
+  | 'DEPT_RECEIVER'
 
 export type StepStatus =
   | 'PENDING'
@@ -23,6 +30,7 @@ export type StepStatus =
   | 'SKIPPED'
   | 'VIEWED'
   | 'RECEIVED'
+  | 'BOUNCED'
 
 export type DocumentBox =
   | 'draft'
@@ -32,6 +40,7 @@ export type DocumentBox =
   | 'reference'
   | 'viewer'
   | 'receiver'
+  | 'dept-docs'
   | 'ledger'
 
 export type StepAction =
@@ -43,6 +52,8 @@ export type StepAction =
   | 'agree'
   | 'view'
   | 'receive'
+  | 'dept-collab'
+  | 'bounce'
 
 export interface DocumentForm {
   id: string
@@ -62,7 +73,10 @@ export interface DocumentNumberRule {
 
 export interface ApprovalStepInput {
   role: StepRole
-  assigneeId: string
+  /** 개인 단계 결재자 (부서 단계는 비움 — organizationId 사용) */
+  assigneeId?: string
+  /** 부서 단계(DEPT_COLLABORATOR/DEPT_RECEIVER) 대상 부서 */
+  organizationId?: string
   stepOrder: number
 }
 
@@ -96,6 +110,8 @@ export interface ApprovalStepDetail {
   stepOrder: number
   status: StepStatus
   assignee?: { id: string; name: string } | null
+  /** 부서 단계 대상 부서 (DEPT_COLLABORATOR/DEPT_RECEIVER) */
+  organization?: { id: string; name: string } | null
   isProxy?: boolean
   proxy?: { id?: string; name: string } | null
   comment?: string | null

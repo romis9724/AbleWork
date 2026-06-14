@@ -25,6 +25,8 @@ export const STEP_ROLE_LABEL: Record<StepRole, string> = {
   REFERENCE: '참조',
   VIEWER: '공람',
   RECEIVER: '수신',
+  DEPT_COLLABORATOR: '부서협조',
+  DEPT_RECEIVER: '부서수신',
 }
 
 export const STEP_ROLE_OPTIONS: { value: StepRole; label: string }[] = [
@@ -33,7 +35,13 @@ export const STEP_ROLE_OPTIONS: { value: StepRole; label: string }[] = [
   { value: 'REFERENCE', label: '참조' },
   { value: 'VIEWER', label: '공람' },
   { value: 'RECEIVER', label: '수신' },
+  { value: 'DEPT_COLLABORATOR', label: '부서협조' },
+  { value: 'DEPT_RECEIVER', label: '부서수신' },
 ]
+
+/** 부서로 라우팅되는 역할 — 직원 대신 부서(조직)를 선택 */
+export const DEPT_STEP_ROLES: StepRole[] = ['DEPT_COLLABORATOR', 'DEPT_RECEIVER']
+export const isDeptRole = (role: StepRole): boolean => DEPT_STEP_ROLES.includes(role)
 
 /** 결재 단계 상태 라벨 */
 export const STEP_STATUS_LABEL: Record<StepStatus, string> = {
@@ -48,6 +56,7 @@ export const STEP_STATUS_LABEL: Record<StepStatus, string> = {
   SKIPPED: '생략',
   VIEWED: '확인',
   RECEIVED: '수신완료',
+  BOUNCED: '반송',
 }
 
 /** 결재 단계 상태 칩 색 */
@@ -63,6 +72,7 @@ export const STEP_STATUS_STYLE: Record<StepStatus, { bg: string; fg: string }> =
   SKIPPED: { bg: '#eeeeee', fg: '#9e9e9e' },
   VIEWED: { bg: '#e3f2fd', fg: '#1565c0' },
   RECEIVED: { bg: '#e3f2fd', fg: '#0d47a1' },
+  BOUNCED: { bg: '#fce4ec', fg: '#ad1457' },
 }
 
 /** 직원용 문서함 탭 정의 */
@@ -74,6 +84,7 @@ export const BOX_TABS: { value: Exclude<DocumentBox, 'ledger'>; label: string }[
   { value: 'reference', label: '참조' },
   { value: 'viewer', label: '공람' },
   { value: 'receiver', label: '수신' },
+  { value: 'dept-docs', label: '부서함' },
 ]
 
 /** 문서 이력 액션 라벨 (미정의 액션은 원문 표기) */
@@ -90,6 +101,8 @@ export const HISTORY_ACTION_LABEL: Record<string, string> = {
   AGREE: '협조',
   VIEW: '공람 확인',
   RECEIVE: '수신 처리',
+  DEPT_COLLAB: '부서협조',
+  BOUNCE: '부서수신 반송',
 }
 
 export const dateTimeText = (value?: string | null) =>
