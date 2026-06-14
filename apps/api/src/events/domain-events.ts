@@ -28,7 +28,9 @@ export const EVENTS = {
   ATTENDANCE_APPROVED: 'attendance.approved',
   ATTENDANCE_REJECTED: 'attendance.rejected',
   DEVICE_CHANGE_APPROVED: 'device.change_approved',
+  DEVICE_CHANGE_REJECTED: 'device.change_rejected',
   OFFSITE_WORK_APPROVED: 'offsite.approved',
+  OFFSITE_WORK_REJECTED: 'offsite.rejected',
   CUSTOM_APPROVED: 'custom.approved',
   CUSTOM_REJECTED: 'custom.rejected',
 
