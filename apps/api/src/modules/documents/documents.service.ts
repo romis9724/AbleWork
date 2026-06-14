@@ -650,8 +650,10 @@ export class DocumentsService {
     const me = user.employeeId
     let myAssigneeIds = [me]
 
+    // 참조/공람/수신 박스: 상신 전(DRAFT) 문서는 노출하지 않는다 (기안자 외 유출 방지).
     const stepBoxWhere = (role: string) => ({
       companyId,
+      status: { not: DocStatus.DRAFT },
       approvalLines: { some: { steps: { some: { role, assigneeId: me } } } },
     })
 
@@ -718,6 +720,7 @@ export class DocumentsService {
         return {
           where: {
             companyId,
+            status: { not: DocStatus.DRAFT },
             approvalLines: {
               some: { steps: { some: { role: { in: DEPT_ROLES }, assigneeId: me } } },
             },
