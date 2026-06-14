@@ -474,6 +474,21 @@ export const useSubmitDocument = () => {
   })
 }
 
+// AP-02-08 공람/참조 사후 추가 (진행중·완료 문서)
+export const useAddCcSteps = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      documentId,
+      steps,
+    }: {
+      documentId: string
+      steps: { role: 'VIEWER' | 'REFERENCE'; assigneeId: string }[]
+    }) => apiClient.post(`/documents/${documentId}/cc`, { steps }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
+  })
+}
+
 export const useRecallDocument = () => {
   const qc = useQueryClient()
   return useMutation({

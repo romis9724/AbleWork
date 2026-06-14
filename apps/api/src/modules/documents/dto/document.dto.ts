@@ -70,6 +70,19 @@ export const ApprovalCommentSchema = z.object({
   comment: z.string().optional(),
 })
 
+// AP-02-08 공람/참조 사후 추가 — 진행중/완료 문서에 공람자·참조자 지정 (비차단, 개인만)
+export const AddCcStepsSchema = z.object({
+  steps: z
+    .array(
+      z.object({
+        role: z.enum(['VIEWER', 'REFERENCE']),
+        assigneeId: z.string().min(1),
+      }),
+    )
+    .min(1, '추가할 공람자·참조자를 선택하세요.')
+    .max(50),
+})
+
 // AP-05-06 결재 현황 다중 삭제 (관리자) — 최대 100건
 export const BulkForceDeleteSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, '삭제할 문서를 선택하세요.').max(100),
@@ -105,4 +118,5 @@ export type CreateDocumentDto = z.infer<typeof CreateDocumentSchema>
 export type UpdateDocumentDto = z.infer<typeof UpdateDocumentSchema>
 export type SubmitDocumentDto = z.infer<typeof SubmitDocumentSchema>
 export type ApprovalCommentDto = z.infer<typeof ApprovalCommentSchema>
+export type AddCcStepsDto = z.infer<typeof AddCcStepsSchema>
 export type DocumentBoxFilterDto = z.infer<typeof DocumentBoxFilterSchema>

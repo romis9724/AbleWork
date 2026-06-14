@@ -30,6 +30,8 @@ import {
   UpdateDocumentSchema,
   SubmitDocumentDto,
   SubmitDocumentSchema,
+  AddCcStepsDto,
+  AddCcStepsSchema,
   ApprovalCommentDto,
   ApprovalCommentSchema,
   DocumentBoxFilterDto,
@@ -164,6 +166,20 @@ export class DocumentsController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.documentsService.recall(companyId, id, user)
+  }
+
+  // AP-02-08 공람/참조 사후 추가 (진행중·완료 문서)
+  @Post(':id/cc')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '공람자·참조자 사후 추가 (기안자/결재 참여자, 진행중·완료 문서)' })
+  @ApiParam({ name: 'id', type: String })
+  addCcSteps(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AddCcStepsSchema)) dto: AddCcStepsDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.documentsService.addCcSteps(companyId, id, dto, user)
   }
 
   // ── 결재 처리 ────────────────────────────────────────────────────────────────
