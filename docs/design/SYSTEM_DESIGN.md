@@ -930,6 +930,10 @@ notification_rules {
 - 제약: 1건 최대 20MB, 문서당 최대 10개. 양식의 `allowZipUpload=false`이면 zip 첨부 차단(`ATTACHMENT_ZIP_NOT_ALLOWED`). 문서 삭제 시 `document_attachments`는 Cascade로 함께 제거(오브젝트는 삭제 API 경로에서 best-effort 제거).
 - 환경변수(기본값=docker-compose): `MINIO_ENDPOINT`(localhost)·`MINIO_PORT`(9000)·`MINIO_USE_SSL`(false)·`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`(minioadmin)·`MINIO_BUCKET`(ablework).
 
+**전자결재 서비스 사용 설정(게이트)**: 회사 설정 `approval.enable_service`(기본 `true`)로 전자결재 서비스 전체를 on/off 한다. `ApprovalEnabledGuard`가 전자결재 컨트롤러(`/documents`·`/document-forms`·`/shared-approval-lines`·`/proxy-settings`·`/documents/:id/attachments`)를 게이트하여, OFF면 `APPROVAL_SERVICE_DISABLED`(403)로 차단한다.
+- 회사 설정 API(`/company-settings`)는 게이트하지 않으므로 **재활성화 경로는 항상 열려 있다**.
+- HR 요청(`/requests`) 내부의 문서 자동생성·결재는 컨트롤러를 거치지 않으므로 **영향받지 않는다**(인사/근태 결재 흐름 유지). 설정 화면: 회사 설정 > 전자결재 탭(`approvalServiceEnabled`).
+
 ### 6.5 결재 · 요청 보안 불변식
 
 | 불변식 | 규칙 | 에러코드 |

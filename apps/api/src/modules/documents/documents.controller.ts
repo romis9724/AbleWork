@@ -17,6 +17,7 @@ import { ApprovalActionsService } from './approval-actions.service'
 import { AccessLevel } from '@ablework/shared-constants'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { RolesGuard } from '../../common/guards/roles.guard'
+import { ApprovalEnabledGuard } from '../../common/guards/approval-enabled.guard'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { CompanyId } from '../../common/decorators/company-id.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
@@ -39,7 +40,7 @@ import {
 
 @ApiTags('documents')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, ApprovalEnabledGuard)
 @Controller('documents')
 export class DocumentsController {
   constructor(

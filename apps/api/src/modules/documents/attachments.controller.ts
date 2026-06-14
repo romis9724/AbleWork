@@ -17,6 +17,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam, ApiConsumes } from '@ne
 import type { Response } from 'express'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { RolesGuard } from '../../common/guards/roles.guard'
+import { ApprovalEnabledGuard } from '../../common/guards/approval-enabled.guard'
 import { CompanyId } from '../../common/decorators/company-id.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
@@ -24,7 +25,7 @@ import { AttachmentsService, MAX_ATTACHMENT_SIZE } from './attachments.service'
 
 @ApiTags('document-attachments')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, ApprovalEnabledGuard)
 @Controller('documents/:id/attachments')
 export class AttachmentsController {
   constructor(private readonly attachments: AttachmentsService) {}

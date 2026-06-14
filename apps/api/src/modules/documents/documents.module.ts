@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common'
+import { CompaniesModule } from '../companies/companies.module'
+import { ApprovalEnabledGuard } from '../../common/guards/approval-enabled.guard'
 import { DocumentsController } from './documents.controller'
 import { DocumentsService } from './documents.service'
 import { ApprovalActionsService } from './approval-actions.service'
@@ -19,6 +21,7 @@ import { AttachmentsService } from './attachments.service'
  * - /documents             기안/상신/회수/문서함 + 결재 처리
  */
 @Module({
+  imports: [CompaniesModule],
   controllers: [
     DocumentFormsController,
     SharedApprovalLinesController,
@@ -33,6 +36,7 @@ import { AttachmentsService } from './attachments.service'
     SharedApprovalLinesService,
     ProxySettingsService,
     AttachmentsService,
+    ApprovalEnabledGuard,
   ],
   exports: [DocumentsService, ApprovalActionsService],
 })

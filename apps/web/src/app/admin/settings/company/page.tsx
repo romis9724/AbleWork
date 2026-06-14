@@ -42,6 +42,7 @@ interface CompanySettings {
   impliedWorkEnabled?: boolean
   autoBreakEnabled?: boolean
   shiftBreakEnabled?: boolean
+  approvalServiceEnabled?: boolean
 }
 
 const WEEK_DAYS = [
@@ -131,6 +132,7 @@ export default function CompanySettingsPage() {
         <Tab label="휴게시간" />
         <Tab label="휴일" />
         <Tab label="권한" />
+        <Tab label="전자결재" />
       </Tabs>
 
       {/* 일반 탭 */}
@@ -368,6 +370,32 @@ export default function CompanySettingsPage() {
                 onClick={() => router.push('/admin/settings/permissions')}
               >
                 권한 설정으로 이동
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 전자결재 탭 — 서비스 사용 설정 */}
+      {tab === 6 && (
+        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+          <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <SwitchField
+              label="전자결재 서비스 사용"
+              checked={form.approvalServiceEnabled ?? true}
+              onChange={(v) => set('approvalServiceEnabled', v)}
+            />
+            <Alert severity="info">
+              사용 안 함으로 설정하면 기안 작성·결재함·양식·결재선 등 전자결재 기능 전체가
+              비활성화됩니다. (인사/근태 요청의 결재 처리는 영향받지 않습니다.)
+            </Alert>
+            <Box>
+              <Button
+                variant="contained"
+                onClick={() => handleSave(['approvalServiceEnabled'])}
+                disabled={saveMutation.isPending}
+              >
+                저장
               </Button>
             </Box>
           </CardContent>
