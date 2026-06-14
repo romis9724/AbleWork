@@ -1,5 +1,6 @@
 'use client'
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -25,7 +26,6 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
-import DocumentDetailDialog from '@/components/approval/DocumentDetailDialog'
 import { dateTimeText } from '@/components/approval/approval-constants'
 import {
   useDocuments,
@@ -68,13 +68,13 @@ function PhaseChip({ item }: { item: DocumentListItem }) {
 }
 
 export default function ApprovalStatusPage() {
+  const router = useRouter()
   const [page, setPage] = useState(0)
   const [limit, setLimit] = useState(20)
   // 필터: 입력값(form) / 적용값(applied) 분리 — [조회] 버튼으로 적용
   const [form, setForm] = useState<FilterForm>(EMPTY_FILTER)
   const [applied, setApplied] = useState<FilterForm>(EMPTY_FILTER)
   const [selected, setSelected] = useState<string[]>([])
-  const [detailId, setDetailId] = useState<string | null>(null)
   const [confirmBulk, setConfirmBulk] = useState(false)
   const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
 
@@ -274,7 +274,7 @@ export default function ApprovalStatusPage() {
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{item.form?.name ?? '—'}</TableCell>
                     <TableCell
                       sx={{ fontWeight: 600, cursor: 'pointer', color: 'primary.main' }}
-                      onClick={() => setDetailId(item.id)}
+                      onClick={() => router.push(`/admin/approval/status/${item.id}`)}
                     >
                       {item.title}
                     </TableCell>
@@ -311,12 +311,6 @@ export default function ApprovalStatusPage() {
           />
         </TableContainer>
       )}
-
-      <DocumentDetailDialog
-        open={!!detailId}
-        documentId={detailId}
-        onClose={() => setDetailId(null)}
-      />
 
       <ConfirmDialog
         open={confirmBulk}

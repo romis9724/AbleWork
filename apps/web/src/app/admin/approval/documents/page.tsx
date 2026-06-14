@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
@@ -14,7 +15,6 @@ import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
-import DocumentDetailDialog from '@/components/approval/DocumentDetailDialog'
 import { DocStatusChip } from '@/components/approval/StatusChips'
 import { DOC_STATUS_LABEL, dateTimeText } from '@/components/approval/approval-constants'
 import { useDocuments, type DocumentStatus } from '@/lib/query/documents'
@@ -22,10 +22,10 @@ import { useDocuments, type DocumentStatus } from '@/lib/query/documents'
 const STATUS_OPTIONS: DocumentStatus[] = ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'RECALLED']
 
 export default function DocumentLedgerPage() {
+  const router = useRouter()
   const [page, setPage] = useState(0)
   const [limit, setLimit] = useState(20)
   const [status, setStatus] = useState('')
-  const [detailId, setDetailId] = useState<string | null>(null)
 
   const { data, isLoading } = useDocuments('ledger', {
     page: page + 1,
@@ -86,7 +86,7 @@ export default function DocumentLedgerPage() {
                   key={item.id}
                   hover
                   sx={{ cursor: 'pointer' }}
-                  onClick={() => setDetailId(item.id)}
+                  onClick={() => router.push(`/admin/approval/documents/${item.id}`)}
                 >
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{item.docNumber ?? '—'}</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{item.title}</TableCell>
@@ -116,12 +116,6 @@ export default function DocumentLedgerPage() {
           />
         </TableContainer>
       )}
-
-      <DocumentDetailDialog
-        open={!!detailId}
-        documentId={detailId}
-        onClose={() => setDetailId(null)}
-      />
     </>
   )
 }

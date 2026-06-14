@@ -26,7 +26,6 @@ import { useSnackbar } from '@/hooks/useSnackbar'
 import { useDocuments, type DocumentBox, type DocumentListItem } from '@/lib/query/documents'
 import { BOX_TABS, dateText } from './approval-constants'
 import { DocStatusChip } from './StatusChips'
-import DocumentDetailDialog from './DocumentDetailDialog'
 import ProxySettingsDialog from './ProxySettingsDialog'
 
 const PAGE_LIMIT = 20
@@ -49,7 +48,6 @@ export default function DocumentBoxesView({ variant }: Props) {
   const composeBase = COMPOSE_BASE[variant]
   const [box, setBox] = useState<DocumentBox>('draft')
   const [page, setPage] = useState(1)
-  const [detailId, setDetailId] = useState<string | null>(null)
   const [proxyOpen, setProxyOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
@@ -83,17 +81,7 @@ export default function DocumentBoxesView({ variant }: Props) {
       router.push(`${composeBase}/${item.id}/edit`)
       return
     }
-    setDetailId(item.id)
-  }
-
-  const handleResubmit = (docId: string) => {
-    setDetailId(null)
-    router.push(`${composeBase}/${docId}/edit`)
-  }
-
-  const handleRedraft = (docId: string) => {
-    setDetailId(null)
-    router.push(`${composeBase}/new?from=${docId}`)
+    router.push(`${composeBase}/${item.id}`)
   }
 
   const openCompose = () => router.push(`${composeBase}/new`)
@@ -213,15 +201,6 @@ export default function DocumentBoxesView({ variant }: Props) {
           <AddIcon />
         </Fab>
       )}
-
-      <DocumentDetailDialog
-        open={!!detailId}
-        documentId={detailId}
-        onClose={() => setDetailId(null)}
-        isMineHint={isMineBox}
-        onResubmit={(doc) => handleResubmit(doc.id)}
-        onRedraft={(doc) => handleRedraft(doc.id)}
-      />
 
       {proxyOpen && (
         <ProxySettingsDialog

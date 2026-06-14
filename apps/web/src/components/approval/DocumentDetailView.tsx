@@ -1,17 +1,16 @@
 'use client'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
-import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContent from '@mui/material/DialogContent'
-import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
+import Paper from '@mui/material/Paper'
 import Snackbar from '@mui/material/Snackbar'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import { useConfirm } from '@/hooks/useConfirm'
 import { useSnackbar } from '@/hooks/useSnackbar'
@@ -22,7 +21,6 @@ import {
   useDocumentStepAction,
   useRecallDocument,
   type ApprovalStepDetail,
-  type DocumentDetail,
   type StepAction,
 } from '@/lib/query/documents'
 import { readFormFields, DocumentFieldType } from '@ablework/shared-constants'
@@ -35,13 +33,14 @@ import { HISTORY_ACTION_LABEL, dateTimeText } from './approval-constants'
 const ACTED_STATUSES = ['APPROVED', 'PRE_APPROVED', 'PROXY_APPROVED', 'REJECTED', 'RETURNED']
 
 interface Props {
-  open: boolean
-  documentId: string | null
-  onClose: () => void
-  /** REJECTED/RECALLED 문서 재상신 — 기안 편집 페이지로 연결 */
-  onResubmit?: (doc: DocumentDetail) => void
-  /** 완료(APPROVED) 문서 재기안 — 내용 복제 후 신규 작성 페이지로 연결 */
-  onRedraft?: (doc: DocumentDetail) => void
+  documentId: string
+  /** 목록(뒤로) 경로 */
+  backPath: string
+  /**
+   * 재상신/재기안 시 작성 페이지 base (drafter 셸: /me/documents·/admin/approval/inbox).
+   * 미지정이면 해당 버튼을 숨긴다(관리자 모니터링 뷰: 결재현황·문서대장).
+   */
+  composeBase?: string
   /** drafter.id 미제공 응답 시 본인 문서 여부 힌트 (기안함/진행중/완료함 등) */
   isMineHint?: boolean
 }
@@ -53,10 +52,7 @@ interface ActionDef {
   needsConfirm?: boolean
 }
 
-function buildStepActions(
-  step: ApprovalStepDetail,
-  allowPreApproval: boolean,
-): ActionDef[] {
+function buildStepActions(step: ApprovalStepDetail, allowPreApproval: boolean): ActionDef[] {
   switch (step.role) {
     case 'APPROVER': {
       const actions: ActionDef[] = [
@@ -96,8 +92,8 @@ function buildStepActions(
 /** 역할별 액션 노출 문서 상태 — 수신류는 APPROVED, 참조/공람은 무관, 결재 흐름은 PENDING */
 function actionsVisibleForStatus(role: ApprovalStepDetail['role'], status?: string): boolean {
   if (role === 'RECEIVER' || role === 'DEPT_RECEIVER') return status === 'APPROVED'
-  if (role === 'REFERENCE' || role === 'VIEWER') return true // 비차단 — 상태 무관 확인 가능
-  return status === 'PENDING' // APPROVER/AGREEMENT/DEPT_COLLABORATOR
+  if (role === 'REFERENCE' || role === 'VIEWER') return true
+  return status === 'PENDING'
 }
 
 /** table 필드 값(string[][]) 읽기 전용 표 렌더 */
@@ -127,17 +123,19 @@ function FieldTable({ columns, rows }: { columns?: string[]; rows: string[][] })
   )
 }
 
-/** 문서 상세 다이얼로그 — 내용 + 결재선 타임라인 + 이력 + 내 차례 액션 */
-export default function DocumentDetailDialog({
-  open,
+/**
+ * 기안 문서 상세 풀페이지 — 내용 + 결재선 타임라인 + 이력 + 내 차례 결재 액션(하단 sticky 푸터).
+ * 카카오워크 PDF 정합으로 모달에서 페이지로 승격. 결재 처리 통합 팝업(C1/C2)은 후속.
+ */
+export default function DocumentDetailView({
   documentId,
-  onClose,
-  onResubmit,
-  onRedraft,
+  backPath,
+  composeBase,
   isMineHint = false,
 }: Props) {
+  const router = useRouter()
   const myEmployeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
-  const { data: doc, isLoading } = useDocument(open ? documentId : null)
+  const { data: doc, isLoading } = useDocument(documentId)
   const { data: forms = [] } = useDocumentForms()
   const stepAction = useDocumentStepAction()
   const recallMutation = useRecallDocument()
@@ -146,7 +144,6 @@ export default function DocumentDetailDialog({
   const [comment, setComment] = useState('')
 
   const steps: ApprovalStepDetail[] = doc?.approvalLines?.flatMap((l) => l.steps) ?? []
-  // 양식 동적 필드(AP-01-02) — 라벨 매핑해 제출 값을 표시
   const formFields = readFormFields(forms.find((f) => f.id === doc?.form?.id)?.fieldsSchema)
   const isHrLinked = !!doc?.requestId
   const isDrafter = doc?.drafter?.id ? doc.drafter.id === myEmployeeId : isMineHint
@@ -167,13 +164,12 @@ export default function DocumentDetailDialog({
       (s) => s.stepOrder > myApprovedStep.stepOrder && ACTED_STATUSES.includes(s.status),
     )
   const canResubmit =
-    !!onResubmit &&
+    !!composeBase &&
     isDrafter &&
     (doc?.status === 'REJECTED' || doc?.status === 'RECALLED') &&
     doc?.form?.allowReDraft !== false
-  // 완료 문서 재기안 — 양식이 재기안 허용 시 본인 문서를 복제해 신규 작성 (카카오워크 PDF)
   const canRedraft =
-    !!onRedraft &&
+    !!composeBase &&
     isDrafter &&
     doc?.status === 'APPROVED' &&
     doc?.form?.allowReDraft === true
@@ -183,10 +179,15 @@ export default function DocumentDetailDialog({
       ? buildStepActions(myPendingStep, doc?.form?.allowPreApproval ?? false)
       : []
 
-  const hasAnyAction = stepActions.length > 0 || canRecall || (canCancelApproval && !isHrLinked)
+  const hasFooterAction =
+    stepActions.length > 0 ||
+    canRecall ||
+    (canCancelApproval && !isHrLinked) ||
+    canResubmit ||
+    canRedraft
   const busy = stepAction.isPending || recallMutation.isPending
 
-  // L5 전단계 반려 시 결재권이 돌아갈 직전 결재자(직전 APPROVED 흐름 단계) 이름
+  // L5 전단계 반려 시 결재권이 돌아갈 직전 결재자 이름
   const previousApproverName = (() => {
     if (!myPendingStep) return null
     const flowRoles = ['APPROVER', 'AGREEMENT', 'DEPT_COLLABORATOR']
@@ -270,155 +271,177 @@ export default function DocumentDetailDialog({
     }
   }
 
+  if (isLoading || !doc) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+        <CircularProgress />
+      </Box>
+    )
+  }
+
   return (
-    <>
-      <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-          문서 상세
-          {doc && <DocStatusChip status={doc.status} />}
-        </DialogTitle>
-        <DialogContent dividers>
-          {isLoading || !doc ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-              <CircularProgress />
-            </Box>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {isHrLinked && (
-                <Alert severity="info">
-                  HR 요청 연동 문서입니다 — 결재는 요청 관리에서 처리됩니다.
-                </Alert>
-              )}
+    <Box sx={{ pb: hasFooterAction ? 10 : 2 }}>
+      {/* 헤더 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => router.push(backPath)} color="inherit">
+          목록
+        </Button>
+        <Typography variant="h6" fontWeight={700}>문서 상세</Typography>
+        <DocStatusChip status={doc.status} />
+      </Box>
 
-              {/* 기본 정보 */}
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  {doc.docNumber ?? '문서번호 미부여'} · {doc.form?.name ?? '양식 없음'}
-                </Typography>
-                <Typography variant="h6" fontWeight={700}>{doc.title}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  기안자 {doc.drafter?.name ?? '—'} · 상신일 {dateTimeText(doc.submittedAt)}
-                </Typography>
-              </Box>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 920 }}>
+        {isHrLinked && (
+          <Alert severity="info">
+            HR 요청 연동 문서입니다 — 결재는 요청 관리에서 처리됩니다.
+          </Alert>
+        )}
 
-              {/* 양식 동적 필드 값 (AP-01-02) */}
-              {formFields.length > 0 && (
-                <Box
-                  sx={{
-                    p: 1.5,
-                    bgcolor: 'background.default',
-                    borderRadius: 1,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 1,
-                  }}
-                >
-                  {formFields.map((f) => {
-                    const v = (doc.content as Record<string, unknown> | undefined)?.[f.key]
-                    return (
-                      <Box key={f.key} sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 96, fontWeight: 600, pt: 0.25 }}>
-                          {f.label}
-                        </Typography>
-                        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                          {f.type === DocumentFieldType.RICHTEXT ? (
-                            <RichTextView html={typeof v === 'string' ? v : ''} emptyText="—" />
-                          ) : f.type === DocumentFieldType.TABLE ? (
-                            <FieldTable columns={f.columns} rows={Array.isArray(v) ? (v as string[][]) : []} />
-                          ) : (
-                            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                              {v === undefined || v === null || v === '' ? '—' : String(v)}
-                            </Typography>
-                          )}
-                        </Box>
-                      </Box>
-                    )
-                  })}
-                </Box>
-              )}
+        {/* 기본 정보 */}
+        <Box>
+          <Typography variant="caption" color="text.secondary">
+            {doc.docNumber ?? '문서번호 미부여'} · {doc.form?.name ?? '양식 없음'}
+          </Typography>
+          <Typography variant="h5" fontWeight={700}>{doc.title}</Typography>
+          <Typography variant="body2" color="text.secondary">
+            기안자 {doc.drafter?.name ?? '—'} · 상신일 {dateTimeText(doc.submittedAt)}
+          </Typography>
+        </Box>
 
-              {/* 내용 */}
-              <Box
-                sx={{
-                  p: 1.5,
-                  bgcolor: 'background.default',
-                  borderRadius: 1,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                }}
-              >
-                <RichTextView
-                  html={typeof doc.content?.body === 'string' ? doc.content.body : ''}
-                />
-              </Box>
-
-              {/* 첨부파일 (AP-02-01) — 열람 권한자 다운로드 */}
-              {documentId && (
-                <AttachmentPanel
-                  documentId={documentId}
-                  onError={(m) => showSnackbar(m, 'error')}
-                />
-              )}
-
-              {/* 결재선 타임라인 */}
-              <Box>
-                <Typography variant="subtitle2" fontWeight={700} mb={1}>결재선</Typography>
-                <ApprovalTimeline steps={steps} />
-              </Box>
-
-              {/* 이력 */}
-              {(doc.history?.length ?? 0) > 0 && (
-                <Box>
-                  <Divider sx={{ mb: 1.5 }} />
-                  <Typography variant="subtitle2" fontWeight={700} mb={1}>이력</Typography>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                    {doc.history!.map((h, i) => (
-                      <Box key={`history-${i}`}>
-                        <Typography variant="body2">
-                          <strong>{HISTORY_ACTION_LABEL[h.action] ?? h.action}</strong>
-                          {h.actor?.name ? ` · ${h.actor.name}` : ''}
-                          <Typography component="span" variant="caption" color="text.secondary">
-                            {' '}{dateTimeText(h.createdAt)}
-                          </Typography>
-                        </Typography>
-                        {h.comment && (
-                          <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
-                            {h.comment}
-                          </Typography>
-                        )}
-                      </Box>
-                    ))}
+        {/* 양식 동적 필드 값 (AP-01-02) */}
+        {formFields.length > 0 && (
+          <Box
+            sx={{
+              p: 1.5,
+              bgcolor: 'background.default',
+              borderRadius: 1,
+              border: '1px solid',
+              borderColor: 'divider',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 1,
+            }}
+          >
+            {formFields.map((f) => {
+              const v = (doc.content as Record<string, unknown> | undefined)?.[f.key]
+              return (
+                <Box key={f.key} sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ minWidth: 96, fontWeight: 600, pt: 0.25 }}>
+                    {f.label}
+                  </Typography>
+                  <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                    {f.type === DocumentFieldType.RICHTEXT ? (
+                      <RichTextView html={typeof v === 'string' ? v : ''} emptyText="—" />
+                    ) : f.type === DocumentFieldType.TABLE ? (
+                      <FieldTable columns={f.columns} rows={Array.isArray(v) ? (v as string[][]) : []} />
+                    ) : (
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                        {v === undefined || v === null || v === '' ? '—' : String(v)}
+                      </Typography>
+                    )}
                   </Box>
                 </Box>
-              )}
+              )
+            })}
+          </Box>
+        )}
 
-              {/* 코멘트 입력 (액션 가능 시) */}
-              {hasAnyAction && (
-                <TextField
-                  label="코멘트"
-                  placeholder="처리 의견을 입력하세요 (선택)"
-                  multiline
-                  rows={2}
-                  fullWidth
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                />
-              )}
+        {/* 내용 */}
+        <Box
+          sx={{
+            p: 1.5,
+            bgcolor: 'background.default',
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <RichTextView html={typeof doc.content?.body === 'string' ? doc.content.body : ''} />
+        </Box>
+
+        {/* 첨부파일 (AP-02-01) */}
+        <AttachmentPanel documentId={documentId} onError={(m) => showSnackbar(m, 'error')} />
+
+        {/* 결재선 타임라인 */}
+        <Box>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>결재선</Typography>
+          <ApprovalTimeline steps={steps} />
+        </Box>
+
+        {/* 이력 */}
+        {(doc.history?.length ?? 0) > 0 && (
+          <Box>
+            <Divider sx={{ mb: 1.5 }} />
+            <Typography variant="subtitle2" fontWeight={700} mb={1}>이력</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+              {doc.history!.map((h, i) => (
+                <Box key={`history-${i}`}>
+                  <Typography variant="body2">
+                    <strong>{HISTORY_ACTION_LABEL[h.action] ?? h.action}</strong>
+                    {h.actor?.name ? ` · ${h.actor.name}` : ''}
+                    <Typography component="span" variant="caption" color="text.secondary">
+                      {' '}{dateTimeText(h.createdAt)}
+                    </Typography>
+                  </Typography>
+                  {h.comment && (
+                    <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
+                      {h.comment}
+                    </Typography>
+                  )}
+                </Box>
+              ))}
             </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-          <Button onClick={onClose} disabled={busy}>닫기</Button>
+          </Box>
+        )}
+
+        {/* 코멘트 입력 (액션 가능 시) */}
+        {(stepActions.length > 0 || (canCancelApproval && !isHrLinked)) && (
+          <TextField
+            label="코멘트"
+            placeholder="처리 의견을 입력하세요 (선택)"
+            multiline
+            rows={2}
+            fullWidth
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+          />
+        )}
+      </Box>
+
+      {/* 하단 sticky 푸터 — 결재/회수/재상신/재기안 액션 */}
+      {hasFooterAction && (
+        <Paper
+          elevation={3}
+          sx={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: (t) => t.zIndex.appBar,
+            px: 3,
+            py: 1.5,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            flexWrap: 'wrap',
+          }}
+        >
           <Box sx={{ flexGrow: 1 }} />
-          {canResubmit && doc && (
-            <Button variant="outlined" onClick={() => onResubmit!(doc)} disabled={busy}>
+          {canResubmit && (
+            <Button
+              variant="outlined"
+              disabled={busy}
+              onClick={() => router.push(`${composeBase}/${documentId}/edit`)}
+            >
               재상신
             </Button>
           )}
-          {canRedraft && doc && (
-            <Button variant="outlined" onClick={() => onRedraft!(doc)} disabled={busy}>
+          {canRedraft && (
+            <Button
+              variant="outlined"
+              disabled={busy}
+              onClick={() => router.push(`${composeBase}/new?from=${documentId}`)}
+            >
               재기안
             </Button>
           )}
@@ -443,8 +466,8 @@ export default function DocumentDetailDialog({
               {def.label}
             </Button>
           ))}
-        </DialogActions>
-      </Dialog>
+        </Paper>
+      )}
 
       <ConfirmDialog
         open={confirmState.open}
@@ -467,6 +490,6 @@ export default function DocumentDetailDialog({
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </>
+    </Box>
   )
 }
