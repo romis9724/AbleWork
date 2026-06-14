@@ -248,10 +248,11 @@
 | 요청 관리 | /admin/requests |
 | 승인 규칙 | /admin/requests/rules |
 | 커스텀 요청 유형 | /admin/requests/custom-types |
-| 기안양식 관리 | /admin/approval/forms |
-| 결재 현황 | /admin/approval/status |
-| 공용 결재선 | /admin/approval/shared-lines |
-| 부서문서함 | /admin/approval/dept-docs |
+| 기안양식 관리 (담당자·기본결재선·동적필드·접근규칙) | /admin/approval/forms |
+| 결재 현황 (관리자 전체 조회/강제 삭제) | /admin/approval/status |
+| 공용 결재선 | /admin/approval/lines |
+| 결재함·문서함 (기안/결재/참조/공람/수신/부서 통합 탭) | /admin/approval/inbox |
+| 문서대장 | /admin/approval/documents |
 | 리포트 | /admin/reports |
 | 표준화 규칙 | /admin/reports/standardization |
 | 리포트 스냅샷 | /admin/reports/snapshots |
@@ -270,12 +271,6 @@
 | 내 출퇴근 기록 | /me/attendances |
 | 내 휴가 | /me/leaves |
 | 요청 내역 | /me/requests |
-| 기안함 | /me/drafts |
-| 결재함 | /me/approvals |
-| 공람함 | /me/viewings |
-| 참조함 | /me/references |
-| 수신함 | /me/received |
-| 부서문서함 | /me/dept-docs |
-| 대결 설정 | /me/proxy-settings |
+| 문서함 (기안/진행중/완료/결재/참조/공람/수신/부서 통합 탭, 대결 설정 포함) | /me/documents |
 | 내 메시지 | /me/messages |
 | 내 프로필 | /me/profile |

@@ -148,12 +148,31 @@ export default function DocumentDetailDialog({
   const hasAnyAction = stepActions.length > 0 || canRecall || (canCancelApproval && !isHrLinked)
   const busy = stepAction.isPending || recallMutation.isPending
 
+  // L5 전단계 반려 시 결재권이 돌아갈 직전 결재자(직전 APPROVED 흐름 단계) 이름
+  const previousApproverName = (() => {
+    if (!myPendingStep) return null
+    const flowRoles = ['APPROVER', 'AGREEMENT', 'DEPT_COLLABORATOR']
+    const prev = steps
+      .filter(
+        (s) =>
+          flowRoles.includes(s.role) &&
+          s.stepOrder < myPendingStep.stepOrder &&
+          (s.status === 'APPROVED' || s.status === 'PROXY_APPROVED'),
+      )
+      .sort((a, b) => b.stepOrder - a.stepOrder)[0]
+    return prev?.assignee?.name ?? null
+  })()
+
   const runStepAction = async (def: ActionDef, stepId: string) => {
     if (!doc) return
     if (def.needsConfirm) {
+      const message =
+        def.action === 'return-prev'
+          ? `직전 결재자${previousApproverName ? `(${previousApproverName})` : ''}에게 결재권을 반환합니다. 계속하시겠습니까?`
+          : `이 문서를 ${def.label} 처리하시겠습니까?`
       const ok = await confirm({
         title: def.label,
-        message: `이 문서를 ${def.label} 처리하시겠습니까?`,
+        message,
         confirmLabel: def.label,
         confirmColor: 'error',
       })
