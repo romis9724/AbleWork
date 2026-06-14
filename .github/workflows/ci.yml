@@ -8,7 +8,6 @@ on:
 
 env:
   NODE_VERSION: '22'
-  PNPM_VERSION: '9'
 
 jobs:
   typecheck-and-lint:
@@ -17,9 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm 버전은 package.json의 packageManager(pnpm@9.15.9)에서 자동 감지한다.
+      # version 입력과 중복 지정 시 ERR_PNPM_BAD_PM_VERSION으로 설치가 실패한다.
       - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
         with:
@@ -46,9 +45,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm 버전은 package.json의 packageManager(pnpm@9.15.9)에서 자동 감지한다.
+      # version 입력과 중복 지정 시 ERR_PNPM_BAD_PM_VERSION으로 설치가 실패한다.
       - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
         with:
@@ -105,9 +104,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm 버전은 package.json의 packageManager(pnpm@9.15.9)에서 자동 감지한다.
+      # version 입력과 중복 지정 시 ERR_PNPM_BAD_PM_VERSION으로 설치가 실패한다.
       - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
         with:
