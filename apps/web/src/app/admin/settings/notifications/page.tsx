@@ -23,6 +23,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import PageHeader from '@/components/common/PageHeader'
 import apiClient from '@/lib/api-client'
+import { NOTIFIABLE_EVENTS, type NotifiableEvent } from '@ablework/shared-constants'
 
 interface NotificationRule {
   id: string
@@ -46,15 +47,16 @@ const CHANNELS = [
   { key: 'leave', label: '#휴가-알림' },
 ]
 
-const EVENTS = [
-  { key: 'clock_in', label: '출근 알림', group: 'attendance' },
-  { key: 'clock_out', label: '퇴근 알림', group: 'attendance' },
-  { key: 'late', label: '지각 알림', group: 'attendance' },
-  { key: 'absent', label: '결근 알림', group: 'attendance' },
-  { key: 'leave_request', label: '휴가 신청 알림', group: 'leave' },
-  { key: 'leave_approved', label: '휴가 승인 알림', group: 'leave' },
-  { key: 'request_approved', label: '요청 승인 알림', group: 'approval' },
-]
+// 알림 이벤트 목록은 단일 출처(@ablework/shared-constants)에서 가져온다.
+// 정의 순서를 보존하며 그룹 단위로 묶어 렌더링한다.
+const EVENT_GROUPS = NOTIFIABLE_EVENTS.reduce<
+  { group: string; groupLabel: string; events: NotifiableEvent[] }[]
+>((acc, ev) => {
+  const existing = acc.find((g) => g.group === ev.group)
+  if (existing) existing.events.push(ev)
+  else acc.push({ group: ev.group, groupLabel: ev.groupLabel, events: [ev] })
+  return acc
+}, [])
 
 const LOG_STATUS_COLOR: Record<string, 'success' | 'error' | 'warning'> = {
   success: 'success',
@@ -68,15 +70,9 @@ const LOG_STATUS_LABEL: Record<string, string> = {
   retrying: '재시도 중',
 }
 
-const EVENT_LABEL: Record<string, string> = {
-  clock_in: '출근',
-  clock_out: '퇴근',
-  late: '지각',
-  absent: '결근',
-  leave_request: '휴가 신청',
-  leave_approved: '휴가 승인',
-  request_approved: '요청 승인',
-}
+const EVENT_LABEL: Record<string, string> = Object.fromEntries(
+  NOTIFIABLE_EVENTS.map((e) => [e.event, e.label]),
+)
 
 export default function NotificationsSettingsPage() {
   const qc = useQueryClient()
@@ -199,65 +195,30 @@ export default function NotificationsSettingsPage() {
       </Typography>
       <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', mb: 4 }}>
         <CardContent>
-          <Typography variant="body2" color="text.secondary" mb={2}>
-            근태 알림
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            {EVENTS.filter((e) => e.group === 'attendance').map((event) => (
-              <FormControlLabel
-                key={event.key}
-                control={
-                  <Switch
-                    checked={isEventEnabled(event.key)}
-                    onChange={(e) => handleToggleEvent(event.key, e.target.checked)}
-                    disabled={toggleEventMutation.isPending}
-                    size="small"
+          {EVENT_GROUPS.map((grp, idx) => (
+            <Box key={grp.group}>
+              {idx > 0 && <Divider sx={{ my: 2 }} />}
+              <Typography variant="body2" color="text.secondary" mb={2}>
+                {grp.groupLabel}
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                {grp.events.map((event) => (
+                  <FormControlLabel
+                    key={event.event}
+                    control={
+                      <Switch
+                        checked={isEventEnabled(event.event)}
+                        onChange={(e) => handleToggleEvent(event.event, e.target.checked)}
+                        disabled={toggleEventMutation.isPending}
+                        size="small"
+                      />
+                    }
+                    label={event.label}
                   />
-                }
-                label={event.label}
-              />
-            ))}
-          </Box>
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="body2" color="text.secondary" mb={2}>
-            휴가 알림
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            {EVENTS.filter((e) => e.group === 'leave').map((event) => (
-              <FormControlLabel
-                key={event.key}
-                control={
-                  <Switch
-                    checked={isEventEnabled(event.key)}
-                    onChange={(e) => handleToggleEvent(event.key, e.target.checked)}
-                    disabled={toggleEventMutation.isPending}
-                    size="small"
-                  />
-                }
-                label={event.label}
-              />
-            ))}
-          </Box>
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="body2" color="text.secondary" mb={2}>
-            결재 알림
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            {EVENTS.filter((e) => e.group === 'approval').map((event) => (
-              <FormControlLabel
-                key={event.key}
-                control={
-                  <Switch
-                    checked={isEventEnabled(event.key)}
-                    onChange={(e) => handleToggleEvent(event.key, e.target.checked)}
-                    disabled={toggleEventMutation.isPending}
-                    size="small"
-                  />
-                }
-                label={event.label}
-              />
-            ))}
-          </Box>
+                ))}
+              </Box>
+            </Box>
+          ))}
         </CardContent>
       </Card>
 

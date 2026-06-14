@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { NotFoundException } from '@nestjs/common'
+import { NOTIFIABLE_EVENT_TYPES } from '@ablework/shared-constants'
 import { NotificationsService } from './notifications.service'
 import { PrismaService } from '../../prisma/prisma.service'
 
@@ -290,9 +291,9 @@ describe('NotificationsService', () => {
   // ── updateWebhook ─────────────────────────────────────────────────────────────
 
   describe('updateWebhook', () => {
-    it('규칙이 하나도 없으면 7개의 기본 이벤트 규칙을 companyId와 함께 생성한다', async () => {
+    it('규칙이 하나도 없으면 SSOT(NOTIFIABLE_EVENTS) 기준 기본 이벤트 규칙을 companyId와 함께 생성한다', async () => {
       mockPrisma.notificationRule.count.mockResolvedValue(0)
-      mockPrisma.notificationRule.createMany.mockResolvedValue({ count: 7 })
+      mockPrisma.notificationRule.createMany.mockResolvedValue({ count: NOTIFIABLE_EVENT_TYPES.length })
       mockPrisma.notificationRule.findMany.mockResolvedValue([baseRule])
 
       const dto = { webhookUrl: 'https://discord.com/api/webhooks/abc' }
@@ -300,11 +301,14 @@ describe('NotificationsService', () => {
 
       expect(mockPrisma.notificationRule.createMany).toHaveBeenCalledTimes(1)
       const callArg = mockPrisma.notificationRule.createMany.mock.calls[0][0] as {
-        data: Array<{ companyId: string; webhookUrl: string | null }>
+        data: Array<{ companyId: string; webhookUrl: string | null; eventType: string }>
       }
-      expect(callArg.data).toHaveLength(7)
-      // 멀티테넌시: 생성되는 모든 기본 규칙에 companyId가 박혀야 한다.
+      // 기본 규칙은 단일 출처 NOTIFIABLE_EVENT_TYPES와 정확히 일치해야 한다(과거 짧은 키 회귀 방지).
+      expect(callArg.data).toHaveLength(NOTIFIABLE_EVENT_TYPES.length)
+      expect(callArg.data.map((r) => r.eventType)).toEqual([...NOTIFIABLE_EVENT_TYPES])
+      // 모든 eventType은 런타임 이벤트명(점표기)이어야 한다 — 'clock_in' 같은 짧은 키 금지.
       callArg.data.forEach((row) => {
+        expect(row.eventType).toContain('.')
         expect(row.companyId).toBe(COMPANY_ID)
         expect(row.webhookUrl).toBe('https://discord.com/api/webhooks/abc')
       })

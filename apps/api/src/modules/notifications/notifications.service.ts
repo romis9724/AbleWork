@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
+import { NOTIFIABLE_EVENT_TYPES } from '@ablework/shared-constants'
 import { PrismaService } from '../../prisma/prisma.service'
 import {
   CreateNotificationRuleDto,
@@ -10,16 +11,12 @@ import {
   ListNotificationLogsQueryDto,
 } from './dto/notification-rule.dto'
 
-/** 규칙이 하나도 없을 때 webhook 설정과 함께 생성할 기본 이벤트 목록 */
-const DEFAULT_EVENT_TYPES = [
-  'clock_in',
-  'clock_out',
-  'late',
-  'absent',
-  'leave_request',
-  'leave_approved',
-  'request_approved',
-] as const
+/**
+ * 규칙이 하나도 없을 때 webhook 설정과 함께 생성할 기본 이벤트 목록.
+ * 단일 출처 NOTIFIABLE_EVENTS(@ablework/shared-constants)에서 가져온다 —
+ * 과거의 짧은 키('clock_in' 등)는 런타임 이벤트명과 불일치하여 알림이 발송되지 않았다.
+ */
+const DEFAULT_EVENT_TYPES = NOTIFIABLE_EVENT_TYPES
 
 @Injectable()
 export class NotificationsService {
