@@ -642,7 +642,7 @@ HR 요청은 **전자결재 모듈의 기안**과 연동되어 처리된다.
 | 문서담당자 지정 | 부서별 담당자 지정 (팀장 기본, 추가 가능) |
 | 문서대장 | 완료 문서 조회, 권한별 가시성 다름 |
 | 공용 결재선 | 인사이동 시 일괄 변경 가능한 공유 결재선 |
-| 결재 현황 (관리자) | 진행중 결재 강제 삭제/상태 조회 |
+| 결재 현황 (관리자) | 진행중 전자결재(상신/진행중/반려)만 조회 — 카카오워크 동일. 상신일·기안양식·결재상태·제목 필터 + 체크박스 다중선택 [선택 삭제] |
 | 백업 | 결재 완료 문서 백업 기능 |
 | 압축파일 업로드 | 회사 설정에서 허용 여부 제어 |
 
@@ -917,6 +917,11 @@ notification_rules {
 **조직 계층 무결성**: 조직 상위(`parentId`) 수정 시 **자기 자신 또는 하위 조직을 상위로 지정하면 계층에 순환**이 발생하므로 차단한다 → `ORG_PARENT_CYCLE` (400). 검증은 지정하려는 부모의 조상 체인을 거슬러 올라가며 대상 조직을 만나는지 확인하고, 데이터 손상 대비로 탐색 깊이 상한을 둔다. 신규 생성은 자식이 없어 순환이 불가능하므로 **수정 경로에만** 적용한다.
 
 **전자결재 문서 강제 삭제(AP-05-06 결재 현황)**: 기안자 본인의 `DRAFT` 삭제(`DELETE /documents/:id`)와 별도로, **관리자(`GENERAL_ADMIN` 이상)는 임의 상태 문서를 강제 삭제**할 수 있다(`DELETE /documents/:id/force`). 권한 미달 시 `DOCUMENT_FORCE_DELETE_FORBIDDEN`. 삭제는 `ApprovalHistory` 선삭제(미지정 FK=Restrict) 후 문서 삭제(→ `approvalLines`→`steps` Cascade). **단, HR 요청과 연결된 문서(`request.documentId`)는 삭제 시 연결이 `SetNull`로 끊겨 요청 워크플로가 깨지므로 차단**한다 → `DOCUMENT_LINKED_TO_REQUEST` (요청 취소로 처리).
+
+**결재 현황 조회 박스(`box=status`)** — 카카오워크 정합: 관리자(`GENERAL_ADMIN` 이상)만 조회하며(`DOCUMENT_STATUS_FORBIDDEN`), 문서대장(`box=ledger`, 전 상태)과 달리 **진행 중인 문서(`PENDING`·`REJECTED`)만** 노출한다.
+- **상신/진행중 구분**: `PENDING` 문서를 결재선에 액티드 step(`APPROVED`/`PROXY_APPROVED`/`PRE_APPROVED`)이 **없으면 `상신(SUBMITTED)`**, **있으면 `진행중(IN_PROGRESS)`**으로 파생한다(목록 응답 `phase`). `currentApprover`는 현재 차례(`stepOrder` 오름차순 첫 `PENDING` 결재/협조 단계)의 담당자.
+- **필터**: `status`(전체/`SUBMITTED`/`IN_PROGRESS`/`REJECTED`), `formId`(기안양식), `dateFrom`/`dateTo`(상신일 기간, `submittedAt` gte/lte), `search`(제목·문서번호).
+- **다중 삭제**(`POST /documents/bulk-force-delete`, 최대 100건): 체크박스 다중선택 후 일괄 삭제. **대상 상태를 `PENDING`/`REJECTED`로 제한**하고, HR 연동·미존재·삭제불가 상태는 삭제하지 않고 `skipped[{id, reason}]`(`STATUS_NOT_DELETABLE`/`LINKED_TO_REQUEST`/`NOT_FOUND`)로 반환한다. 응답 `{ deletedCount, deletedIds, skipped }`.
 
 ### 6.5 결재 · 요청 보안 불변식
 

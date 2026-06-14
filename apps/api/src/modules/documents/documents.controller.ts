@@ -33,6 +33,8 @@ import {
   ApprovalCommentSchema,
   DocumentBoxFilterDto,
   DocumentBoxFilterSchema,
+  BulkForceDeleteDto,
+  BulkForceDeleteSchema,
 } from './dto/document.dto'
 
 @ApiTags('documents')
@@ -49,7 +51,7 @@ export class DocumentsController {
 
   // AP-04-01 문서함 목록
   @Get()
-  @ApiOperation({ summary: '문서함 목록 (draft/in_progress/completed/pending_approval/reference/viewer/receiver/ledger)' })
+  @ApiOperation({ summary: '문서함 목록 (draft/in_progress/completed/pending_approval/reference/viewer/receiver/dept-docs/status/ledger)' })
   findAll(
     @CompanyId() companyId: string,
     @Query(new ZodValidationPipe(DocumentBoxFilterSchema)) filter: DocumentBoxFilterDto,
@@ -107,6 +109,19 @@ export class DocumentsController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.documentsService.remove(companyId, id, user)
+  }
+
+  // AP-05-06 결재 현황 다중 삭제 (체크박스 선택삭제 — GENERAL_ADMIN 이상, 상신/진행중/반려만)
+  @Post('bulk-force-delete')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '결재 현황 다중 삭제 (관리자, 상신/진행중/반려)' })
+  bulkForceDelete(
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(BulkForceDeleteSchema)) dto: BulkForceDeleteDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.documentsService.bulkForceDelete(companyId, dto.ids, user)
   }
 
   // AP-05-06 관리자 강제 삭제 (결재 현황 — 임의 상태, GENERAL_ADMIN 이상)

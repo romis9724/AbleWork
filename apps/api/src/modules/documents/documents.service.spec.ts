@@ -59,6 +59,7 @@ const mockPrisma = {
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    deleteMany: jest.fn(),
   },
   documentForm: {
     findFirst: jest.fn(),
@@ -81,6 +82,7 @@ const mockPrisma = {
   },
   request: {
     findFirst: jest.fn(),
+    findMany: jest.fn(),
   },
   sharedApprovalLine: {
     findFirst: jest.fn(),
@@ -646,6 +648,209 @@ describe('DocumentsService', () => {
       expect(mockPrisma.document.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { companyId: COMPANY_ID } }),
       )
+    })
+  })
+
+  // ── 결재 현황 (status 박스 / 다중 삭제) ──────────────────────────────────────
+
+  describe('결재 현황 (status 박스)', () => {
+    beforeEach(() => {
+      mockPrisma.document.findMany.mockResolvedValue([])
+      mockPrisma.document.count.mockResolvedValue(0)
+    })
+
+    it('GENERAL_ADMIN 미만은 403', async () => {
+      await expect(
+        service.findAll(COMPANY_ID, { box: 'status', page: 1, limit: 20 }, makeUser()),
+      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_STATUS_FORBIDDEN' } })
+    })
+
+    it('상태 미지정: PENDING/REJECTED만 조회한다 (상신/진행중/반려)', async () => {
+      await service.findAll(
+        COMPANY_ID,
+        { box: 'status', page: 1, limit: 20 },
+        makeUser(AccessLevel.GENERAL_ADMIN, 'admin-1'),
+      )
+      const where = mockPrisma.document.findMany.mock.calls[0][0].where
+      expect(where.status).toEqual({ in: ['PENDING', 'REJECTED'] })
+    })
+
+    it('SUBMITTED: PENDING + 액티드 step 없음(none) 조건을 건다', async () => {
+      await service.findAll(
+        COMPANY_ID,
+        { box: 'status', status: 'SUBMITTED', page: 1, limit: 20 },
+        makeUser(AccessLevel.GENERAL_ADMIN, 'admin-1'),
+      )
+      const where = mockPrisma.document.findMany.mock.calls[0][0].where
+      expect(where.status).toBe('PENDING')
+      expect(where.approvalLines.none.steps.some.status.in).toEqual(
+        expect.arrayContaining(['APPROVED', 'PROXY_APPROVED', 'PRE_APPROVED']),
+      )
+    })
+
+    it('IN_PROGRESS: PENDING + 액티드 step 있음(some) 조건을 건다', async () => {
+      await service.findAll(
+        COMPANY_ID,
+        { box: 'status', status: 'IN_PROGRESS', page: 1, limit: 20 },
+        makeUser(AccessLevel.GENERAL_ADMIN, 'admin-1'),
+      )
+      const where = mockPrisma.document.findMany.mock.calls[0][0].where
+      expect(where.status).toBe('PENDING')
+      expect(where.approvalLines.some.steps.some.status.in).toEqual(
+        expect.arrayContaining(['APPROVED', 'PROXY_APPROVED', 'PRE_APPROVED']),
+      )
+    })
+
+    it('formId·상신일 기간 필터를 where에 반영한다', async () => {
+      await service.findAll(
+        COMPANY_ID,
+        {
+          box: 'status',
+          status: 'REJECTED',
+          formId: 'form-x',
+          dateFrom: '2026-06-01',
+          dateTo: '2026-06-14',
+          page: 1,
+          limit: 20,
+        },
+        makeUser(AccessLevel.GENERAL_ADMIN, 'admin-1'),
+      )
+      const where = mockPrisma.document.findMany.mock.calls[0][0].where
+      expect(where.status).toBe('REJECTED')
+      expect(where.formId).toBe('form-x')
+      expect(where.submittedAt.gte).toEqual(new Date('2026-06-01T00:00:00.000Z'))
+      expect(where.submittedAt.lte).toEqual(new Date('2026-06-14T23:59:59.999Z'))
+    })
+
+    it('항목 매핑: phase(상신/진행중)와 현재 결재자를 파생한다', async () => {
+      mockPrisma.document.findMany.mockResolvedValue([
+        {
+          id: 'd1',
+          docNumber: 'DOC-1',
+          title: '미처리',
+          status: 'PENDING',
+          submittedAt: new Date(),
+          completedAt: null,
+          createdAt: new Date(),
+          form: { id: FORM_ID, name: '지출' },
+          drafter: { id: DRAFTER_ID, name: '기안자' },
+          approvalLines: [
+            {
+              steps: [
+                {
+                  id: 's1',
+                  role: 'APPROVER',
+                  status: 'PENDING',
+                  stepOrder: 0,
+                  assigneeId: 'a1',
+                  assignee: { id: 'a1', name: '결재자A' },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'd2',
+          docNumber: 'DOC-2',
+          title: '일부승인',
+          status: 'PENDING',
+          submittedAt: new Date(),
+          completedAt: null,
+          createdAt: new Date(),
+          form: { id: FORM_ID, name: '지출' },
+          drafter: { id: DRAFTER_ID, name: '기안자' },
+          approvalLines: [
+            {
+              steps: [
+                {
+                  id: 's1',
+                  role: 'APPROVER',
+                  status: 'APPROVED',
+                  stepOrder: 0,
+                  assigneeId: 'a1',
+                  assignee: { id: 'a1', name: '결재자A' },
+                },
+                {
+                  id: 's2',
+                  role: 'APPROVER',
+                  status: 'PENDING',
+                  stepOrder: 1,
+                  assigneeId: 'a2',
+                  assignee: { id: 'a2', name: '결재자B' },
+                },
+              ],
+            },
+          ],
+        },
+      ])
+      mockPrisma.document.count.mockResolvedValue(2)
+
+      const result = await service.findAll(
+        COMPANY_ID,
+        { box: 'status', page: 1, limit: 20 },
+        makeUser(AccessLevel.GENERAL_ADMIN, 'admin-1'),
+      )
+
+      expect(result.items[0]).toMatchObject({
+        phase: 'SUBMITTED',
+        currentApprover: { id: 'a1', name: '결재자A' },
+      })
+      expect(result.items[1]).toMatchObject({
+        phase: 'IN_PROGRESS',
+        currentApprover: { id: 'a2', name: '결재자B' },
+      })
+    })
+  })
+
+  describe('bulkForceDelete', () => {
+    it('GENERAL_ADMIN 미만은 403', async () => {
+      await expect(
+        service.bulkForceDelete(COMPANY_ID, ['d1'], makeUser()),
+      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_FORCE_DELETE_FORBIDDEN' } })
+    })
+
+    it('PENDING/REJECTED만 삭제하고 그 외 상태·HR연동·미존재는 skipped로 분류한다', async () => {
+      mockPrisma.document.findMany.mockResolvedValue([
+        { id: 'd-pending', status: 'PENDING' },
+        { id: 'd-rejected', status: 'REJECTED' },
+        { id: 'd-approved', status: 'APPROVED' },
+        { id: 'd-linked', status: 'PENDING' },
+      ])
+      mockPrisma.request.findMany.mockResolvedValue([{ documentId: 'd-linked' }])
+      mockPrisma.document.deleteMany.mockResolvedValue({ count: 2 })
+      mockPrisma.approvalHistory.deleteMany.mockResolvedValue({ count: 0 })
+
+      const result = await service.bulkForceDelete(
+        COMPANY_ID,
+        ['d-pending', 'd-rejected', 'd-approved', 'd-linked', 'd-missing'],
+        makeUser(AccessLevel.GENERAL_ADMIN, 'admin-1'),
+      )
+
+      expect(result.deletedCount).toBe(2)
+      expect(result.deletedIds).toEqual(expect.arrayContaining(['d-pending', 'd-rejected']))
+      const reasons = Object.fromEntries(result.skipped.map((s) => [s.id, s.reason]))
+      expect(reasons).toEqual({
+        'd-approved': 'STATUS_NOT_DELETABLE',
+        'd-linked': 'LINKED_TO_REQUEST',
+        'd-missing': 'NOT_FOUND',
+      })
+      expect(mockPrisma.document.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: expect.arrayContaining(['d-pending', 'd-rejected']) }, companyId: COMPANY_ID },
+      })
+    })
+
+    it('삭제 대상이 없으면 트랜잭션을 실행하지 않는다', async () => {
+      mockPrisma.document.findMany.mockResolvedValue([{ id: 'd-approved', status: 'APPROVED' }])
+      mockPrisma.request.findMany.mockResolvedValue([])
+
+      const result = await service.bulkForceDelete(
+        COMPANY_ID,
+        ['d-approved'],
+        makeUser(AccessLevel.GENERAL_ADMIN, 'admin-1'),
+      )
+
+      expect(result.deletedCount).toBe(0)
+      expect(mockPrisma.document.deleteMany).not.toHaveBeenCalled()
     })
   })
 

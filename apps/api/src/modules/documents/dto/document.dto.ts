@@ -70,6 +70,11 @@ export const ApprovalCommentSchema = z.object({
   comment: z.string().optional(),
 })
 
+// AP-05-06 결재 현황 다중 삭제 (관리자) — 최대 100건
+export const BulkForceDeleteSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, '삭제할 문서를 선택하세요.').max(100),
+})
+
 export const DOCUMENT_BOXES = [
   'draft',
   'in_progress',
@@ -79,18 +84,23 @@ export const DOCUMENT_BOXES = [
   'viewer',
   'receiver',
   'dept-docs', // AP-05-04 부서문서함 (내가 부서 담당자인 부서협조/부서수신)
+  'status', // AP-05-06 결재 현황 (관리자 — 상신/진행중/반려)
   'ledger',
 ] as const
 
 export const DocumentBoxFilterSchema = z.object({
   box: z.enum(DOCUMENT_BOXES).default('draft'),
   search: z.string().optional(),
-  status: z.string().optional(), // ledger 전용 optional 필터
+  status: z.string().optional(), // ledger/status 박스 필터 (status: ''/SUBMITTED/IN_PROGRESS/REJECTED)
+  formId: z.string().uuid().optional(), // 기안양식 필터 (status 박스)
+  dateFrom: z.string().optional(), // 상신일 시작 (YYYY-MM-DD)
+  dateTo: z.string().optional(), // 상신일 종료 (YYYY-MM-DD)
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 })
 
 export type StepInput = z.infer<typeof StepInputSchema>
+export type BulkForceDeleteDto = z.infer<typeof BulkForceDeleteSchema>
 export type CreateDocumentDto = z.infer<typeof CreateDocumentSchema>
 export type UpdateDocumentDto = z.infer<typeof UpdateDocumentSchema>
 export type SubmitDocumentDto = z.infer<typeof SubmitDocumentSchema>

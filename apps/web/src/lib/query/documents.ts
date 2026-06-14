@@ -41,7 +41,11 @@ export type DocumentBox =
   | 'viewer'
   | 'receiver'
   | 'dept-docs'
+  | 'status'
   | 'ledger'
+
+/** 결재 현황 phase — 상신(미처리)/진행중(일부 승인) */
+export type DocumentPhase = 'SUBMITTED' | 'IN_PROGRESS' | null
 
 export type StepAction =
   | 'approve'
@@ -105,9 +109,13 @@ export interface DocumentListItem {
   title: string
   status: DocumentStatus
   submittedAt?: string | null
-  form?: { name: string } | null
+  form?: { id?: string; name: string } | null
   drafter?: { id?: string; name: string } | null
   mySteps?: { id: string; role: StepRole; status: StepStatus }[]
+  /** 결재 현황(status box)용: 상신/진행중 구분 */
+  phase?: DocumentPhase
+  /** 결재 현황(status box)용: 현재 결재 차례인 결재자 */
+  currentApprover?: { id: string; name: string } | null
 }
 
 export interface DocumentListResponse {
@@ -302,6 +310,12 @@ export interface DocumentListParams {
   status?: string
   /** 제목·문서번호 부분검색 (BE: title/docNumber contains) */
   search?: string
+  /** 결재 현황(status box) 필터 — 기안양식 id */
+  formId?: string
+  /** 결재 현황(status box) 필터 — 상신일 시작 (YYYY-MM-DD) */
+  dateFrom?: string
+  /** 결재 현황(status box) 필터 — 상신일 종료 (YYYY-MM-DD) */
+  dateTo?: string
 }
 
 export const useDocuments = (box: DocumentBox, params?: DocumentListParams) =>
@@ -352,6 +366,22 @@ export const useForceDeleteDocument = () => {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/documents/${id}/force`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
+  })
+}
+
+export interface BulkForceDeleteResult {
+  deletedCount: number
+  deletedIds: string[]
+  skipped: { id: string; reason: string }[]
+}
+
+// AP-05-06 결재 현황 다중 삭제 (체크박스 선택삭제)
+export const useBulkForceDeleteDocuments = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      apiClient.post('/documents/bulk-force-delete', { ids }) as Promise<BulkForceDeleteResult>,
     onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
   })
 }
