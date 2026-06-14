@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import ApprovalActionDialog, { type ApprovalActionOption } from './ApprovalActionDialog'
+import AddCcDialog from './AddCcDialog'
 import { useConfirm } from '@/hooks/useConfirm'
 import { useSnackbar } from '@/hooks/useSnackbar'
 import { useAuthStore } from '@/stores/auth.store'
@@ -145,9 +146,10 @@ export default function DocumentDetailView({
   const recallMutation = useRecallDocument()
   const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm()
-  // 통합 결재하기 팝업 / 반송 팝업 열림 상태
+  // 통합 결재하기 팝업 / 반송 팝업 / 공람·참조 추가 팝업 열림 상태
   const [decisionOpen, setDecisionOpen] = useState(false)
   const [bounceOpen, setBounceOpen] = useState(false)
+  const [ccOpen, setCcOpen] = useState(false)
 
   const steps: ApprovalStepDetail[] = doc?.approvalLines?.flatMap((l) => l.steps) ?? []
   const formFields = readFormFields(forms.find((f) => f.id === doc?.form?.id)?.fieldsSchema)
@@ -179,6 +181,14 @@ export default function DocumentDetailView({
     isDrafter &&
     doc?.status === 'APPROVED' &&
     doc?.form?.allowReDraft === true
+  // AP-02-08 공람/참조 사후 추가 — 진행중·완료 문서에 기안자/결재 참여자가 지정
+  const isParticipant = steps.some(
+    (s) => ['APPROVER', 'AGREEMENT', 'DEPT_COLLABORATOR'].includes(s.role) && s.assignee?.id === myEmployeeId,
+  )
+  const canAddCc =
+    !isHrLinked &&
+    (doc?.status === 'PENDING' || doc?.status === 'APPROVED') &&
+    (isDrafter || isParticipant)
 
   const stepActions =
     !isHrLinked && myPendingStep && actionsVisibleForStatus(myPendingStep.role, doc?.status)
@@ -194,7 +204,8 @@ export default function DocumentDetailView({
     canRecall ||
     (canCancelApproval && !isHrLinked) ||
     canResubmit ||
-    canRedraft
+    canRedraft ||
+    canAddCc
   const busy = stepAction.isPending || recallMutation.isPending
 
   // L5 전단계 반려 시 결재권이 돌아갈 직전 결재자 이름
@@ -451,6 +462,13 @@ export default function DocumentDetailView({
             </Button>
           )}
 
+          {/* AP-02-08 공람·참조 사후 추가 */}
+          {canAddCc && (
+            <Button variant="outlined" disabled={busy} onClick={() => setCcOpen(true)}>
+              공람·참조 추가
+            </Button>
+          )}
+
           {/* 결재 결정 역할 → 통합 [결재] 버튼(결재하기 팝업) */}
           {isDecisionStep && (
             <Button variant="contained" disabled={busy} onClick={() => setDecisionOpen(true)}>
@@ -501,6 +519,14 @@ export default function DocumentDetailView({
         submitLabel="반송"
         onClose={() => setBounceOpen(false)}
         onSubmit={submitAction}
+      />
+
+      {/* C4/C6/C7 공람·참조 사후 추가 팝업 */}
+      <AddCcDialog
+        open={ccOpen}
+        documentId={documentId}
+        onClose={() => setCcOpen(false)}
+        onResult={(msg, severity) => showSnackbar(msg, severity)}
       />
 
       <ConfirmDialog

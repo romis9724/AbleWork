@@ -901,4 +901,104 @@ describe('DocumentsService', () => {
       expect(result.id).toBe(DOCUMENT_ID)
     })
   })
+
+  // ── AP-02-08 공람/참조 사후 추가 ───────────────────────────────────────────────
+  describe('addCcSteps', () => {
+    const makeApprovedDoc = (overrides: Record<string, unknown> = {}) =>
+      makeDocument({
+        status: 'APPROVED',
+        approvalLines: [
+          {
+            id: 'line-1',
+            steps: [
+              { role: 'APPROVER', assigneeId: 'approver-1', stepOrder: 0, status: 'APPROVED' },
+            ],
+          },
+        ],
+        ...overrides,
+      })
+
+    it('기안자가 진행/완료 문서에 공람자(VIEWER)를 추가하면 PENDING 단계로 append된다', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(makeApprovedDoc({ drafter: { id: DRAFTER_ID, name: '기안자' }, history: [] }))
+
+      await service.addCcSteps(
+        COMPANY_ID,
+        DOCUMENT_ID,
+        { steps: [{ role: 'VIEWER', assigneeId: 'viewer-1' }] },
+        makeUser(AccessLevel.EMPLOYEE, DRAFTER_ID),
+      )
+
+      expect(mockPrisma.approvalStep.createMany).toHaveBeenCalledWith({
+        data: [
+          { lineId: 'line-1', role: 'VIEWER', assigneeId: 'viewer-1', stepOrder: 1, status: 'PENDING' },
+        ],
+      })
+    })
+
+    it('DRAFT 문서에는 추가할 수 없다 (DOCUMENT_CC_NOT_ALLOWED)', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(makeApprovedDoc({ status: 'DRAFT' }))
+
+      await expect(
+        service.addCcSteps(
+          COMPANY_ID,
+          DOCUMENT_ID,
+          { steps: [{ role: 'VIEWER', assigneeId: 'viewer-1' }] },
+          makeUser(AccessLevel.EMPLOYEE, DRAFTER_ID),
+        ),
+      ).rejects.toThrow(BadRequestException)
+      expect(mockPrisma.approvalStep.createMany).not.toHaveBeenCalled()
+    })
+
+    it('기안자도 결재 참여자도 아니면 거부된다 (DOCUMENT_CC_FORBIDDEN)', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(makeApprovedDoc())
+
+      await expect(
+        service.addCcSteps(
+          COMPANY_ID,
+          DOCUMENT_ID,
+          { steps: [{ role: 'REFERENCE', assigneeId: 'ref-9' }] },
+          makeUser(AccessLevel.EMPLOYEE, 'stranger-1'),
+        ),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('이미 지정된 대상은 중복 추가되지 않는다 (DOCUMENT_CC_DUPLICATE)', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(
+        makeApprovedDoc({
+          approvalLines: [
+            {
+              id: 'line-1',
+              steps: [
+                { role: 'APPROVER', assigneeId: 'approver-1', stepOrder: 0, status: 'APPROVED' },
+                { role: 'VIEWER', assigneeId: 'viewer-1', stepOrder: 1, status: 'PENDING' },
+              ],
+            },
+          ],
+        }),
+      )
+
+      await expect(
+        service.addCcSteps(
+          COMPANY_ID,
+          DOCUMENT_ID,
+          { steps: [{ role: 'VIEWER', assigneeId: 'viewer-1' }] },
+          makeUser(AccessLevel.EMPLOYEE, DRAFTER_ID),
+        ),
+      ).rejects.toThrow(BadRequestException)
+      expect(mockPrisma.approvalStep.createMany).not.toHaveBeenCalled()
+    })
+
+    it('존재하지 않는 문서는 404', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.addCcSteps(
+          COMPANY_ID,
+          DOCUMENT_ID,
+          { steps: [{ role: 'VIEWER', assigneeId: 'viewer-1' }] },
+          makeUser(AccessLevel.EMPLOYEE, DRAFTER_ID),
+        ),
+      ).rejects.toThrow(NotFoundException)
+    })
+  })
 })

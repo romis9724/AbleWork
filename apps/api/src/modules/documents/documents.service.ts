@@ -23,6 +23,7 @@ import {
   CreateDocumentDto,
   UpdateDocumentDto,
   SubmitDocumentDto,
+  AddCcStepsDto,
   DocumentBoxFilterDto,
   StepInput,
   StepInputSchema,
@@ -394,6 +395,89 @@ export class DocumentsService {
     })
 
     return updated
+  }
+
+  // ── AP-02-08 공람/참조 사후 추가 (진행중·완료 문서) ──────────────────────────
+
+  /**
+   * 진행 중(PENDING) 또는 완료(APPROVED) 문서에 공람자(VIEWER)·참조자(REFERENCE)를
+   * 사후 지정한다. 비차단 단계이므로 즉시 확인 가능(status PENDING)으로 추가한다.
+   * 권한: 기안자 본인 또는 결재 흐름 참여자(결재/협조 단계 담당자).
+   */
+  async addCcSteps(companyId: string, documentId: string, dto: AddCcStepsDto, user: JwtPayload) {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, companyId },
+      include: { approvalLines: { include: { steps: true } } },
+    })
+    if (!document) {
+      throw new NotFoundException({
+        code: 'DOCUMENT_NOT_FOUND',
+        message: '문서를 찾을 수 없습니다.',
+      })
+    }
+    this.assertNotRequestManaged(document)
+
+    if (document.status !== DocStatus.PENDING && document.status !== DocStatus.APPROVED) {
+      throw new BadRequestException({
+        code: 'DOCUMENT_CC_NOT_ALLOWED',
+        message: '진행중 또는 완료된 문서에만 공람·참조를 추가할 수 있습니다.',
+      })
+    }
+
+    const allSteps: StepRecord[] = document.approvalLines.flatMap(
+      (line: { steps: StepRecord[] }) => line.steps,
+    )
+    const isDrafter = document.drafterId === user.employeeId
+    const isParticipant = allSteps.some(
+      (s) => APPROVAL_FLOW_ROLES.includes(s.role) && s.assigneeId === user.employeeId,
+    )
+    if (!isDrafter && !isParticipant) {
+      throw new ForbiddenException({
+        code: 'DOCUMENT_CC_FORBIDDEN',
+        message: '기안자 또는 결재 참여자만 공람·참조를 추가할 수 있습니다.',
+      })
+    }
+
+    const line = document.approvalLines[0]
+    if (!line) {
+      throw new BadRequestException({
+        code: 'DOCUMENT_NO_APPROVAL_LINE',
+        message: '결재선이 없는 문서입니다.',
+      })
+    }
+
+    // 중복 제거 (이미 동일 역할+담당자로 지정된 대상 제외)
+    const existingKeys = new Set(allSteps.map((s) => `${s.role}:${s.assigneeId ?? ''}`))
+    const fresh = dto.steps.filter((s) => !existingKeys.has(`${s.role}:${s.assigneeId}`))
+    if (fresh.length === 0) {
+      throw new BadRequestException({
+        code: 'DOCUMENT_CC_DUPLICATE',
+        message: '이미 지정된 공람자·참조자입니다.',
+      })
+    }
+
+    const maxOrder = allSteps.reduce((max, s) => Math.max(max, s.stepOrder), 0)
+
+    await this.prisma.approvalStep.createMany({
+      data: fresh.map((s, i) => ({
+        lineId: line.id,
+        role: s.role,
+        assigneeId: s.assigneeId,
+        stepOrder: maxOrder + i + 1,
+        status: StepStatus.PENDING, // 비차단 — 즉시 확인 가능
+      })),
+    })
+
+    // 신규 공람·참조 대상에게 알림
+    for (const s of fresh) {
+      this.events.emit(EVENTS.DOCUMENT_STEP_PENDING, {
+        documentId: document.id,
+        companyId,
+        assigneeId: s.assigneeId,
+      })
+    }
+
+    return this.findOne(companyId, documentId, user)
   }
 
   // ── AP-04-01 문서함 목록 ─────────────────────────────────────────────────────
