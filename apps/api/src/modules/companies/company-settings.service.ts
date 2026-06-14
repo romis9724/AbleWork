@@ -22,6 +22,8 @@ export const SETTING_FIELD_MAP: Record<string, { section: string; key: string }>
   // 휴게시간
   autoBreakEnabled: { section: 'break', key: 'auto_break_enabled' },
   shiftBreakEnabled: { section: 'break', key: 'shift_break_enabled' },
+  // 전자결재 (서비스 사용 설정)
+  approvalServiceEnabled: { section: 'approval', key: 'enable_service' },
 }
 
 /**
@@ -43,6 +45,7 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'shift.deemed_work_enabled': false,
   'break.auto_break_enabled': false,
   'break.shift_break_enabled': false,
+  'approval.enable_service': true, // 전자결재 서비스 기본 ON
 }
 
 const CACHE_TTL_MS = 60_000

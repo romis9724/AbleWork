@@ -14,6 +14,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger'
 import { ProxySettingsService } from './proxy-settings.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { RolesGuard } from '../../common/guards/roles.guard'
+import { ApprovalEnabledGuard } from '../../common/guards/approval-enabled.guard'
 import { CompanyId } from '../../common/decorators/company-id.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe'
@@ -27,7 +28,7 @@ import {
 
 @ApiTags('proxy-settings')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, ApprovalEnabledGuard)
 @Controller('proxy-settings')
 export class ProxySettingsController {
   constructor(private readonly proxySettingsService: ProxySettingsService) {}

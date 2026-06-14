@@ -14,6 +14,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger'
 import { SharedApprovalLinesService } from './shared-approval-lines.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { RolesGuard } from '../../common/guards/roles.guard'
+import { ApprovalEnabledGuard } from '../../common/guards/approval-enabled.guard'
 import { CompanyId } from '../../common/decorators/company-id.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe'
@@ -27,7 +28,7 @@ import {
 
 @ApiTags('shared-approval-lines')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, ApprovalEnabledGuard)
 @Controller('shared-approval-lines')
 export class SharedApprovalLinesController {
   constructor(private readonly sharedApprovalLinesService: SharedApprovalLinesService) {}
