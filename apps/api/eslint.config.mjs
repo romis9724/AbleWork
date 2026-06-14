@@ -7,6 +7,11 @@ export default [
   },
   {
     files: ['**/*.ts'],
+    // --fix 실행 시 의도적으로 남겨둔 eslint-disable 주석을 제거하지 않도록 한다
+    // (이 레포는 tx: any, 테스트 setup 등에서 disable 주석을 문서/가드 용도로 사용한다).
+    linterOptions: {
+      reportUnusedDisableDirectives: 'off',
+    },
     languageOptions: {
       parser: tsParser,
       sourceType: 'module',
