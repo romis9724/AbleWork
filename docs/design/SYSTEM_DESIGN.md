@@ -938,6 +938,7 @@ notification_rules {
 - **양식함(분류, `form_categories`)**: `/form-categories` CRUD(목록 전 직원, 생성/수정/삭제 GENERAL_ADMIN). 분류를 사용하는 양식이 있으면 삭제 차단(`FORM_CATEGORY_IN_USE`). 양식은 `categoryId`로 분류에 소속(삭제 시 SetNull).
 - **양식 메타**: `visibilityScope`(PUBLIC/DEPARTMENT/PRIVATE)·`retentionYears`(보존연한, 백업 retention과 연동)·`abbreviation`(문서번호 약어)·`description`(설명).
 - **공개범위 enforcement**(`assertCanUseForm`): 접근규칙(`form_access_rules`)이 있으면 규칙 매칭(기존 동작). 규칙이 **없을 때** `PUBLIC`은 전체 허용(기존 동작 유지), `DEPARTMENT`/`PRIVATE`은 양식 담당자(`formOwnerId`)만 작성 가능(그 외 `FORM_ACCESS_DENIED`). 기존 양식은 마이그레이션 기본값 `PUBLIC`이라 동작 변화 없음.
+- **확장 필드 타입**(`DocumentFieldDef.type`): text/textarea/number/date/select에 더해 **`richtext`**(서식 텍스트, 줄바꿈 유지 다행 입력)·**`table`**(표 — `columns[]` 헤더 정의 + 작성 시 행 추가/삭제, 값은 `string[][]`)를 추가. 양식 관리 화면은 **3탭 위저드(기본정보/입력필드/권한·옵션)** + 양식함 분류 관리 다이얼로그를 제공한다.
 
 ### 6.5 결재 · 요청 보안 불변식
 

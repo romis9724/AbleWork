@@ -73,13 +73,15 @@ export default function FormFieldsBuilder({ fields, onChange, disabled }: Props)
             label="유형"
             size="small"
             value={f.type}
-            onChange={(e) =>
+            onChange={(e) => {
+              const nextType = e.target.value as DocumentFieldDef['type']
               update(idx, {
-                type: e.target.value as DocumentFieldDef['type'],
-                // select가 아니면 옵션 제거
-                ...(e.target.value === DocumentFieldType.SELECT ? {} : { options: undefined }),
+                type: nextType,
+                // 유형 전환 시 무관한 설정 제거
+                ...(nextType === DocumentFieldType.SELECT ? {} : { options: undefined }),
+                ...(nextType === DocumentFieldType.TABLE ? {} : { columns: undefined }),
               })
-            }
+            }}
             disabled={disabled}
             sx={{ width: 130 }}
           >
@@ -97,6 +99,24 @@ export default function FormFieldsBuilder({ fields, onChange, disabled }: Props)
               onChange={(e) =>
                 update(idx, {
                   options: e.target.value
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                })
+              }
+              disabled={disabled}
+              sx={{ flexBasis: '100%' }}
+            />
+          )}
+          {f.type === DocumentFieldType.TABLE && (
+            <TextField
+              label="표 열 (쉼표 구분)"
+              size="small"
+              placeholder="예: 항목, 수량, 금액"
+              value={(f.columns ?? []).join(', ')}
+              onChange={(e) =>
+                update(idx, {
+                  columns: e.target.value
                     .split(',')
                     .map((s) => s.trim())
                     .filter(Boolean),

@@ -12,6 +12,8 @@ export const DocumentFieldType = {
   NUMBER: 'number',
   DATE: 'date',
   SELECT: 'select',
+  RICHTEXT: 'richtext',
+  TABLE: 'table',
 } as const
 
 export type DocumentFieldType = (typeof DocumentFieldType)[keyof typeof DocumentFieldType]
@@ -24,6 +26,8 @@ export interface DocumentFieldDef {
   required: boolean
   /** select 전용 — 선택 옵션 */
   options?: string[]
+  /** table 전용 — 표 열(헤더) 정의 */
+  columns?: string[]
   placeholder?: string
 }
 
@@ -37,6 +41,8 @@ export const DOCUMENT_FIELD_TYPE_LABEL: Record<DocumentFieldType, string> = {
   number: '숫자',
   date: '날짜',
   select: '선택',
+  richtext: '서식 텍스트',
+  table: '표',
 }
 
 /** fieldsSchema(unknown JSON)에서 안전하게 필드 배열을 추출한다. */

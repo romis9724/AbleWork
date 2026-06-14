@@ -29,7 +29,7 @@
 1. ✅ **인프라**: MinIO `StorageModule`(`StorageService`, 버킷 자동생성·미가용 graceful) + `document_attachments` 모델/마이그레이션 + 첨부 API(업로드/목록/다운로드/삭제, 20MB·10개·zip 게이트) + FE `AttachmentPanel`(드래그앤드롭, 상세·기안 작성 다이얼로그 연동). 단위 14건 추가(663 pass). ERD 53테이블·SYSTEM_DESIGN §6.4 동기화.
 2. ✅ **결재 현황** 재구성 — `box=status`(상신/진행중/반려만, `phase`·`currentApprover` 파생), 필터바(상신일·양식·결재상태·제목), 체크박스 다중선택 + `POST /documents/bulk-force-delete`(PENDING/REJECTED 한정·HR연동 제외·skipped 반환). 단위 테스트 9건 추가(649 pass). 설계서 §5.3.5/§6.4 동기화 완료.  ← 사용자 최초 요청
 3. ✅ **서비스 사용 설정** — 회사 설정 `approval.enable_service`(기본 ON) + `ApprovalEnabledGuard`가 전자결재 5개 컨트롤러 게이트(`APPROVAL_SERVICE_DISABLED` 403, 재활성화 경로/HR요청 결재는 비게이트). FE 회사 설정 > 전자결재 탭 토글. 단위 3건(666 pass). ERD `approval.enable_service`·SYSTEM_DESIGN §6.4 동기화.
-4. **양식 풀세트**(FormCategory·공개범위·메타·확장템플릿·3탭 위저드).
+4. ✅ **양식 풀세트** — 25a(BE: form_categories·공개범위·메타·enforcement, PR#35) + 25b(FE: 3탭 위저드·양식함 분류 관리 다이얼로그·확장 필드타입 richtext/table 빌더+렌더러). 단위 673 pass.
 5. **문서담당관리**(다중 담당자 + 전용 페이지 + 부서 step 엔진 변경).
 6. **공용 결재선 관리** 정합(필터·작성자·중복체크·검증·동적결재자).
 7. **공통 관리** 통합 페이지(채번 약어·정책토글·알림 2계층·표시형식).
