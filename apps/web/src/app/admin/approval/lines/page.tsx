@@ -27,7 +27,7 @@ import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import ApprovalLineBuilder from '@/components/approval/ApprovalLineBuilder'
-import { STEP_ROLE_LABEL, isDeptRole } from '@/components/approval/approval-constants'
+import { STEP_ROLE_LABEL, isDeptRole, dateText } from '@/components/approval/approval-constants'
 import { useSnackbar } from '@/hooks/useSnackbar'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { useConfirm } from '@/hooks/useConfirm'
@@ -48,7 +48,8 @@ interface DialogState {
 }
 
 export default function SharedApprovalLinesPage() {
-  const { data: lines = [], isLoading } = useSharedApprovalLines()
+  const [search, setSearch] = useState('')
+  const { data: lines = [], isLoading } = useSharedApprovalLines(search.trim() || undefined)
   const { data: employeeData } = useEmployees({ limit: 200, isActive: true })
   const { data: orgTree = [] } = useOrganizations()
   const createMutation = useCreateSharedApprovalLine()
@@ -129,8 +130,8 @@ export default function SharedApprovalLinesPage() {
         showSnackbar('공용 결재선이 추가되었습니다.')
       }
       closeDialog()
-    } catch {
-      setErrorMessage('저장 중 오류가 발생했습니다.')
+    } catch (e) {
+      setErrorMessage(getApiErrorMessage(e, '저장 중 오류가 발생했습니다.'))
     }
   }
 
@@ -166,9 +167,18 @@ export default function SharedApprovalLinesPage() {
         title="공용 결재선"
         subtitle="기안 작성 시 불러올 수 있는 공용 결재선을 관리합니다."
         actions={
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-            결재선 추가
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <TextField
+              size="small"
+              placeholder="이름 검색"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              sx={{ width: 180 }}
+            />
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+              결재선 추가
+            </Button>
+          </Box>
         }
       />
 
@@ -188,6 +198,8 @@ export default function SharedApprovalLinesPage() {
               <TableRow sx={{ bgcolor: 'background.default' }}>
                 <TableCell>이름</TableCell>
                 <TableCell>결재 단계</TableCell>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}>작성자</TableCell>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}>작성일</TableCell>
                 <TableCell align="right">관리</TableCell>
               </TableRow>
             </TableHead>
@@ -213,6 +225,8 @@ export default function SharedApprovalLinesPage() {
                         ))}
                     </Box>
                   </TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{line.createdBy?.name ?? '—'}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{dateText(line.createdAt)}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                     <IconButton size="small" onClick={() => openEdit(line)} aria-label="수정">
                       <EditOutlinedIcon fontSize="small" />

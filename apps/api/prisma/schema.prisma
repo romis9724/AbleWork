@@ -213,6 +213,7 @@ model Employee {
   lockedSnapshots       ReportSnapshot[]
   sentMessages          Message[]
   uploadedAttachments   DocumentAttachment[]       @relation("AttachmentUploader")
+  createdSharedLines    SharedApprovalLine[]       @relation("SharedLineCreatedBy")
 
   @@index([companyId, isActive])
   @@index([companyId, accessLevel])
@@ -937,15 +938,18 @@ model ProxySettings {
 }
 
 model SharedApprovalLine {
-  id        String   @id @default(uuid())
-  companyId String   @map("company_id")
-  name      String   @db.VarChar(100)
-  steps     Json
-  version   Int      @default(1)
-  updatedAt DateTime @updatedAt @map("updated_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  id          String   @id @default(uuid())
+  companyId   String   @map("company_id")
+  name        String   @db.VarChar(100)
+  steps       Json
+  version     Int      @default(1)
+  // 작성자 (감사/표시용) — 직원 삭제 시 SetNull
+  createdById String?  @map("created_by_id")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
 
   company       Company        @relation(fields: [companyId], references: [id])
+  createdBy     Employee?      @relation("SharedLineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   approvalLines ApprovalLine[]
   defaultForForms DocumentForm[] @relation("FormDefaultLine")
 

@@ -73,7 +73,16 @@ describe('SharedApprovalLinesService', () => {
       expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith({
         where: { companyId: COMPANY_ID },
         orderBy: { name: 'asc' },
+        include: { createdBy: { select: { id: true, name: true } } },
       })
+    })
+
+    it('search 필터 시 name contains 조건을 적용한다', async () => {
+      mockPrisma.sharedApprovalLine.findMany.mockResolvedValue([])
+      await service.findAll(COMPANY_ID, '표준')
+      expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { companyId: COMPANY_ID, name: { contains: '표준' } } }),
+      )
     })
 
     it('멀티테넌시 — findMany where에 companyId 필터가 포함된다', async () => {
@@ -97,11 +106,11 @@ describe('SharedApprovalLinesService', () => {
       mockPrisma.employee.count.mockResolvedValue(2)
       mockPrisma.sharedApprovalLine.create.mockResolvedValue(baseLine)
 
-      const result = await service.create(COMPANY_ID, dto)
+      const result = await service.create(COMPANY_ID, dto, 'creator-1')
 
       expect(result).toEqual(baseLine)
       expect(mockPrisma.sharedApprovalLine.create).toHaveBeenCalledWith({
-        data: { companyId: COMPANY_ID, name: '표준 결재선', steps: baseSteps },
+        data: { companyId: COMPANY_ID, name: '표준 결재선', steps: baseSteps, createdById: 'creator-1' },
       })
     })
 
@@ -109,7 +118,7 @@ describe('SharedApprovalLinesService', () => {
       mockPrisma.employee.count.mockResolvedValue(2)
       mockPrisma.sharedApprovalLine.create.mockResolvedValue(baseLine)
 
-      await service.create(COMPANY_ID, dto)
+      await service.create(COMPANY_ID, dto, 'creator-1')
 
       // assigneeIds 중복 제거된 목록으로 count 호출, companyId 필터 포함
       expect(mockPrisma.employee.count).toHaveBeenCalledWith({
@@ -121,7 +130,7 @@ describe('SharedApprovalLinesService', () => {
       // 2명 요청했으나 자사 소속 count가 1명 → 거부
       mockPrisma.employee.count.mockResolvedValue(1)
 
-      await expect(service.create(COMPANY_ID, dto)).rejects.toThrow(BadRequestException)
+      await expect(service.create(COMPANY_ID, dto, 'creator-1')).rejects.toThrow(BadRequestException)
       expect(mockPrisma.sharedApprovalLine.create).not.toHaveBeenCalled()
     })
 
@@ -129,27 +138,53 @@ describe('SharedApprovalLinesService', () => {
       // count(0) — 요청 직원 수(2)와 불일치
       mockPrisma.employee.count.mockResolvedValue(0)
 
-      await expect(service.create(COMPANY_ID, dto)).rejects.toThrow(BadRequestException)
+      await expect(service.create(COMPANY_ID, dto, 'creator-1')).rejects.toThrow(BadRequestException)
       expect(mockPrisma.sharedApprovalLine.create).not.toHaveBeenCalled()
     })
 
     it('중복 assigneeId는 한 번만 검증하여 count 대상에서 제거한다', async () => {
+      // 동일인을 두 APPROVER 단계에 — 최종결재자=협조자 충돌을 피하면서 dedup만 검증
       const dupDto: CreateSharedLineDto = {
         name: '중복 결재선',
         steps: [
           { role: 'APPROVER', assigneeId: 'emp-1', stepOrder: 0 },
-          { role: 'AGREEMENT', assigneeId: 'emp-1', stepOrder: 1 },
+          { role: 'APPROVER', assigneeId: 'emp-1', stepOrder: 1 },
         ],
       }
       mockPrisma.employee.count.mockResolvedValue(1)
       mockPrisma.sharedApprovalLine.create.mockResolvedValue(baseLine)
 
-      await service.create(COMPANY_ID, dupDto)
+      await service.create(COMPANY_ID, dupDto, 'creator-1')
 
       // 고유 assigneeId 1명만 검증
       expect(mockPrisma.employee.count).toHaveBeenCalledWith({
         where: { id: { in: ['emp-1'] }, companyId: COMPANY_ID },
       })
+    })
+
+    it('같은 이름이 이미 있으면 SHARED_LINE_DUPLICATE_NAME', async () => {
+      mockPrisma.employee.count.mockResolvedValue(2)
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue({ id: 'dup' })
+
+      await expect(service.create(COMPANY_ID, dto, 'creator-1')).rejects.toMatchObject({
+        response: { code: 'SHARED_LINE_DUPLICATE_NAME' },
+      })
+      expect(mockPrisma.sharedApprovalLine.create).not.toHaveBeenCalled()
+    })
+
+    it('최종 결재자가 협조자로도 지정되면 FINAL_APPROVER_IS_COLLABORATOR', async () => {
+      mockPrisma.employee.count.mockResolvedValue(1)
+      const conflictDto: CreateSharedLineDto = {
+        name: '충돌 결재선',
+        steps: [
+          { role: 'AGREEMENT', assigneeId: 'emp-1', stepOrder: 0 },
+          { role: 'APPROVER', assigneeId: 'emp-1', stepOrder: 1 },
+        ],
+      }
+      await expect(service.create(COMPANY_ID, conflictDto, 'creator-1')).rejects.toMatchObject({
+        response: { code: 'FINAL_APPROVER_IS_COLLABORATOR' },
+      })
+      expect(mockPrisma.sharedApprovalLine.create).not.toHaveBeenCalled()
     })
   })
 
@@ -157,7 +192,10 @@ describe('SharedApprovalLinesService', () => {
 
   describe('update', () => {
     it('name만 변경할 때 version은 증가하지 않는다', async () => {
-      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(baseLine)
+      // 1차 findFirst=소속검증(baseLine), 2차=이름중복검증(null)
+      mockPrisma.sharedApprovalLine.findFirst
+        .mockResolvedValueOnce(baseLine)
+        .mockResolvedValueOnce(null)
       mockPrisma.sharedApprovalLine.update.mockResolvedValue({
         ...baseLine,
         name: '수정된 결재선',
@@ -198,7 +236,9 @@ describe('SharedApprovalLinesService', () => {
     })
 
     it('[MEDIUM] name과 steps를 동시에 변경하면 둘 다 반영되고 version이 increment된다', async () => {
-      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(baseLine)
+      mockPrisma.sharedApprovalLine.findFirst
+        .mockResolvedValueOnce(baseLine)
+        .mockResolvedValueOnce(null)
       mockPrisma.employee.count.mockResolvedValue(1)
       mockPrisma.sharedApprovalLine.update.mockResolvedValue({
         ...baseLine,
@@ -251,7 +291,9 @@ describe('SharedApprovalLinesService', () => {
     })
 
     it('[버그수정] update where에 companyId가 포함되어 타 회사 라인 수정을 방어한다', async () => {
-      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(baseLine)
+      mockPrisma.sharedApprovalLine.findFirst
+        .mockResolvedValueOnce(baseLine)
+        .mockResolvedValueOnce(null)
       mockPrisma.sharedApprovalLine.update.mockResolvedValue(baseLine)
 
       await service.update(COMPANY_ID, LINE_ID, { name: '방어 검증' })

@@ -120,6 +120,10 @@ export interface SharedApprovalLine {
   id: string
   name: string
   steps: ApprovalStepInput[]
+  /** 작성자 (AP-01-08) */
+  createdBy?: { id: string; name: string } | null
+  /** 작성일 */
+  createdAt?: string
 }
 
 export interface DocumentListItem {
@@ -334,10 +338,13 @@ export const useSaveDocumentNumberRule = () => {
 
 // ---------- 공용 결재선 ----------
 
-export const useSharedApprovalLines = () =>
+export const useSharedApprovalLines = (search?: string) =>
   useQuery({
-    queryKey: LINES_KEY,
-    queryFn: () => apiClient.get('/shared-approval-lines') as Promise<SharedApprovalLine[]>,
+    queryKey: search ? [...LINES_KEY, { search }] : LINES_KEY,
+    queryFn: () =>
+      apiClient.get('/shared-approval-lines', {
+        params: search ? { search } : undefined,
+      }) as Promise<SharedApprovalLine[]>,
     staleTime: 60_000,
   })
 
