@@ -28,6 +28,7 @@ import {
   StepInputSchema,
 } from './dto/document.dto'
 import { z } from 'zod'
+import { DocumentFormsService } from './document-forms.service'
 
 /** DRAFT/RECALLED/REJECTED — 기안자가 수정·재상신할 수 있는 상태 */
 const EDITABLE_STATUSES: string[] = [DocStatus.DRAFT, DocStatus.RECALLED, DocStatus.REJECTED]
@@ -58,6 +59,7 @@ export class DocumentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly documentForms: DocumentFormsService,
   ) {}
 
   // ── AP-02-01 기안 작성 (DRAFT 저장) ─────────────────────────────────────────
@@ -72,6 +74,9 @@ export class DocumentsService {
         message: '기안 양식을 찾을 수 없습니다.',
       })
     }
+
+    // AP-01-07 양식 접근규칙 — 작성 권한 검증 (규칙 없으면 전체 허용)
+    await this.documentForms.assertCanUseForm(companyId, dto.formId, user)
 
     const resolvedSteps = dto.steps?.length
       ? await this.resolveSteps(companyId, dto.steps)

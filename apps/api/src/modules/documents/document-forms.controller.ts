@@ -26,6 +26,8 @@ import {
   UpdateDocumentFormSchema,
   UpsertNumberRuleDto,
   UpsertNumberRuleSchema,
+  CreateFormAccessRuleDto,
+  CreateFormAccessRuleSchema,
 } from './dto/document-form.dto'
 
 @ApiTags('document-forms')
@@ -96,5 +98,41 @@ export class DocumentFormsController {
     @Body(new ZodValidationPipe(UpsertNumberRuleSchema)) dto: UpsertNumberRuleDto,
   ) {
     return this.documentFormsService.upsertNumberRule(companyId, id, dto)
+  }
+
+  // ── AP-01-07 양식 접근규칙 (조직/직무 단위 작성 권한) ─────────────────────────
+
+  @Get(':id/access-rules')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '양식 접근규칙 목록 (GENERAL_ADMIN)' })
+  @ApiParam({ name: 'id', type: String })
+  getAccessRules(@CompanyId() companyId: string, @Param('id') id: string) {
+    return this.documentFormsService.getAccessRules(companyId, id)
+  }
+
+  @Post(':id/access-rules')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '양식 접근규칙 추가 (조직/직무 scope, GENERAL_ADMIN)' })
+  @ApiParam({ name: 'id', type: String })
+  createAccessRule(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(CreateFormAccessRuleSchema)) dto: CreateFormAccessRuleDto,
+  ) {
+    return this.documentFormsService.createAccessRule(companyId, id, dto)
+  }
+
+  @Delete(':id/access-rules/:ruleId')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '양식 접근규칙 삭제 (GENERAL_ADMIN)' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiParam({ name: 'ruleId', type: String })
+  deleteAccessRule(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @Param('ruleId') ruleId: string,
+  ) {
+    return this.documentFormsService.deleteAccessRule(companyId, id, ruleId)
   }
 }

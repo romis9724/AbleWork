@@ -53,6 +53,21 @@ const mockPrisma = {
   sharedApprovalLine: {
     findFirst: jest.fn(),
   },
+  formAccessRule: {
+    findMany: jest.fn(),
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    delete: jest.fn(),
+  },
+  employee: {
+    findFirst: jest.fn(),
+  },
+  organization: {
+    findFirst: jest.fn(),
+  },
+  position: {
+    findFirst: jest.fn(),
+  },
   document: {
     count: jest.fn(),
   },
@@ -134,6 +149,7 @@ describe('DocumentFormsService', () => {
       sortOrder: 0,
       allowReDraft: false,
       allowPreApproval: false,
+      allowZipUpload: false,
     }
 
     it('양식을 생성하고 companyId를 주입한다', async () => {
@@ -546,6 +562,87 @@ describe('DocumentFormsService', () => {
         service.upsertNumberRule(OTHER_COMPANY_ID, FORM_ID, dto),
       ).rejects.toThrow(NotFoundException)
       expect(mockPrisma.documentNumberRule.create).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── AP-01-07 양식 담당자 / 접근규칙 ───────────────────────────────────────────
+
+  describe('formOwnerId', () => {
+    it('자사 직원이면 담당자로 저장한다', async () => {
+      mockPrisma.employee.findFirst.mockResolvedValue({ id: 'emp-1' })
+      mockPrisma.documentForm.create.mockResolvedValue(baseForm)
+
+      await service.create(COMPANY_ID, {
+        name: 'x', fieldsSchema: {}, sortOrder: 0, allowReDraft: false, allowPreApproval: false,
+        allowZipUpload: false, formOwnerId: 'emp-1',
+      })
+
+      expect(mockPrisma.documentForm.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ formOwnerId: 'emp-1' }) }),
+      )
+    })
+
+    it('타사/미존재 직원이면 EMPLOYEE_NOT_FOUND', async () => {
+      mockPrisma.employee.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.create(COMPANY_ID, {
+          name: 'x', fieldsSchema: {}, sortOrder: 0, allowReDraft: false, allowPreApproval: false,
+          allowZipUpload: false, formOwnerId: 'ghost',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'EMPLOYEE_NOT_FOUND' } })
+    })
+  })
+
+  describe('접근규칙 CRUD + enforcement', () => {
+    it('ORGANIZATION scope가 자사 조직이면 규칙을 생성한다', async () => {
+      mockPrisma.documentForm.findFirst.mockResolvedValue(baseForm)
+      mockPrisma.organization.findFirst.mockResolvedValue({ id: 'org-1' })
+      mockPrisma.formAccessRule.create.mockResolvedValue({ id: 'rule-1' })
+
+      await service.createAccessRule(COMPANY_ID, FORM_ID, { scopeType: 'ORGANIZATION', scopeId: 'org-1' })
+
+      expect(mockPrisma.formAccessRule.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { formId: FORM_ID, scopeType: 'ORGANIZATION', scopeId: 'org-1' } }),
+      )
+    })
+
+    it('scope가 타사면 FORM_ACCESS_SCOPE_NOT_FOUND', async () => {
+      mockPrisma.documentForm.findFirst.mockResolvedValue(baseForm)
+      mockPrisma.position.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.createAccessRule(COMPANY_ID, FORM_ID, { scopeType: 'POSITION', scopeId: 'pos-x' }),
+      ).rejects.toMatchObject({ response: { code: 'FORM_ACCESS_SCOPE_NOT_FOUND' } })
+    })
+
+    it('assertCanUseForm: 규칙이 없으면 통과한다', async () => {
+      mockPrisma.formAccessRule.findMany.mockResolvedValue([])
+      await expect(
+        service.assertCanUseForm(COMPANY_ID, FORM_ID, { employeeId: 'emp-1' }),
+      ).resolves.toBeUndefined()
+    })
+
+    it('assertCanUseForm: 사용자가 규칙 조직/직무에 매칭되면 통과한다', async () => {
+      mockPrisma.formAccessRule.findMany.mockResolvedValue([
+        { id: 'r1', scopeType: 'ORGANIZATION', scopeId: 'org-1' },
+      ])
+      mockPrisma.employee.findFirst.mockResolvedValue({ id: 'emp-1' }) // 매칭됨
+
+      await expect(
+        service.assertCanUseForm(COMPANY_ID, FORM_ID, { employeeId: 'emp-1' }),
+      ).resolves.toBeUndefined()
+    })
+
+    it('assertCanUseForm: 매칭되는 조직/직무가 없으면 FORM_ACCESS_DENIED', async () => {
+      mockPrisma.formAccessRule.findMany.mockResolvedValue([
+        { id: 'r1', scopeType: 'ORGANIZATION', scopeId: 'org-1' },
+      ])
+      mockPrisma.employee.findFirst.mockResolvedValue(null) // 매칭 안 됨
+
+      await expect(
+        service.assertCanUseForm(COMPANY_ID, FORM_ID, { employeeId: 'emp-9' }),
+      ).rejects.toMatchObject({ response: { code: 'FORM_ACCESS_DENIED' } })
     })
   })
 })
