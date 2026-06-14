@@ -13,6 +13,8 @@ import {
   StepRole,
   StepStatus,
   APPROVAL_FLOW_ROLES,
+  RECEIVER_ROLES,
+  CANCEL_ON_REJECT_ROLES,
   HistoryAction,
 } from './documents.constants'
 import { ApprovalCommentDto } from './dto/document.dto'
@@ -78,6 +80,25 @@ export class ApprovalActionsService {
     return this.approveFlowStep(companyId, documentId, stepId, dto, actor, StepRole.AGREEMENT)
   }
 
+  // ── AP-04-02 부서협조 완료 (AGREEMENT처럼 흐름에 합류, 부서 담당자 단일 결정) ──
+
+  async deptCollab(
+    companyId: string,
+    documentId: string,
+    stepId: string,
+    dto: ApprovalCommentDto,
+    actor: JwtPayload,
+  ) {
+    return this.approveFlowStep(
+      companyId,
+      documentId,
+      stepId,
+      dto,
+      actor,
+      StepRole.DEPT_COLLABORATOR,
+    )
+  }
+
   private async approveFlowStep(
     companyId: string,
     documentId: string,
@@ -92,13 +113,14 @@ export class ApprovalActionsService {
     this.assertStepPending(step)
     const ctx = await this.resolveActor(step, actor)
 
-    const isAgreement = expectedRole === StepRole.AGREEMENT
     const stepStatus = ctx.isProxy ? StepStatus.PROXY_APPROVED : StepStatus.APPROVED
     const action = ctx.isProxy
       ? HistoryAction.PROXY_APPROVE
-      : isAgreement
+      : expectedRole === StepRole.AGREEMENT
         ? HistoryAction.AGREE
-        : HistoryAction.APPROVE
+        : expectedRole === StepRole.DEPT_COLLABORATOR
+          ? HistoryAction.DEPT_COLLAB
+          : HistoryAction.APPROVE
 
     const result = await this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
@@ -165,7 +187,7 @@ export class ApprovalActionsService {
         where: {
           line: { documentId: document.id },
           id: { not: step.id },
-          role: { in: [...APPROVAL_FLOW_ROLES, StepRole.RECEIVER] },
+          role: { in: CANCEL_ON_REJECT_ROLES },
           status: { in: [StepStatus.WAITING, StepStatus.PENDING] },
         },
         data: { status: StepStatus.CANCELLED },
@@ -477,7 +499,7 @@ export class ApprovalActionsService {
     actor: JwtPayload,
   ) {
     const { document, step } = await this.loadActionTarget(companyId, documentId, stepId)
-    this.assertStepRole(step, [StepRole.RECEIVER])
+    this.assertStepRole(step, RECEIVER_ROLES) // RECEIVER + 부서수신(DEPT_RECEIVER)
 
     if (document.status !== DocStatus.APPROVED) {
       throw new BadRequestException({
@@ -511,6 +533,62 @@ export class ApprovalActionsService {
       })
       return updated
     })
+  }
+
+  // ── AP-04-06 부서수신 반송 (문서 APPROVED 이후, 기안자에게 반환 통지) ──────────
+  // 부서 문서담당자가 수신 거부 — 문서 상태는 그대로 두고 단계를 BOUNCED 처리한다.
+
+  async bounce(
+    companyId: string,
+    documentId: string,
+    stepId: string,
+    dto: ApprovalCommentDto,
+    actor: JwtPayload,
+  ) {
+    const { document, step } = await this.loadActionTarget(companyId, documentId, stepId)
+    this.assertStepRole(step, [StepRole.DEPT_RECEIVER])
+
+    if (document.status !== DocStatus.APPROVED) {
+      throw new BadRequestException({
+        code: 'DOCUMENT_NOT_APPROVED',
+        message: '결재 완료된 문서만 반송할 수 있습니다.',
+      })
+    }
+    this.assertStepPending(step)
+    const ctx = await this.resolveActor(step, actor)
+
+    const updated = await this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (tx: any) => {
+      const s = await tx.approvalStep.update({
+        where: { id: step.id },
+        data: {
+          status: StepStatus.BOUNCED,
+          comment: dto.comment ?? null,
+          actedAt: new Date(),
+          isProxy: ctx.isProxy,
+          proxyId: ctx.isProxy ? actor.employeeId : null,
+        },
+      })
+      await tx.approvalHistory.create({
+        data: {
+          documentId: document.id,
+          stepId: step.id,
+          actorId: actor.employeeId,
+          action: HistoryAction.BOUNCE,
+          comment: dto.comment ?? null,
+        },
+      })
+      return s
+    })
+
+    this.events.emit(EVENTS.DOCUMENT_BOUNCED, {
+      documentId: document.id,
+      companyId,
+      drafterId: document.drafterId,
+      title: document.title,
+    })
+
+    return updated
   }
 
   // ── 내부: 결재 진행 공통 로직 ────────────────────────────────────────────────
@@ -549,13 +627,13 @@ export class ApprovalActionsService {
     return { document: doc, finalApproved: true, nextAssigneeId: null }
   }
 
-  /** 최종 승인: 문서 APPROVED + RECEIVER 단계 활성화 */
+  /** 최종 승인: 문서 APPROVED + 수신(RECEIVER/부서수신) 단계 활성화 */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async finalizeApproval(tx: any, documentId: string) {
     await tx.approvalStep.updateMany({
       where: {
         line: { documentId },
-        role: StepRole.RECEIVER,
+        role: { in: RECEIVER_ROLES },
         status: StepStatus.WAITING,
       },
       data: { status: StepStatus.PENDING },

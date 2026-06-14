@@ -7,13 +7,42 @@ export const ApprovalStepRoleEnum = z.enum([
   'REFERENCE',
   'VIEWER',
   'RECEIVER',
+  'DEPT_COLLABORATOR', // AP-04-02 부서협조
+  'DEPT_RECEIVER', // AP-04-06 부서수신
 ])
 
-export const StepInputSchema = z.object({
-  role: ApprovalStepRoleEnum,
-  assigneeId: z.string().min(1),
-  stepOrder: z.number().int().min(0),
-})
+/** 부서로 라우팅되는 role — assigneeId 대신 organizationId를 받아 서버가 부서 문서담당자로 해석 */
+const DEPT_ROLE_VALUES: string[] = ['DEPT_COLLABORATOR', 'DEPT_RECEIVER']
+
+/**
+ * 결재 단계 입력.
+ * - 개인 단계(APPROVER/AGREEMENT/REFERENCE/VIEWER/RECEIVER): assigneeId 필수.
+ * - 부서 단계(DEPT_COLLABORATOR/DEPT_RECEIVER): organizationId 필수, assignee는 서버가 해석.
+ */
+export const StepInputSchema = z
+  .object({
+    role: ApprovalStepRoleEnum,
+    assigneeId: z.string().min(1).optional(),
+    organizationId: z.string().min(1).optional(),
+    stepOrder: z.number().int().min(0),
+  })
+  .superRefine((val, ctx) => {
+    const isDept = DEPT_ROLE_VALUES.includes(val.role)
+    if (isDept && !val.organizationId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['organizationId'],
+        message: '부서협조/부서수신 단계는 대상 부서를 지정해야 합니다.',
+      })
+    }
+    if (!isDept && !val.assigneeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['assigneeId'],
+        message: '결재자를 지정해야 합니다.',
+      })
+    }
+  })
 
 export const CreateDocumentSchema = z.object({
   formId: z.string().min(1),
@@ -49,6 +78,7 @@ export const DOCUMENT_BOXES = [
   'reference',
   'viewer',
   'receiver',
+  'dept-docs', // AP-05-04 부서문서함 (내가 부서 담당자인 부서협조/부서수신)
   'ledger',
 ] as const
 

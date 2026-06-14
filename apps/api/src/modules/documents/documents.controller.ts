@@ -264,7 +264,7 @@ export class DocumentsController {
     return this.approvalActionsService.view(companyId, id, stepId, dto, user)
   }
 
-  // AP-03-08 수신 처리
+  // AP-03-08 수신 처리 (RECEIVER + 부서수신)
   @Post(':id/steps/:stepId/receive')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '수신 처리 (문서 APPROVED 이후, RECEIVED)' })
@@ -278,5 +278,37 @@ export class DocumentsController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.approvalActionsService.receive(companyId, id, stepId, dto, user)
+  }
+
+  // AP-04-02 부서협조 완료 (부서 문서담당자 단일 결정 — 반려는 /reject 사용)
+  @Post(':id/steps/:stepId/dept-collab')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '부서협조 완료 (DEPT_COLLABORATOR, 흐름 진행)' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiParam({ name: 'stepId', type: String })
+  deptCollab(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @Param('stepId') stepId: string,
+    @Body(new ZodValidationPipe(ApprovalCommentSchema)) dto: ApprovalCommentDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.approvalActionsService.deptCollab(companyId, id, stepId, dto, user)
+  }
+
+  // AP-04-06 부서수신 반송 (문서 APPROVED 이후, BOUNCED → 기안자 통지)
+  @Post(':id/steps/:stepId/bounce')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '부서수신 반송 (DEPT_RECEIVER, BOUNCED)' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiParam({ name: 'stepId', type: String })
+  bounce(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @Param('stepId') stepId: string,
+    @Body(new ZodValidationPipe(ApprovalCommentSchema)) dto: ApprovalCommentDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.approvalActionsService.bounce(companyId, id, stepId, dto, user)
   }
 }

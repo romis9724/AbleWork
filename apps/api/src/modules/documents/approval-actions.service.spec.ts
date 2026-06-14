@@ -162,7 +162,10 @@ describe('ApprovalActionsService', () => {
 
       expect(result.status).toBe('APPROVED')
       expect(mockPrisma.approvalStep.updateMany).toHaveBeenCalledWith({
-        where: expect.objectContaining({ role: 'RECEIVER', status: 'WAITING' }),
+        where: expect.objectContaining({
+          role: { in: ['RECEIVER', 'DEPT_RECEIVER'] },
+          status: 'WAITING',
+        }),
         data: { status: 'PENDING' },
       })
       expect(mockPrisma.document.update).toHaveBeenCalledWith(
@@ -310,17 +313,19 @@ describe('ApprovalActionsService', () => {
           data: expect.objectContaining({ status: 'PRE_APPROVED' }),
         }),
       )
-      // 이후 결재 단계 SKIPPED
+      // 이후 결재 단계 SKIPPED (부서협조 포함 — 전결은 남은 흐름 전체를 건너뜀)
       expect(mockPrisma.approvalStep.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ role: { in: ['APPROVER', 'AGREEMENT'] } }),
+          where: expect.objectContaining({
+            role: { in: ['APPROVER', 'AGREEMENT', 'DEPT_COLLABORATOR'] },
+          }),
           data: { status: 'SKIPPED' },
         }),
       )
-      // RECEIVER 활성화
+      // RECEIVER 활성화 (RECEIVER + 부서수신)
       expect(mockPrisma.approvalStep.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ role: 'RECEIVER' }),
+          where: expect.objectContaining({ role: { in: ['RECEIVER', 'DEPT_RECEIVER'] } }),
           data: { status: 'PENDING' },
         }),
       )
@@ -530,6 +535,155 @@ describe('ApprovalActionsService', () => {
       expect(mockPrisma.approvalHistory.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ action: 'RECEIVE' }),
       })
+    })
+  })
+
+  // ── 부서협조 / 부서수신 (G14) ───────────────────────────────────────────────
+
+  describe('부서협조 (deptCollab)', () => {
+    it('부서협조 완료: DEPT_COLLABORATOR 단계를 APPROVED 처리하고 다음 결재 단계를 활성화한다', async () => {
+      const steps = [
+        makeStep({
+          id: 'step-dc',
+          role: 'DEPT_COLLABORATOR',
+          assigneeId: 'dept-mgr-1', // 상신 시 부서 문서담당자로 해석된 assignee
+          stepOrder: 0,
+          status: 'PENDING',
+        }),
+        makeStep({ id: 'step-1', assigneeId: 'approver-1', stepOrder: 1, status: 'WAITING' }),
+      ]
+      mockPrisma.document.findFirst
+        .mockResolvedValueOnce(makeDocument({}, steps))
+        .mockResolvedValue({ id: DOCUMENT_ID, status: 'PENDING' })
+
+      await service.deptCollab(COMPANY_ID, DOCUMENT_ID, 'step-dc', {}, actor('dept-mgr-1'))
+
+      expect(mockPrisma.approvalStep.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'step-dc' },
+          data: expect.objectContaining({ status: 'APPROVED' }),
+        }),
+      )
+      expect(mockPrisma.approvalHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ action: 'DEPT_COLLAB' }),
+      })
+      expect(mockPrisma.approvalStep.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'step-1' },
+          data: expect.objectContaining({ status: 'PENDING' }),
+        }),
+      )
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'document.step_pending',
+        expect.objectContaining({ assigneeId: 'approver-1' }),
+      )
+    })
+
+    it('부서협조 반려는 /reject로 처리된다 (DEPT_COLLABORATOR도 흐름 role)', async () => {
+      const steps = [
+        makeStep({
+          id: 'step-dc',
+          role: 'DEPT_COLLABORATOR',
+          assigneeId: 'dept-mgr-1',
+          stepOrder: 0,
+          status: 'PENDING',
+        }),
+        makeStep({ id: 'step-1', assigneeId: 'approver-1', stepOrder: 1, status: 'WAITING' }),
+      ]
+      mockPrisma.document.findFirst.mockResolvedValueOnce(makeDocument({}, steps))
+
+      const result = await service.reject(
+        COMPANY_ID, DOCUMENT_ID, 'step-dc', { comment: '부서 검토 불가' }, actor('dept-mgr-1'),
+      )
+
+      expect(result.status).toBe('REJECTED')
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'document.rejected',
+        expect.objectContaining({ documentId: DOCUMENT_ID }),
+      )
+    })
+
+    it('APPROVER 단계에 deptCollab 시도 → APPROVAL_STEP_ROLE_MISMATCH 400', async () => {
+      mockPrisma.document.findFirst.mockResolvedValueOnce(makeDocument())
+
+      await expect(
+        service.deptCollab(COMPANY_ID, DOCUMENT_ID, 'step-2', {}, actor('approver-2')),
+      ).rejects.toMatchObject({ response: { code: 'APPROVAL_STEP_ROLE_MISMATCH' } })
+    })
+  })
+
+  describe('부서수신 (receive / bounce)', () => {
+    const makeApprovedWithDeptReceiver = (status = 'PENDING') =>
+      makeDocument({ status: 'APPROVED' }, [
+        makeStep({ id: 'step-1', assigneeId: 'approver-1', stepOrder: 0, status: 'APPROVED' }),
+        makeStep({
+          id: 'step-dr',
+          role: 'DEPT_RECEIVER',
+          assigneeId: 'dept-mgr-2',
+          stepOrder: 1,
+          status,
+        }),
+      ])
+
+    it('부서수신 수신확인: DEPT_RECEIVER PENDING 단계를 RECEIVED로 처리한다', async () => {
+      mockPrisma.document.findFirst.mockResolvedValueOnce(makeApprovedWithDeptReceiver())
+      mockPrisma.approvalStep.update.mockResolvedValue({ id: 'step-dr', status: 'RECEIVED' })
+
+      const result = await service.receive(COMPANY_ID, DOCUMENT_ID, 'step-dr', {}, actor('dept-mgr-2'))
+
+      expect(result.status).toBe('RECEIVED')
+      expect(mockPrisma.approvalHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ action: 'RECEIVE' }),
+      })
+    })
+
+    it('부서수신 반송: BOUNCED 처리 + document.bounced emit (문서 상태 유지)', async () => {
+      mockPrisma.document.findFirst.mockResolvedValueOnce(makeApprovedWithDeptReceiver())
+      mockPrisma.approvalStep.update.mockResolvedValue({ id: 'step-dr', status: 'BOUNCED' })
+
+      const result = await service.bounce(
+        COMPANY_ID, DOCUMENT_ID, 'step-dr', { comment: '담당 부서 아님' }, actor('dept-mgr-2'),
+      )
+
+      expect(result.status).toBe('BOUNCED')
+      expect(mockPrisma.approvalStep.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'step-dr' },
+          data: expect.objectContaining({ status: 'BOUNCED', comment: '담당 부서 아님' }),
+        }),
+      )
+      expect(mockPrisma.approvalHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ action: 'BOUNCE' }),
+      })
+      expect(mockPrisma.document.update).not.toHaveBeenCalled() // 문서 상태 변경 없음
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'document.bounced',
+        expect.objectContaining({ documentId: DOCUMENT_ID, drafterId: 'drafter-1' }),
+      )
+    })
+
+    it('미승인 문서 반송 시도 → DOCUMENT_NOT_APPROVED 400', async () => {
+      const steps = [
+        makeStep({ id: 'step-1', assigneeId: 'approver-1', stepOrder: 0, status: 'PENDING' }),
+        makeStep({ id: 'step-dr', role: 'DEPT_RECEIVER', assigneeId: 'dept-mgr-2', stepOrder: 1, status: 'WAITING' }),
+      ]
+      mockPrisma.document.findFirst.mockResolvedValueOnce(makeDocument({}, steps))
+
+      await expect(
+        service.bounce(COMPANY_ID, DOCUMENT_ID, 'step-dr', {}, actor('dept-mgr-2')),
+      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_NOT_APPROVED' } })
+    })
+
+    it('일반 RECEIVER 단계에 bounce 시도 → APPROVAL_STEP_ROLE_MISMATCH 400', async () => {
+      const steps = [
+        makeStep({ id: 'step-1', assigneeId: 'approver-1', stepOrder: 0, status: 'APPROVED' }),
+        makeStep({ id: 'step-r', role: 'RECEIVER', assigneeId: 'recv-1', stepOrder: 1, status: 'PENDING' }),
+      ]
+      mockPrisma.document.findFirst.mockResolvedValueOnce(makeDocument({ status: 'APPROVED' }, steps))
+
+      await expect(
+        service.bounce(COMPANY_ID, DOCUMENT_ID, 'step-r', {}, actor('recv-1')),
+      ).rejects.toMatchObject({ response: { code: 'APPROVAL_STEP_ROLE_MISMATCH' } })
     })
   })
 

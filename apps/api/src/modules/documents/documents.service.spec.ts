@@ -90,6 +90,9 @@ const mockPrisma = {
   employee: {
     count: jest.fn(),
   },
+  organization: {
+    findMany: jest.fn(),
+  },
   $transaction: jest.fn(),
 }
 
@@ -163,6 +166,86 @@ describe('DocumentsService', () => {
           makeUser(),
         ),
       ).rejects.toThrow(BadRequestException)
+    })
+  })
+
+  // ── 부서 단계 해석 (G14 부서협조/부서수신) ───────────────────────────────────
+
+  describe('부서 단계 해석', () => {
+    const deptStep = (role: 'DEPT_COLLABORATOR' | 'DEPT_RECEIVER', organizationId = 'org-1') => [
+      { role, organizationId, stepOrder: 0 },
+    ]
+
+    it('부서협조 단계는 부서 문서담당자(docManagerId)로 assignee를 해석해 저장한다', async () => {
+      mockPrisma.documentForm.findFirst.mockResolvedValue({ id: FORM_ID, companyId: COMPANY_ID })
+      mockPrisma.organization.findMany.mockResolvedValue([
+        { id: 'org-1', docManagerId: 'mgr-1', approverId: 'lead-1' },
+      ])
+      mockPrisma.document.create.mockResolvedValue(makeDocument())
+
+      await service.create(
+        COMPANY_ID,
+        { formId: FORM_ID, title: 't', content: {}, steps: deptStep('DEPT_COLLABORATOR') },
+        makeUser(),
+      )
+
+      expect(mockPrisma.approvalStep.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            role: 'DEPT_COLLABORATOR',
+            assigneeId: 'mgr-1',
+            organizationId: 'org-1',
+          }),
+        ]),
+      })
+    })
+
+    it('docManagerId가 없으면 팀장(approverId)으로 fallback한다', async () => {
+      mockPrisma.documentForm.findFirst.mockResolvedValue({ id: FORM_ID, companyId: COMPANY_ID })
+      mockPrisma.organization.findMany.mockResolvedValue([
+        { id: 'org-1', docManagerId: null, approverId: 'lead-1' },
+      ])
+      mockPrisma.document.create.mockResolvedValue(makeDocument())
+
+      await service.create(
+        COMPANY_ID,
+        { formId: FORM_ID, title: 't', content: {}, steps: deptStep('DEPT_RECEIVER') },
+        makeUser(),
+      )
+
+      expect(mockPrisma.approvalStep.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({ role: 'DEPT_RECEIVER', assigneeId: 'lead-1' }),
+        ]),
+      })
+    })
+
+    it('문서담당자도 팀장도 없으면 DEPT_NO_MANAGER 400', async () => {
+      mockPrisma.documentForm.findFirst.mockResolvedValue({ id: FORM_ID, companyId: COMPANY_ID })
+      mockPrisma.organization.findMany.mockResolvedValue([
+        { id: 'org-1', docManagerId: null, approverId: null },
+      ])
+
+      await expect(
+        service.create(
+          COMPANY_ID,
+          { formId: FORM_ID, title: 't', content: {}, steps: deptStep('DEPT_COLLABORATOR') },
+          makeUser(),
+        ),
+      ).rejects.toMatchObject({ response: { code: 'DEPT_NO_MANAGER' } })
+    })
+
+    it('타사/비활성 부서면 ORG_NOT_FOUND 400', async () => {
+      mockPrisma.documentForm.findFirst.mockResolvedValue({ id: FORM_ID, companyId: COMPANY_ID })
+      mockPrisma.organization.findMany.mockResolvedValue([]) // 요청 부서 미존재
+
+      await expect(
+        service.create(
+          COMPANY_ID,
+          { formId: FORM_ID, title: 't', content: {}, steps: deptStep('DEPT_COLLABORATOR', 'org-x') },
+          makeUser(),
+        ),
+      ).rejects.toMatchObject({ response: { code: 'ORG_NOT_FOUND' } })
     })
   })
 
@@ -485,6 +568,16 @@ describe('DocumentsService', () => {
         in: [DRAFTER_ID, 'principal-1'],
       })
       expect(where.status).toBe('PENDING')
+    })
+
+    it('dept-docs 박스: 내가 부서 담당자인 부서협조/부서수신 문서만 조회한다', async () => {
+      await service.findAll(COMPANY_ID, { box: 'dept-docs', page: 1, limit: 20 }, makeUser())
+
+      const where = mockPrisma.document.findMany.mock.calls[0][0].where
+      expect(where.approvalLines.some.steps.some).toEqual({
+        role: { in: ['DEPT_COLLABORATOR', 'DEPT_RECEIVER'] },
+        assigneeId: DRAFTER_ID,
+      })
     })
 
     it('ledger 박스: GENERAL_ADMIN 미만은 403', async () => {
