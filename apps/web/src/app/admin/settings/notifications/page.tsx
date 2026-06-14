@@ -41,12 +41,6 @@ interface NotificationLog {
   retryCount: number
 }
 
-const CHANNELS = [
-  { key: 'attendance', label: '#근태-알림' },
-  { key: 'approval', label: '#결재-알림' },
-  { key: 'leave', label: '#휴가-알림' },
-]
-
 // 알림 이벤트 목록은 단일 출처(@ablework/shared-constants)에서 가져온다.
 // 정의 순서를 보존하며 그룹 단위로 묶어 렌더링한다.
 const EVENT_GROUPS = NOTIFIABLE_EVENTS.reduce<
@@ -76,7 +70,8 @@ const EVENT_LABEL: Record<string, string> = Object.fromEntries(
 
 export default function NotificationsSettingsPage() {
   const qc = useQueryClient()
-  const [webhookInputs, setWebhookInputs] = useState<Record<string, string>>({})
+  // undefined = 미편집(서버 등록값 표시), string = 편집 중인 입력값
+  const [webhookInput, setWebhookInput] = useState<string | undefined>(undefined)
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
@@ -102,10 +97,12 @@ export default function NotificationsSettingsPage() {
     : ((rawLogs as { items?: NotificationLog[]; data?: NotificationLog[] })?.items ?? (rawLogs as { items?: NotificationLog[]; data?: NotificationLog[] })?.data ?? [])
 
   const updateWebhookMutation = useMutation({
-    mutationFn: ({ channel, webhookUrl }: { channel: string; webhookUrl: string }) =>
-      apiClient.patch(`/notifications/rules/webhook`, { channel, webhookUrl }),
+    mutationFn: (webhookUrl: string) =>
+      apiClient.patch(`/notifications/rules/webhook`, { webhookUrl }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notification-rules'] })
+      // 서버 등록값을 다시 표시하도록 편집 상태 해제
+      setWebhookInput(undefined)
       setSnack({ open: true, message: 'Webhook URL이 저장되었습니다.', severity: 'success' })
     },
     onError: () => setSnack({ open: true, message: '저장에 실패했습니다.', severity: 'error' }),
@@ -118,19 +115,17 @@ export default function NotificationsSettingsPage() {
     onError: () => setSnack({ open: true, message: '설정 변경에 실패했습니다.', severity: 'error' }),
   })
 
-  function getWebhookValue(channel: string) {
-    if (webhookInputs[channel] !== undefined) return webhookInputs[channel]
-    // 현재 BE는 회사 단위 webhook을 사용하므로 등록된 규칙의 webhookUrl을 표시
-    return rules.find((r) => r.webhookUrl)?.webhookUrl ?? ''
-  }
+  // BE는 회사 단위 단일 webhook을 사용한다. 등록된 규칙 중 webhookUrl을 가진 값을 표시.
+  const savedWebhook = rules.find((r) => r.webhookUrl)?.webhookUrl ?? ''
+  const webhookValue = webhookInput ?? savedWebhook
 
   function isEventEnabled(eventType: string) {
     const rule = rules.find((r) => r.eventType === eventType)
     return rule?.isActive ?? false
   }
 
-  function handleWebhookSave(channel: string) {
-    updateWebhookMutation.mutate({ channel, webhookUrl: getWebhookValue(channel) })
+  function handleWebhookSave() {
+    updateWebhookMutation.mutate(webhookValue)
   }
 
   function handleToggleEvent(eventType: string, isActive: boolean) {
@@ -153,41 +148,35 @@ export default function NotificationsSettingsPage() {
         Discord Webhook URL을 등록하면 출퇴근·결재·휴가 이벤트 알림을 Discord 채널로 받을 수 있습니다.
       </Alert>
 
-      {/* Webhook URL 섹션 */}
+      {/* Webhook URL 섹션 — 회사 단위 단일 webhook */}
       <Typography variant="subtitle1" fontWeight={700} mb={2}>
-        채널 Webhook 설정
+        Discord Webhook 설정
       </Typography>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 4 }}>
-        {CHANNELS.map(({ key, label }) => (
-          <Card key={key} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-            <CardContent>
-              <Typography fontWeight={600} mb={1.5}>
-                {label}
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                <TextField
-                  label="Webhook URL"
-                  placeholder="https://discord.com/api/webhooks/..."
-                  value={getWebhookValue(key)}
-                  onChange={(e) =>
-                    setWebhookInputs((prev) => ({ ...prev, [key]: e.target.value }))
-                  }
-                  size="small"
-                  fullWidth
-                />
-                <Button
-                  variant="contained"
-                  onClick={() => handleWebhookSave(key)}
-                  disabled={updateWebhookMutation.isPending}
-                  sx={{ whiteSpace: 'nowrap', minWidth: 80 }}
-                >
-                  저장
-                </Button>
-              </Box>
-            </CardContent>
-          </Card>
-        ))}
-      </Box>
+      <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', mb: 4 }}>
+        <CardContent>
+          <Typography variant="body2" color="text.secondary" mb={1.5}>
+            등록한 Webhook URL 하나로 아래 모든 이벤트 알림이 발송됩니다.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <TextField
+              label="Webhook URL"
+              placeholder="https://discord.com/api/webhooks/..."
+              value={webhookValue}
+              onChange={(e) => setWebhookInput(e.target.value)}
+              size="small"
+              fullWidth
+            />
+            <Button
+              variant="contained"
+              onClick={handleWebhookSave}
+              disabled={updateWebhookMutation.isPending}
+              sx={{ whiteSpace: 'nowrap', minWidth: 80 }}
+            >
+              저장
+            </Button>
+          </Box>
+        </CardContent>
+      </Card>
 
       {/* 이벤트 ON/OFF 섹션 */}
       <Typography variant="subtitle1" fontWeight={700} mb={2}>

@@ -141,8 +141,8 @@ describe('StandardizationRulesService', () => {
       // 본문에 companyId를 끼워 넣어도 무시되어야 한다
       await service.create(COMPANY_ID, {
         ...baseDto,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         companyId: OTHER_COMPANY_ID,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
 
       expect(mockPrisma.standardizationRule.create).toHaveBeenCalledWith(

@@ -45,7 +45,7 @@ function parseEnvFile(filePath: string): Record<string, string> {
 async function truncateAll(testUrl: string): Promise<void> {
   process.env.DATABASE_URL = testUrl
   // 동적 require: DATABASE_URL 설정 후 PrismaClient 생성
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PrismaClient } = require('@prisma/client')
   const prisma = new PrismaClient()
   try {
