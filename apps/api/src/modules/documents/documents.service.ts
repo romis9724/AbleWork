@@ -14,6 +14,8 @@ import {
   StepRole,
   StepStatus,
   APPROVAL_FLOW_ROLES,
+  RECEIVER_ROLES,
+  DEPT_ROLES,
   ACTED_STEP_STATUSES,
   HistoryAction,
 } from './documents.constants'
@@ -34,8 +36,17 @@ type StepRecord = {
   id: string
   role: string
   assigneeId: string
+  organizationId?: string | null
   stepOrder: number
   status: string
+}
+
+/** assigneeId가 확정된 결재 단계 (부서 단계는 부서 문서담당자로 해석 완료) */
+type ResolvedStep = {
+  role: string
+  assigneeId: string
+  organizationId: string | null
+  stepOrder: number
 }
 
 /**
@@ -62,9 +73,9 @@ export class DocumentsService {
       })
     }
 
-    if (dto.steps?.length) {
-      await this.assertAssigneesInCompany(companyId, dto.steps)
-    }
+    const resolvedSteps = dto.steps?.length
+      ? await this.resolveSteps(companyId, dto.steps)
+      : []
 
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
@@ -81,8 +92,8 @@ export class DocumentsService {
 
       // DRAFT 단계의 steps 보존: ApprovalLine+Step으로 저장(전부 WAITING).
       // 상신 시 삭제 후 재생성되므로 임시 보관용이다.
-      if (dto.steps?.length) {
-        await this.createDraftLine(tx, document.id, dto.steps)
+      if (resolvedSteps.length) {
+        await this.createDraftLine(tx, document.id, resolvedSteps)
       }
 
       return document
@@ -94,17 +105,17 @@ export class DocumentsService {
   async update(companyId: string, documentId: string, dto: UpdateDocumentDto, user: JwtPayload) {
     const document = await this.loadDraftableDocument(companyId, documentId, user)
 
-    if (dto.steps?.length) {
-      await this.assertAssigneesInCompany(companyId, dto.steps)
-    }
+    const resolvedSteps = dto.steps?.length
+      ? await this.resolveSteps(companyId, dto.steps)
+      : []
 
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
       // steps가 오면 기존 결재선 전체 교체 (DRAFT 보관분 갱신)
       if (dto.steps) {
         await tx.approvalLine.deleteMany({ where: { documentId } })
-        if (dto.steps.length) {
-          await this.createDraftLine(tx, documentId, dto.steps)
+        if (resolvedSteps.length) {
+          await this.createDraftLine(tx, documentId, resolvedSteps)
         }
       }
 
@@ -220,18 +231,27 @@ export class DocumentsService {
       .flatMap((line: { steps: StepRecord[] }) => line.steps)
       .map((s: StepRecord) => ({
         role: s.role as StepInput['role'],
-        assigneeId: s.assigneeId,
+        // 부서 단계는 organizationId만 보존하고 상신 시 현재 부서 담당자로 재해석한다.
+        ...(DEPT_ROLES.includes(s.role)
+          ? { organizationId: s.organizationId ?? undefined }
+          : { assigneeId: s.assigneeId }),
         stepOrder: s.stepOrder,
       }))
 
     const { steps, sharedLineId } = await this.resolveSubmitSteps(companyId, dto, existingSteps)
-    await this.assertAssigneesInCompany(companyId, steps)
+    const resolvedSteps = await this.resolveSteps(companyId, steps)
 
     // docNumber unique 충돌(동시 채번) 시 1회 재시도
-    const result = await this.runSubmitTransaction(companyId, document, steps, sharedLineId, user)
+    const result = await this.runSubmitTransaction(
+      companyId,
+      document,
+      resolvedSteps,
+      sharedLineId,
+      user,
+    )
       .catch((error: unknown) => {
         if ((error as { code?: string }).code === 'P2002') {
-          return this.runSubmitTransaction(companyId, document, steps, sharedLineId, user)
+          return this.runSubmitTransaction(companyId, document, resolvedSteps, sharedLineId, user)
         }
         throw error
       })
@@ -386,6 +406,7 @@ export class DocumentsService {
               include: {
                 assignee: { select: { id: true, name: true } },
                 proxy: { select: { id: true, name: true } },
+                organization: { select: { id: true, name: true } },
               },
               orderBy: { stepOrder: 'asc' },
             },
@@ -415,7 +436,7 @@ export class DocumentsService {
   private async runSubmitTransaction(
     companyId: string,
     document: { id: string; formId: string; docNumber: string | null },
-    steps: StepInput[],
+    steps: ResolvedStep[],
     sharedLineId: string | undefined,
     user: JwtPayload,
   ) {
@@ -445,6 +466,7 @@ export class DocumentsService {
           lineId: line.id,
           role: s.role,
           assigneeId: s.assigneeId,
+          organizationId: s.organizationId,
           stepOrder: s.stepOrder,
           status: this.initialStepStatus(s, firstFlowOrder),
         })),
@@ -473,12 +495,12 @@ export class DocumentsService {
     })
   }
 
-  private initialStepStatus(step: StepInput, firstFlowOrder: number | undefined): string {
+  private initialStepStatus(step: ResolvedStep, firstFlowOrder: number | undefined): string {
     if (APPROVAL_FLOW_ROLES.includes(step.role)) {
       return step.stepOrder === firstFlowOrder ? StepStatus.PENDING : StepStatus.WAITING
     }
-    if (step.role === StepRole.RECEIVER) {
-      return StepStatus.WAITING // 최종 승인 후 활성화
+    if (RECEIVER_ROLES.includes(step.role)) {
+      return StepStatus.WAITING // 최종 승인 후 활성화 (RECEIVER + 부서수신)
     }
     return StepStatus.PENDING // REFERENCE/VIEWER — 즉시 확인 가능(비차단)
   }
@@ -663,6 +685,17 @@ export class DocumentsService {
         return { where: stepBoxWhere(StepRole.VIEWER), myAssigneeIds }
       case 'receiver':
         return { where: stepBoxWhere(StepRole.RECEIVER), myAssigneeIds }
+      case 'dept-docs':
+        // AP-05-04 부서문서함: 내가 부서 담당자(상신 시 해석된 assignee)인 부서협조/부서수신 문서
+        return {
+          where: {
+            companyId,
+            approvalLines: {
+              some: { steps: { some: { role: { in: DEPT_ROLES }, assigneeId: me } } },
+            },
+          },
+          myAssigneeIds,
+        }
       case 'ledger': {
         if (!this.isCompanyAdmin(user)) {
           throw new ForbiddenException({
@@ -757,7 +790,7 @@ export class DocumentsService {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async createDraftLine(tx: any, documentId: string, steps: StepInput[]) {
+  private async createDraftLine(tx: any, documentId: string, steps: ResolvedStep[]) {
     const line = await tx.approvalLine.create({
       data: { documentId, name: '결재선', isShared: false },
     })
@@ -766,23 +799,90 @@ export class DocumentsService {
         lineId: line.id,
         role: s.role,
         assigneeId: s.assigneeId,
+        organizationId: s.organizationId,
         stepOrder: s.stepOrder,
         status: StepStatus.WAITING, // DRAFT 보관용 — 상신 시 상태 재계산
       })),
     })
   }
 
-  private async assertAssigneesInCompany(companyId: string, steps: StepInput[]) {
-    const assigneeIds = Array.from(new Set(steps.map((s) => s.assigneeId)))
-    const count = await this.prisma.employee.count({
-      where: { id: { in: assigneeIds }, companyId },
-    })
-    if (count !== assigneeIds.length) {
-      throw new BadRequestException({
-        code: 'EMPLOYEE_NOT_FOUND',
-        message: '결재선에 자사 소속이 아닌 직원이 포함되어 있습니다.',
+  /**
+   * 결재 단계 검증 + 부서 단계 담당자 해석.
+   * - 개인 단계: assigneeId가 자사 소속인지 일괄 검증.
+   * - 부서 단계(DEPT_*): 대상 부서가 자사 소속인지 확인하고 assignee를 부서 문서담당자
+   *   (docManagerId, 없으면 팀장 approverId)로 해석한다. 둘 다 없으면 거부.
+   */
+  private async resolveSteps(companyId: string, steps: StepInput[]): Promise<ResolvedStep[]> {
+    // ① 개인 단계 assignee 자사 소속 일괄 검증
+    const personalIds = Array.from(
+      new Set(
+        steps
+          .filter((s) => !DEPT_ROLES.includes(s.role) && s.assigneeId)
+          .map((s) => s.assigneeId as string),
+      ),
+    )
+    if (personalIds.length) {
+      const count = await this.prisma.employee.count({
+        where: { id: { in: personalIds }, companyId },
       })
+      if (count !== personalIds.length) {
+        throw new BadRequestException({
+          code: 'EMPLOYEE_NOT_FOUND',
+          message: '결재선에 자사 소속이 아닌 직원이 포함되어 있습니다.',
+        })
+      }
     }
+
+    // ② 부서 단계 대상 부서 조회 (자사 소속 + 담당자 해석)
+    const deptOrgIds = Array.from(
+      new Set(
+        steps
+          .filter((s) => DEPT_ROLES.includes(s.role) && s.organizationId)
+          .map((s) => s.organizationId as string),
+      ),
+    )
+    const orgMap = new Map<string, { docManagerId: string | null; approverId: string | null }>()
+    if (deptOrgIds.length) {
+      const orgs = await this.prisma.organization.findMany({
+        where: { id: { in: deptOrgIds }, companyId, isActive: true },
+        select: { id: true, docManagerId: true, approverId: true },
+      })
+      if (orgs.length !== deptOrgIds.length) {
+        throw new BadRequestException({
+          code: 'ORG_NOT_FOUND',
+          message: '결재선에 자사 부서가 아닌 부서가 포함되어 있습니다.',
+        })
+      }
+      for (const org of orgs) {
+        orgMap.set(org.id, { docManagerId: org.docManagerId, approverId: org.approverId })
+      }
+    }
+
+    // ③ 해석
+    return steps.map((s) => {
+      if (DEPT_ROLES.includes(s.role)) {
+        const org = orgMap.get(s.organizationId as string)
+        const assignee = org?.docManagerId ?? org?.approverId
+        if (!assignee) {
+          throw new BadRequestException({
+            code: 'DEPT_NO_MANAGER',
+            message: '대상 부서에 문서담당자(또는 팀장)가 지정되지 않았습니다.',
+          })
+        }
+        return {
+          role: s.role,
+          assigneeId: assignee,
+          organizationId: s.organizationId as string,
+          stepOrder: s.stepOrder,
+        }
+      }
+      return {
+        role: s.role,
+        assigneeId: s.assigneeId as string,
+        organizationId: null,
+        stepOrder: s.stepOrder,
+      }
+    })
   }
 
   /** @db.Date 비교용 — 오늘 00:00 UTC */

@@ -79,17 +79,38 @@ export class SharedApprovalLinesService {
     return line
   }
 
-  /** 결재선 구성원이 모두 자사 소속인지 검증 — 멀티테넌시 */
+  /** 결재선 구성원(개인 결재자 + 부서)이 모두 자사 소속인지 검증 — 멀티테넌시 */
   private async assertAssigneesInCompany(companyId: string, steps: StepInput[]) {
-    const assigneeIds = Array.from(new Set(steps.map((s) => s.assigneeId)))
-    const count = await this.prisma.employee.count({
-      where: { id: { in: assigneeIds }, companyId },
-    })
-    if (count !== assigneeIds.length) {
-      throw new BadRequestException({
-        code: 'EMPLOYEE_NOT_FOUND',
-        message: '결재선에 자사 소속이 아닌 직원이 포함되어 있습니다.',
+    // 개인 단계: assigneeId 자사 소속 검증 (부서 단계는 assigneeId 없음 — organizationId만)
+    const assigneeIds = Array.from(
+      new Set(steps.map((s) => s.assigneeId).filter((id): id is string => Boolean(id))),
+    )
+    if (assigneeIds.length) {
+      const count = await this.prisma.employee.count({
+        where: { id: { in: assigneeIds }, companyId },
       })
+      if (count !== assigneeIds.length) {
+        throw new BadRequestException({
+          code: 'EMPLOYEE_NOT_FOUND',
+          message: '결재선에 자사 소속이 아닌 직원이 포함되어 있습니다.',
+        })
+      }
+    }
+
+    // 부서 단계(DEPT_*): organizationId 자사 소속 검증
+    const orgIds = Array.from(
+      new Set(steps.map((s) => s.organizationId).filter((id): id is string => Boolean(id))),
+    )
+    if (orgIds.length) {
+      const count = await this.prisma.organization.count({
+        where: { id: { in: orgIds }, companyId },
+      })
+      if (count !== orgIds.length) {
+        throw new BadRequestException({
+          code: 'ORG_NOT_FOUND',
+          message: '결재선에 자사 부서가 아닌 부서가 포함되어 있습니다.',
+        })
+      }
     }
   }
 }
