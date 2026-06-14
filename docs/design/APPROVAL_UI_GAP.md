@@ -57,7 +57,7 @@
 | A4 | 기안 작성/상신 | PAGE(풀페이지) | ✅ 해소 → `DocumentComposeForm`(풀페이지: 메타정보표+결재선 섹션+기안내용 WYSIWYG+sticky 푸터) + 라우트 `/me/documents/new`·`/[id]/edit`·`/admin/approval/inbox/new`·`/[id]/edit`. 본인 결재자 지정 금지 가드, 재기안(`?from=`)·이어쓰기·재상신 일원화. `DocumentComposeDialog` 제거 |
 | A5 | 기안 상세 | PAGE(하단 목록/결재 푸터) | ✅ 해소 → `DocumentDetailView` + 라우트 `/me/documents/[id]`·`/admin/approval/inbox/[id]`·`/admin/approval/documents/[id]`·`/admin/approval/status/[id]`. 결재 액션 하단 sticky 푸터(승인/반려/전결/전단계반려/회수/결재취소), drafter 셸은 재상신·재기안 노출. 4개 호출부 네비게이션 전환, `DocumentDetailDialog` 제거 |
 | B4 | 서비스 사용 설정 | PAGE(독립 메뉴) | ✅ 해소 → `/admin/approval/service-setting` 페이지(라디오) + 공통 관리 `/admin/approval/common` 페이지 분리, 회사설정 전자결재 탭 제거, 사이드바 PDF 순서 정합 |
-| B1~B3 | 문서함(기안/결재/공람/참조/수신/대장) | PAGE(좌측 네비 트리 전환) | MUI Tabs 평면 | 좌측 네비 라우트 분리(또는 me 모바일 탭 유지 결정) |
+| B1~B3 | 문서함(기안/결재/공람/참조/수신/대장) | PAGE(좌측 네비 트리 전환) | ✅ 해소(PR#49) → DocumentBoxesView admin=좌측 계층 네비(기안함:기안함/진행중/완료 · 결재함 · 수신·공람·참조:수신함/공람함/참조함 · 부서:부서서류함), me=모바일 탭 유지. 기존 box 의미 변경 없음. 단 PDF 세분류(저장된/상신한/반려된/회수된 등)는 BE box 세분화 필요 → 후속 |
 
 ### LAYER_POPUP으로 분리·신설 (PDF는 팝업인데 우리는 인라인/미구현)
 - ✅ C1 결재하기 통합 모달 + C2 반송 모달(PR#46) — `ApprovalActionDialog`: 결재 상태 라디오(승인/반려/전결/전단계반려, step·양식 조건별 노출) + 결재 의견(200자 카운터, 반려/전단계반려/전결/반송 필수) + [취소][결재]. `DocumentDetailView` 푸터의 개별 결정 버튼을 단일 [결재] 버튼→팝업으로 통합, 반송은 별도 [반송]→의견 필수 팝업. 확인/수신은 직접 버튼 유지(비결정 ack), 회수/결재취소/재상신/재기안은 푸터 직접 버튼.
