@@ -10,6 +10,14 @@ const EVENT_LABEL: Record<string, string> = Object.fromEntries(
   NOTIFIABLE_EVENTS.map((e) => [e.event, e.label]),
 )
 
+/** 이벤트명 → 그룹 라벨 (Discord embed footer) */
+const EVENT_GROUP_LABEL: Record<string, string> = Object.fromEntries(
+  NOTIFIABLE_EVENTS.map((e) => [e.event, e.groupLabel]),
+)
+
+/** AbleWork 브랜드 색(#f36f20)의 10진 값 — Discord embed color */
+const BRAND_COLOR = 0xf36f20
+
 /**
  * 알림 이벤트 구독자.
  *
@@ -98,13 +106,7 @@ export class NotificationListener implements OnApplicationBootstrap {
   ): Promise<void> {
     if (rule.channelType === 'discord') {
       if (!rule.webhookUrl) return
-      const embed = {
-        ...(typeof rule.embedTemplate === 'object' && rule.embedTemplate !== null
-          ? (rule.embedTemplate as object)
-          : {}),
-        ...payload,
-      }
-      await this.discordWebhookService.send(rule.webhookUrl, embed)
+      await this.discordWebhookService.send(rule.webhookUrl, this.buildDiscordEmbed(eventType, payload, rule.embedTemplate))
       return
     }
 
@@ -135,6 +137,38 @@ export class NotificationListener implements OnApplicationBootstrap {
         },
       })
     }
+  }
+
+  /**
+   * Discord embed 구조화 (L3) — 이벤트 라벨 title + 문서/요청 제목 description +
+   * 그룹 footer + 브랜드 색. 관리자 지정 embedTemplate이 있으면 마지막에 덮어쓴다.
+   */
+  private buildDiscordEmbed(
+    eventType: string,
+    payload: Record<string, unknown>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    embedTemplate: any,
+  ): object {
+    const label = EVENT_LABEL[eventType] ?? eventType
+    const group = EVENT_GROUP_LABEL[eventType]
+    const subject = typeof payload.title === 'string' && payload.title ? String(payload.title) : undefined
+    const docNumber = typeof payload.docNumber === 'string' ? String(payload.docNumber) : undefined
+
+    const fields: Array<{ name: string; value: string; inline?: boolean }> = []
+    if (docNumber) fields.push({ name: '문서번호', value: docNumber, inline: true })
+
+    const base: Record<string, unknown> = {
+      title: label,
+      color: BRAND_COLOR,
+      ...(subject ? { description: subject } : {}),
+      ...(fields.length ? { fields } : {}),
+      ...(group ? { footer: { text: group } } : {}),
+    }
+    // 관리자 커스텀 템플릿이 있으면 덮어쓰기 허용
+    if (typeof embedTemplate === 'object' && embedTemplate !== null) {
+      return { ...base, ...(embedTemplate as object) }
+    }
+    return base
   }
 
   /** payload에서 알림 수신 직원 id 해석 */

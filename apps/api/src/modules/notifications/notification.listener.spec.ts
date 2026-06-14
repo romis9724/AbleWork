@@ -82,12 +82,34 @@ describe('NotificationListener', () => {
       expect(mockPrisma.notificationRule.findMany).toHaveBeenCalledWith({
         where: { eventType: 'shift.requested', companyId: 'company-1', isActive: true },
       })
+      // L3 구조화 embed — 이벤트 라벨 title + 그룹 footer + 브랜드 색
       expect(mockDiscord.send).toHaveBeenCalledWith(
         'https://discord/x',
-        expect.objectContaining({ companyId: 'company-1', requestId: 'req-1' }),
+        expect.objectContaining({ title: '근무일정 변경 신청', color: 0xf36f20 }),
       )
       expect(mockPrisma.notificationLog.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'success', eventType: 'shift.requested' }) }),
+      )
+    })
+
+    it('L3: payload.title→description, docNumber→fields로 구조화된 embed를 보낸다', async () => {
+      mockPrisma.notificationRule.findMany.mockResolvedValue([
+        { id: 'rule-1', channelType: 'discord', webhookUrl: 'https://discord/x', embedTemplate: null },
+      ])
+      listener.onApplicationBootstrap()
+
+      handlers['document.submitted']({
+        companyId: 'company-1', documentId: 'doc-1', title: '지출결의서', docNumber: 'DOC-2026-0001',
+      })
+      await flush()
+
+      expect(mockDiscord.send).toHaveBeenCalledWith(
+        'https://discord/x',
+        expect.objectContaining({
+          title: '문서 상신',
+          description: '지출결의서',
+          fields: [{ name: '문서번호', value: 'DOC-2026-0001', inline: true }],
+        }),
       )
     })
 
