@@ -49,12 +49,16 @@ import {
   type DocumentForm,
 } from '@/lib/query/documents'
 import FormFieldsBuilder from '@/components/approval/FormFieldsBuilder'
+import FormAccessRulesPanel from '@/components/approval/FormAccessRulesPanel'
+import { useEmployees } from '@/lib/query/employees'
 import { readFormFields, type DocumentFieldDef } from '@ablework/shared-constants'
 
 const schema = z.object({
   name: z.string().min(1, '양식명을 입력해주세요'),
   category: z.string().optional(),
   defaultLineId: z.string().optional(),
+  formOwnerId: z.string().optional(),
+  allowZipUpload: z.boolean(),
   sortOrder: z.number().int().min(0),
   allowReDraft: z.boolean(),
   allowPreApproval: z.boolean(),
@@ -66,6 +70,8 @@ const DEFAULT_VALUES: FormValues = {
   name: '',
   category: '',
   defaultLineId: '',
+  formOwnerId: '',
+  allowZipUpload: false,
   sortOrder: 0,
   allowReDraft: true,
   allowPreApproval: false,
@@ -165,6 +171,8 @@ function NumberRuleDialog({ form, onClose, onSuccess }: NumberRuleDialogProps) {
 export default function ApprovalFormsPage() {
   const { data: forms = [], isLoading } = useDocumentForms()
   const { data: sharedLines = [] } = useSharedApprovalLines()
+  const { data: employeeData } = useEmployees({ limit: 200, isActive: true })
+  const employeeOptions = employeeData?.items ?? []
   const createMutation = useCreateDocumentForm()
   const updateMutation = useUpdateDocumentForm()
   const deleteMutation = useDeleteDocumentForm()
@@ -198,6 +206,8 @@ export default function ApprovalFormsPage() {
       name: form.name,
       category: form.category ?? '',
       defaultLineId: form.defaultLineId ?? '',
+      formOwnerId: form.formOwnerId ?? '',
+      allowZipUpload: form.allowZipUpload ?? false,
       sortOrder: form.sortOrder,
       allowReDraft: form.allowReDraft,
       allowPreApproval: form.allowPreApproval,
@@ -217,6 +227,10 @@ export default function ApprovalFormsPage() {
       ...(values.category ? { category: values.category } : {}),
       // AP-01-03 양식별 기본 결재선 (빈 값=해제 → null)
       defaultLineId: values.defaultLineId || null,
+      // AP-01-07 양식 담당자 (빈 값=해제 → null)
+      formOwnerId: values.formOwnerId || null,
+      // AP-01-06 ZIP 첨부 허용
+      allowZipUpload: values.allowZipUpload,
       // 동적 입력 필드 설계 저장 (AP-01-02)
       fieldsSchema: { fields },
     }
@@ -395,6 +409,18 @@ export default function ApprovalFormsPage() {
               )}
             />
             <Controller
+              name="formOwnerId"
+              control={control}
+              render={({ field }) => (
+                <TextField {...field} select label="양식 담당자" fullWidth helperText="이 양식의 관리 담당자 (선택)">
+                  <MenuItem value="">지정 안 함</MenuItem>
+                  {employeeOptions.map((e) => (
+                    <MenuItem key={e.id} value={e.id}>{e.name}</MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
+            <Controller
               name="sortOrder"
               control={control}
               render={({ field }) => (
@@ -430,9 +456,28 @@ export default function ApprovalFormsPage() {
                 />
               )}
             />
+            <Controller
+              name="allowZipUpload"
+              control={control}
+              render={({ field }) => (
+                <FormControlLabel
+                  control={<Switch checked={field.value} onChange={(e) => field.onChange(e.target.checked)} />}
+                  label="ZIP 첨부 허용"
+                />
+              )}
+            />
 
             <Divider sx={{ my: 0.5 }} />
             <FormFieldsBuilder fields={fields} onChange={setFields} disabled={isSubmitting} />
+
+            {/* AP-01-07 접근규칙 — 저장된 양식에만 (formId 필요) */}
+            {dialog.editing && (
+              <>
+                <Divider sx={{ my: 0.5 }} />
+                <Typography variant="subtitle2" fontWeight={700}>작성 권한 (접근규칙)</Typography>
+                <FormAccessRulesPanel formId={dialog.editing.id} />
+              </>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>

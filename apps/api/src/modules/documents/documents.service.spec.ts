@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { DocumentsService } from './documents.service'
+import { DocumentFormsService } from './document-forms.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { AccessLevel } from '@ablework/shared-constants'
@@ -98,6 +99,9 @@ const mockPrisma = {
 
 const mockEvents = { emit: jest.fn() }
 
+// 양식 접근규칙 enforcement는 별도 서비스 — 기본 통과로 모킹(접근 거부 테스트에서 개별 override)
+const mockDocumentForms = { assertCanUseForm: jest.fn().mockResolvedValue(undefined) }
+
 // ── 테스트 ────────────────────────────────────────────────────────────────────
 
 describe('DocumentsService', () => {
@@ -109,6 +113,7 @@ describe('DocumentsService', () => {
         DocumentsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
+        { provide: DocumentFormsService, useValue: mockDocumentForms },
       ],
     }).compile()
 
@@ -153,6 +158,18 @@ describe('DocumentsService', () => {
       await expect(
         service.create(COMPANY_ID, { formId: FORM_ID, title: 't', content: {} }, makeUser()),
       ).rejects.toThrow(NotFoundException)
+    })
+
+    it('양식 접근 권한이 없으면 작성이 거부된다 (AP-01-07)', async () => {
+      mockPrisma.documentForm.findFirst.mockResolvedValue({ id: FORM_ID, companyId: COMPANY_ID })
+      mockDocumentForms.assertCanUseForm.mockRejectedValueOnce(
+        new ForbiddenException({ code: 'FORM_ACCESS_DENIED', message: 'x' }),
+      )
+
+      await expect(
+        service.create(COMPANY_ID, { formId: FORM_ID, title: 't', content: {} }, makeUser()),
+      ).rejects.toMatchObject({ response: { code: 'FORM_ACCESS_DENIED' } })
+      expect(mockPrisma.document.create).not.toHaveBeenCalled()
     })
 
     it('타사 직원이 결재선에 포함되면 400', async () => {

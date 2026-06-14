@@ -5,6 +5,7 @@ import {
   CreateDocumentFormDto,
   UpdateDocumentFormDto,
   UpsertNumberRuleDto,
+  CreateFormAccessRuleDto,
 } from './dto/document-form.dto'
 
 /**
@@ -27,6 +28,7 @@ export class DocumentFormsService {
 
   async create(companyId: string, dto: CreateDocumentFormDto) {
     await this.assertDefaultLineValid(companyId, dto.defaultLineId)
+    await this.assertFormOwnerValid(companyId, dto.formOwnerId)
     return this.prisma.documentForm.create({
       data: {
         companyId,
@@ -34,6 +36,8 @@ export class DocumentFormsService {
         category: dto.category ?? null,
         fieldsSchema: dto.fieldsSchema as Prisma.InputJsonValue,
         defaultLineId: dto.defaultLineId ?? null,
+        formOwnerId: dto.formOwnerId ?? null,
+        allowZipUpload: dto.allowZipUpload,
         sortOrder: dto.sortOrder,
         allowReDraft: dto.allowReDraft,
         allowPreApproval: dto.allowPreApproval,
@@ -48,6 +52,9 @@ export class DocumentFormsService {
     if (dto.defaultLineId !== undefined) {
       await this.assertDefaultLineValid(companyId, dto.defaultLineId)
     }
+    if (dto.formOwnerId !== undefined) {
+      await this.assertFormOwnerValid(companyId, dto.formOwnerId)
+    }
 
     const { fieldsSchema, ...rest } = dto
     return this.prisma.documentForm.update({
@@ -59,6 +66,69 @@ export class DocumentFormsService {
         }),
       },
     })
+  }
+
+  // ── AP-01-07 양식 접근규칙 (조직/직무 단위 작성 권한) ─────────────────────────
+
+  async getAccessRules(companyId: string, formId: string) {
+    await this.assertFormBelongsToCompany(companyId, formId)
+    return this.prisma.formAccessRule.findMany({ where: { formId } })
+  }
+
+  async createAccessRule(companyId: string, formId: string, dto: CreateFormAccessRuleDto) {
+    await this.assertFormBelongsToCompany(companyId, formId)
+    await this.assertScopeBelongsToCompany(companyId, dto.scopeType, dto.scopeId)
+    return this.prisma.formAccessRule.create({
+      data: { formId, scopeType: dto.scopeType, scopeId: dto.scopeId },
+    })
+  }
+
+  async deleteAccessRule(companyId: string, formId: string, ruleId: string) {
+    await this.assertFormBelongsToCompany(companyId, formId)
+    // 멀티테넌시: 규칙이 해당 양식 소속인지 확인 후 삭제
+    const rule = await this.prisma.formAccessRule.findFirst({ where: { id: ruleId, formId } })
+    if (!rule) {
+      throw new NotFoundException({
+        code: 'FORM_ACCESS_RULE_NOT_FOUND',
+        message: '양식 접근규칙을 찾을 수 없습니다.',
+      })
+    }
+    await this.prisma.formAccessRule.delete({ where: { id: ruleId } })
+    return { deleted: true }
+  }
+
+  /**
+   * 양식 작성 권한 검증 (enforcement) — 접근규칙이 없으면 전체 허용,
+   * 규칙이 있으면 사용자의 조직/직무가 하나라도 매칭되어야 한다(OR).
+   */
+  async assertCanUseForm(
+    companyId: string,
+    formId: string,
+    user: { employeeId: string },
+  ): Promise<void> {
+    const rules = await this.prisma.formAccessRule.findMany({ where: { formId } })
+    if (rules.length === 0) return // 규칙 없음 = 전체 허용
+
+    const orgIds = rules.filter((r) => r.scopeType === 'ORGANIZATION').map((r) => r.scopeId)
+    const posIds = rules.filter((r) => r.scopeType === 'POSITION').map((r) => r.scopeId)
+
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        id: user.employeeId,
+        companyId,
+        OR: [
+          ...(orgIds.length ? [{ organizations: { some: { organizationId: { in: orgIds } } } }] : []),
+          ...(posIds.length ? [{ positions: { some: { positionId: { in: posIds } } } }] : []),
+        ],
+      },
+      select: { id: true },
+    })
+    if (!employee) {
+      throw new ForbiddenException({
+        code: 'FORM_ACCESS_DENIED',
+        message: '이 양식을 작성할 권한이 없습니다.',
+      })
+    }
   }
 
   // ── 양식 삭제 (소프트 isActive=false) ────────────────────────────────────────
@@ -128,6 +198,39 @@ export class DocumentFormsService {
       throw new NotFoundException({
         code: 'SHARED_LINE_NOT_FOUND',
         message: '기본 결재선으로 지정한 공용 결재선을 찾을 수 없습니다.',
+      })
+    }
+  }
+
+  /** 양식 담당자(formOwnerId)가 지정된 경우 자사 직원인지 검증 (AP-01-07) */
+  private async assertFormOwnerValid(companyId: string, formOwnerId?: string | null) {
+    if (!formOwnerId) return
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: formOwnerId, companyId },
+      select: { id: true },
+    })
+    if (!employee) {
+      throw new NotFoundException({
+        code: 'EMPLOYEE_NOT_FOUND',
+        message: '양식 담당자로 지정한 직원을 찾을 수 없습니다.',
+      })
+    }
+  }
+
+  /** 접근규칙 scope(조직/직무)가 자사 소속인지 검증 */
+  private async assertScopeBelongsToCompany(
+    companyId: string,
+    scopeType: string,
+    scopeId: string,
+  ) {
+    const exists =
+      scopeType === 'ORGANIZATION'
+        ? await this.prisma.organization.findFirst({ where: { id: scopeId, companyId }, select: { id: true } })
+        : await this.prisma.position.findFirst({ where: { id: scopeId, companyId }, select: { id: true } })
+    if (!exists) {
+      throw new NotFoundException({
+        code: 'FORM_ACCESS_SCOPE_NOT_FOUND',
+        message: '접근규칙 대상(조직/직무)을 찾을 수 없습니다.',
       })
     }
   }

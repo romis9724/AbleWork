@@ -61,11 +61,22 @@ export interface DocumentForm {
   category?: string | null
   /** AP-01-03 양식별 기본 결재선(공용 결재선 id) */
   defaultLineId?: string | null
+  /** AP-01-07 양식 담당자(직원 id) */
+  formOwnerId?: string | null
+  /** AP-01-06 ZIP 첨부 허용 */
+  allowZipUpload?: boolean
   allowReDraft: boolean
   allowPreApproval: boolean
   sortOrder: number
   isActive: boolean
   fieldsSchema?: { fields?: DocumentFieldDef[] } | null
+}
+
+export interface FormAccessRule {
+  id: string
+  formId: string
+  scopeType: 'ORGANIZATION' | 'POSITION'
+  scopeId: string
 }
 
 export interface DocumentNumberRule {
@@ -198,6 +209,35 @@ export const useDeleteDocumentForm = () => {
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/document-forms/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: FORMS_KEY }),
+  })
+}
+
+// AP-01-07 양식 접근규칙
+export const useFormAccessRules = (formId: string | null) =>
+  useQuery({
+    queryKey: [...FORMS_KEY, formId, 'access-rules'],
+    queryFn: () =>
+      apiClient.get(`/document-forms/${formId}/access-rules`) as Promise<FormAccessRule[]>,
+    enabled: !!formId,
+  })
+
+export const useCreateFormAccessRule = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ formId, ...data }: { formId: string; scopeType: string; scopeId: string }) =>
+      apiClient.post(`/document-forms/${formId}/access-rules`, data),
+    onSuccess: (_d, vars) =>
+      qc.invalidateQueries({ queryKey: [...FORMS_KEY, vars.formId, 'access-rules'] }),
+  })
+}
+
+export const useDeleteFormAccessRule = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ formId, ruleId }: { formId: string; ruleId: string }) =>
+      apiClient.delete(`/document-forms/${formId}/access-rules/${ruleId}`),
+    onSuccess: (_d, vars) =>
+      qc.invalidateQueries({ queryKey: [...FORMS_KEY, vars.formId, 'access-rules'] }),
   })
 }
 
