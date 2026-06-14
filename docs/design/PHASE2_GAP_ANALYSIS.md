@@ -13,9 +13,15 @@
 - ✅ **양식별 기본 결재선(AP-01-03, `defaultLineId`)** + **결재규칙 스냅샷(§6.6 #3, `Request.ruleId`)** — 마이그레이션 + 로직(PR #20).
 - ✅ **결재 처리 FE Playwright E2E(G13)** — 승인/반려 UI 구동 + 상태 검증(PR #21).
 
-단위 622 · 통합 e2e 40 · 결재처리 E2E 2 통과.
+추가로 Medium/Low 잔여 항목까지 일괄 완료(PR #24~#30):
+- ✅ **M1 다결재자/병렬 결재(M-of-N)** — ApprovalRuleDetail requiredCount/round 활용, 활성 라운드 판정·중복승인 차단·isParallel (PR #29).
+- ✅ **M2 알림 email/in_app 채널** 디스패치 (PR #26) · ✅ **M3 양식 접근규칙**·**M4 양식 담당자**·**L4 ZIP**(PR #24).
+- ✅ **L1 DEVICE_CHANGE 기기 바인딩**·**L2 참조/공람/수신 박스 DRAFT 제외**(PR #25) · ✅ **L3 Discord embed 구조화**·**L5 전단계반려 안내**·**L6 FEATURE_LIST 정합**(PR #28).
+- ✅ **P2 조직 주소(Organization.address)**(PR #27) · ✅ **T1 회수·T2 참조확인 FE E2E**(PR #30).
 
-**잔여:** Medium/Low 정리 항목만 남음(다결재자 `requiredCount`/`isParallel`, email/in_app 알림 채널, 양식 접근규칙/담당자 선택 기능, Discord embed 템플릿 등 — 핵심 플로우 영향 없음).
+단위 640 · 통합 e2e 40 · 결재 흐름 FE E2E 4(승인/반려/회수/참조) 통과. **사실상 100%.**
+
+**보류:** P1 wage-info 독립 모듈화 — 기능은 `employees/:id/wage-info`로 완결되어 있고, 분리 시 `guardOrgScope`(보안 가드)를 복제해야 해 위험 대비 가치가 없어 의도적으로 보류(KISS/DRY).
 
 ## 부서협조/부서수신 구현 완료 (G14 — PR #15·#17·#18)
 
@@ -71,20 +77,18 @@
 | §6.6#3 | 결재규칙 스냅샷 (`Request.ruleId`) | #20 |
 | G13 | 결재 처리 UI Playwright E2E (승인/반려) | #21 |
 | C6-4 | `GET /shifts` 직원 스코핑(보안) · C7 sendInviteCode 데드코드 정리 | #21 |
+| G15 | **M1 다결재자/병렬 결재(M-of-N, requiredCount/isParallel)** | #29 |
+| G17 | **M2 알림 email/in_app 채널 디스패치** | #26 |
+| G11 | **M3 양식 접근규칙 CRUD+enforcement** · **M4 양식 담당자** · **L4 ZIP** | #24 |
+| G15/G14 | **L1 DEVICE_CHANGE 기기 바인딩** · **L2 참조/공람/수신 박스 DRAFT 제외** | #25 |
+| G17/G13/문서 | **L3 Discord embed 구조화** · **L5 전단계반려 안내** · **L6 FEATURE_LIST 정합** | #28 |
+| 조직 | **P2 조직 주소(Organization.address)** | #27 |
+| G13/G16 | **T1 회수 · T2 참조확인 FE E2E** | #30 |
 
-### ⏳ High (잔여)
-> 없음 — High 등급 전부 해소.
+### ⏳ High/Medium/Low (잔여)
+> **없음** — High·Medium·Low 전부 해소. (단, P1 wage-info 독립 모듈화는 보안 가드 중복 위험으로 의도적 보류 — 종합 참조.)
 
-### 🟡 Medium
-- G15 다결재자/병렬 결재 `requiredCount`/`isParallel` 미사용 · BE · M
-- G17 알림 규칙 email/in_app 채널이 Discord 리스너에서 데드 옵션 · BE · S
-- G11 양식 접근규칙 `form_access_rules` CRUD 부재 (AP-01-07 선택) · BE · M · ⚠
-- G11 양식 담당자 `formOwnerId` 지정 (AP-01-07 선택) · BE · S
-
-> ✅ 해소됨: G12 동적 필드 값 입력(PR#13), G14 협조 반려 비차단성·수신 반송(PR#17), G16 검색 UI(PR#14), §6.6#3 결재규칙 스냅샷(PR#20), AP-01-03 기본결재선(PR#20), G13 결재처리 E2E(PR#21).
-
-### ⚪ Low
-- G17 Discord embed 구조화 템플릿 미적용 · G14 참조/공람 box 상신 후 제한 미적용 · G15 DEVICE_CHANGE 승인 시 `newDeviceId` 미갱신+거절 이벤트 고아화 · G11 `allowZipUpload`(AP-01-06 선택) · G16 FE 경로 FEATURE_LIST 불일치 · G13 전단계반려 전용 안내 다이얼로그 부재
+> ✅ 해소됨: G12 동적 필드 값 입력(PR#13), G14 협조 반려 비차단성·수신 반송(PR#17), G16 검색 UI(PR#14), §6.6#3·AP-01-03(PR#20), G13 E2E(PR#21), M1~M4·L1~L6·P2·T1·T2(PR#24~#30).
 
 ## 권장 구현 순서
 
@@ -94,11 +98,11 @@
 4. ✅ ~~G14 부서 차원 일괄(부서협조/부서수신/문서담당자)~~ (PR #15·#17)
 5. ✅ ~~G16 부서문서함~~ (PR #18)
 6. ✅ ~~G11 양식별 기본 결재선 FK + §6.6 #3 결재규칙 스냅샷~~ (PR #20) · ✅ ~~G13 결재 처리 FE Playwright E2E~~ (PR #21)
-7. **⏳ 잔여**: G15 다결재자 round 조건(`requiredCount`/`isParallel`) · 알림 email/in_app 채널 · 양식 접근규칙/담당자 선택 · low 정리.
+7. ✅ ~~M1 다결재자/병렬(PR#29) · M2 알림 채널(PR#26) · M3·M4·L4 양식(PR#24) · L1·L2(PR#25) · L3·L5·L6(PR#28) · P2 조직주소(PR#27) · T1·T2 E2E(PR#30)~~ — 잔여 일괄 완료.
 
 ## 교차 이슈 (cross-cutting)
 
-- **상태머신 일관성**: `requiredCount`/`isParallel`(다결재자/병렬) 미사용이 requests(G15)·approval-actions(G13) 양쪽에서 동일 — 공통 헬퍼로 통일 필요.
+- ✅ **상태머신 일관성**: 다결재자/병렬(M-of-N)을 requests 승인 엔진에 구현(PR#29 — requiredCount/round 기반 활성 라운드 판정). approval-actions(수동 결재선)는 순차 단계 모델 유지.
 - **FE-BE 능력 불일치**: (✅ 문서함 검색·양식 fieldsSchema는 PR #13·#14로 배선 완료) 잔여 — email/in_app 알림 채널이 Discord 리스너에서 데드 옵션(G17).
 - **테스트 공백**: BE 단위(622)/통합 e2e(40) 충실. FE Playwright는 결재처리(승인/반려) E2E 보강됨(PR#21, `approval_processing.spec.ts`). 재상신·문서함·부서함 흐름 E2E는 후속 보강 여지.
 - **명세 정합성**: FEATURE_LIST 분리 경로 명세 vs 통합 탭 구현 차이(G11·G12·G13·G16·G17), SYSTEM_DESIGN 엔드포인트 표기 차이(G13/G15) — 구현이 견고하면 문서 갱신, 미구현은 구현 정렬로 양방향 정합화.
