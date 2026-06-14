@@ -6,14 +6,12 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
-import List from '@mui/material/List'
-import ListItemButton from '@mui/material/ListItemButton'
-import ListItemText from '@mui/material/ListItemText'
 import Paper from '@mui/material/Paper'
 import Snackbar from '@mui/material/Snackbar'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import PageHeader from '@/components/common/PageHeader'
+import OrgTree from '@/components/approval/OrgTree'
 import { useSnackbar } from '@/hooks/useSnackbar'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -95,23 +93,12 @@ export default function DocManagersPage() {
         </Box>
       ) : (
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          {/* 좌: 조직 목록 */}
+          {/* 좌: 조직도 트리 (접기/펼치기) */}
           <Paper
             elevation={0}
-            sx={{ border: '1px solid', borderColor: 'divider', width: 280, maxHeight: 560, overflow: 'auto' }}
+            sx={{ border: '1px solid', borderColor: 'divider', width: 280, maxHeight: 560, overflow: 'auto', py: 0.5 }}
           >
-            <List dense disablePadding>
-              {flatOrgs.map((org) => (
-                <ListItemButton
-                  key={org.id}
-                  selected={org.id === selectedOrgId}
-                  onClick={() => setSelectedOrgId(org.id)}
-                  sx={{ pl: 2 + org.depth * 2 }}
-                >
-                  <ListItemText primary={org.name} />
-                </ListItemButton>
-              ))}
-            </List>
+            <OrgTree nodes={orgTree} selectedId={selectedOrgId} onSelect={setSelectedOrgId} />
           </Paper>
 
           {/* 우: 담당자 편집 */}
