@@ -46,6 +46,7 @@ const orgSchema = z.object({
   parentId: z.string().nullable().optional(),
   approverId: z.string().nullable().optional(),
   docManagerId: z.string().nullable().optional(),
+  address: z.string().optional(),
 })
 
 type OrgFormValues = z.infer<typeof orgSchema>
@@ -81,6 +82,7 @@ function OrgDialog({ open, initial, organizations, employees, loading, onSubmit,
       parentId: initial?.parentId ?? null,
       approverId: initial?.approverId ?? null,
       docManagerId: initial?.docManagerId ?? null,
+      address: initial?.address ?? '',
     },
   })
 
@@ -149,6 +151,18 @@ function OrgDialog({ open, initial, organizations, employees, loading, onSubmit,
                 />
               )}
               isOptionEqualToValue={(a, b) => a.id === b.id}
+            />
+          )}
+        />
+        <Controller
+          name="address"
+          control={control}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              label="주소"
+              fullWidth
+              placeholder="부서 주소 (선택)"
             />
           )}
         />

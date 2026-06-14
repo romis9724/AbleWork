@@ -66,6 +66,8 @@ model Organization {
   approverId String?  @map("approver_id")
   // AP-04-07 문서담당자 (부서별). null이면 approverId(팀장)로 fallback.
   docManagerId String? @map("doc_manager_id")
+  // 부서 주소 (선택 — 지도/연락처 표기용)
+  address    String?  @db.Text
   isActive   Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
