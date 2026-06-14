@@ -283,6 +283,15 @@ export const useDeleteDocument = () => {
   })
 }
 
+// AP-05-06 관리자 강제 삭제 (결재 현황)
+export const useForceDeleteDocument = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/documents/${id}/force`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
+  })
+}
+
 export const useSubmitDocument = () => {
   const qc = useQueryClient()
   return useMutation({

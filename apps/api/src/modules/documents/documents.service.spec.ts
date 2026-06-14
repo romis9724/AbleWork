@@ -76,6 +76,10 @@ const mockPrisma = {
   },
   approvalHistory: {
     create: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  request: {
+    findFirst: jest.fn(),
   },
   sharedApprovalLine: {
     findFirst: jest.fn(),
@@ -392,6 +396,51 @@ describe('DocumentsService', () => {
 
       expect(result).toEqual({ deleted: true })
       expect(mockPrisma.approvalLine.deleteMany).toHaveBeenCalled()
+      expect(mockPrisma.document.delete).toHaveBeenCalledWith({ where: { id: DOCUMENT_ID } })
+    })
+  })
+
+  // ── AP-05-06 관리자 강제 삭제 ────────────────────────────────────────────────
+  describe('forceDelete', () => {
+    it('관리자가 아니면 DOCUMENT_FORCE_DELETE_FORBIDDEN 403', async () => {
+      await expect(
+        service.forceDelete(COMPANY_ID, DOCUMENT_ID, makeUser(AccessLevel.EMPLOYEE)),
+      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_FORCE_DELETE_FORBIDDEN' } })
+      expect(mockPrisma.document.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('존재하지 않는 문서면 DOCUMENT_NOT_FOUND', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.forceDelete(COMPANY_ID, DOCUMENT_ID, makeUser(AccessLevel.GENERAL_ADMIN)),
+      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_NOT_FOUND' } })
+    })
+
+    it('HR 요청과 연결된 문서는 DOCUMENT_LINKED_TO_REQUEST로 차단(삭제 안 함)', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(makeDocument({ status: 'PENDING' }))
+      mockPrisma.request.findFirst.mockResolvedValue({ id: 'req-1' })
+
+      await expect(
+        service.forceDelete(COMPANY_ID, DOCUMENT_ID, makeUser(AccessLevel.GENERAL_ADMIN)),
+      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_LINKED_TO_REQUEST' } })
+      expect(mockPrisma.document.delete).not.toHaveBeenCalled()
+    })
+
+    it('연결 요청이 없으면 이력 삭제 후 문서를 강제 삭제한다(임의 상태)', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(makeDocument({ status: 'PENDING' }))
+      mockPrisma.request.findFirst.mockResolvedValue(null)
+      mockPrisma.approvalHistory.deleteMany.mockResolvedValue({ count: 2 })
+      mockPrisma.document.delete.mockResolvedValue({})
+
+      const result = await service.forceDelete(
+        COMPANY_ID,
+        DOCUMENT_ID,
+        makeUser(AccessLevel.GENERAL_ADMIN),
+      )
+
+      expect(result).toEqual({ deleted: true })
+      expect(mockPrisma.approvalHistory.deleteMany).toHaveBeenCalledWith({ where: { documentId: DOCUMENT_ID } })
       expect(mockPrisma.document.delete).toHaveBeenCalledWith({ where: { id: DOCUMENT_ID } })
     })
   })

@@ -10,6 +10,7 @@
 
 ## 구현 진행 (2026-06-14 업데이트)
 
+- ✅ **G16 AP-05-06 결재 현황 + 관리자 강제 삭제 완료**: 관리자 전체 조회는 기존 `ledger` box(전 상태) 재사용. 신규 `DELETE /documents/:id/force`(GENERAL_ADMIN↑) — 임의 상태 문서 강제 삭제(이력 선삭제 후 lines→steps Cascade). **HR 요청 연결 문서는 차단**(`DOCUMENT_LINKED_TO_REQUEST` — request.documentId가 SetNull로 끊겨 워크플로 깨짐 방지). FE `/admin/approval/status` 화면(문서대장 미러 + 강제삭제 + 가드 메시지 토스트) + 사이드바 등록. 단위 4건.
 - ✅ **권장 #1 — G17+G15 알림 활성화 완료** (PR 별도): 알림 이벤트 단일 출처 `NOTIFIABLE_EVENTS`(@ablework/shared-constants) 신설 → 리스너(부트스트랩 일괄 구독)·BE 기본규칙·FE 토글을 모두 정렬. 누락됐던 비휴가 요청 이벤트(shift/attendance/device/offsite/custom)와 FE-BE 이벤트 키 불일치(짧은 키 'clock_in'/'request_approved' vs 런타임 'attendance.clock_in')를 해소. `DEVICE_CHANGE_REJECTED`/`OFFSITE_WORK_REJECTED` 상수 추가. 단위 7건(listener) 추가.
   - ⚠️ **배포 시 1회 데이터 마이그레이션 필요**: 기존 환경에서 이미 webhook을 등록해 **짧은 키 규칙**(`clock_in` 등)이 `notification_rules`에 남아 있으면 새 코드와 매칭되지 않는다. 그린필드/시드 환경은 정식명을 쓰므로 무관. 배포 시 다음 매핑 UPDATE를 1회 실행:
     `clock_in→attendance.clock_in`, `late→attendance.late`, `leave_request→leave.requested`, `leave_approved→leave.approved`, `request_approved→`(삭제 또는 도메인별 *.approved로 분기). 그 외 짧은 키(clock_out/absent)는 현재 미발행이므로 삭제.

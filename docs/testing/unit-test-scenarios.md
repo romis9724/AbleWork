@@ -284,8 +284,8 @@
 
 ### documents
 
-- spec 존재: 예 · 기존 테스트 24개 · 권장 추가 18개
-- public 메서드: `create`, `update`, `remove`, `submit`, `recall`, `findAll`, `findOne`
+- spec 존재: 예 · 기존 테스트 28개 · 권장 추가 14개
+- public 메서드: `create`, `update`, `remove`, `forceDelete`, `submit`, `recall`, `findAll`, `findOne`
 
 **커버된 시나리오:**
 
@@ -307,6 +307,10 @@
 - recall() - PENDING 아닌 상태는 회수 불가
 - remove() - DRAFT 아니면 DOCUMENT_NOT_DRAFT 400
 - remove() - DRAFT 문서는 결재선과 함께 삭제
+- **forceDelete() - 관리자 아니면 DOCUMENT_FORCE_DELETE_FORBIDDEN 403** (AP-05-06)
+- **forceDelete() - 미존재 문서 DOCUMENT_NOT_FOUND**
+- **forceDelete() - HR 요청 연결 문서는 DOCUMENT_LINKED_TO_REQUEST 차단(삭제 안 함)**
+- **forceDelete() - 연결 없으면 이력 삭제 후 임의 상태 문서 강제 삭제**
 - findAll(draft) - 본인의 DRAFT/RECALLED/REJECTED만
 - findAll(pending_approval) - 대리인(proxy) principal 포함
 - findAll(ledger) - GENERAL_ADMIN 미만은 403
