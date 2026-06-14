@@ -4,7 +4,6 @@ import * as nodemailer from 'nodemailer'
 import Mail from 'nodemailer/lib/mailer'
 
 export interface IMailService {
-  sendInviteCode(to: string, code: string, companyName: string): Promise<void>
   sendPasswordReset(to: string, token: string): Promise<void>
   sendMessageMail(to: string, title: string, content: string): Promise<void>
 }
@@ -34,36 +33,6 @@ export class MailService implements IMailService {
         pass: this.config.get<string>('MAIL_PASS', ''),
       },
     })
-  }
-
-  async sendInviteCode(to: string, code: string, companyName: string): Promise<void> {
-    const from = this.config.get<string>('MAIL_FROM', 'no-reply@ablework.kr')
-    // 사용자 입력(companyName)은 HTML 본문에 삽입되므로 이스케이프 (XSS 방지)
-    const safeCompanyName = escapeHtml(companyName)
-
-    const html = `
-<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-  <h2>${safeCompanyName}에서 AbleWork로 초대합니다</h2>
-  <p>아래 초대 코드를 사용하여 회원가입을 완료하세요.</p>
-  <div style="background: #f4f4f4; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 4px; margin: 20px 0;">
-    ${code}
-  </div>
-  <p style="color: #666;">이 코드는 24시간 후 만료됩니다.</p>
-</div>
-`
-
-    try {
-      await this.transporter.sendMail({
-        from,
-        to,
-        subject: `[${companyName}] AbleWork 초대 코드`,
-        html,
-      })
-      this.logger.log(`Invite code email sent to ${to}`)
-    } catch (error) {
-      this.logger.error(`Failed to send invite code email to ${to}`, error)
-      throw error
-    }
   }
 
   async sendPasswordReset(to: string, token: string): Promise<void> {
