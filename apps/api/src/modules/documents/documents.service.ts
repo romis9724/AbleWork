@@ -140,6 +140,49 @@ export class DocumentsService {
     return { deleted: true }
   }
 
+  // ── AP-05-06 관리자 강제 삭제 (GENERAL_ADMIN+, 임의 상태) ─────────────────────
+  // 결재 현황에서 오류/중단된 문서를 관리자가 제거. 상태·기안자 제한 없음.
+  async forceDelete(companyId: string, documentId: string, user: JwtPayload) {
+    if (!this.isCompanyAdmin(user)) {
+      throw new ForbiddenException({
+        code: 'DOCUMENT_FORCE_DELETE_FORBIDDEN',
+        message: '문서 강제 삭제는 관리자(GENERAL_ADMIN 이상)만 가능합니다.',
+      })
+    }
+
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, companyId },
+    })
+    if (!document) {
+      throw new NotFoundException({
+        code: 'DOCUMENT_NOT_FOUND',
+        message: '문서를 찾을 수 없습니다.',
+      })
+    }
+
+    // HR 요청과 연결된 문서는 삭제 시 request.documentId가 끊겨(SetNull) 요청 워크플로가 깨진다.
+    // 이 경우 요청 취소 흐름으로 처리하도록 강제 삭제를 차단한다.
+    const linkedRequest = await this.prisma.request.findFirst({
+      where: { documentId, companyId },
+      select: { id: true },
+    })
+    if (linkedRequest) {
+      throw new BadRequestException({
+        code: 'DOCUMENT_LINKED_TO_REQUEST',
+        message: 'HR 요청과 연결된 문서는 강제 삭제할 수 없습니다. 해당 요청을 취소해 주세요.',
+      })
+    }
+
+    await this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (tx: any) => {
+      // ApprovalHistory는 onDelete 미지정(Restrict)이라 먼저 삭제. approvalLines→steps는 Cascade.
+      await tx.approvalHistory.deleteMany({ where: { documentId } })
+      await tx.document.delete({ where: { id: documentId } })
+    })
+
+    return { deleted: true }
+  }
+
   // ── AP-02-04 상신 / 재상신 ───────────────────────────────────────────────────
 
   async submit(companyId: string, documentId: string, dto: SubmitDocumentDto, user: JwtPayload) {

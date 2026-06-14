@@ -916,6 +916,8 @@ notification_rules {
 
 **조직 계층 무결성**: 조직 상위(`parentId`) 수정 시 **자기 자신 또는 하위 조직을 상위로 지정하면 계층에 순환**이 발생하므로 차단한다 → `ORG_PARENT_CYCLE` (400). 검증은 지정하려는 부모의 조상 체인을 거슬러 올라가며 대상 조직을 만나는지 확인하고, 데이터 손상 대비로 탐색 깊이 상한을 둔다. 신규 생성은 자식이 없어 순환이 불가능하므로 **수정 경로에만** 적용한다.
 
+**전자결재 문서 강제 삭제(AP-05-06 결재 현황)**: 기안자 본인의 `DRAFT` 삭제(`DELETE /documents/:id`)와 별도로, **관리자(`GENERAL_ADMIN` 이상)는 임의 상태 문서를 강제 삭제**할 수 있다(`DELETE /documents/:id/force`). 권한 미달 시 `DOCUMENT_FORCE_DELETE_FORBIDDEN`. 삭제는 `ApprovalHistory` 선삭제(미지정 FK=Restrict) 후 문서 삭제(→ `approvalLines`→`steps` Cascade). **단, HR 요청과 연결된 문서(`request.documentId`)는 삭제 시 연결이 `SetNull`로 끊겨 요청 워크플로가 깨지므로 차단**한다 → `DOCUMENT_LINKED_TO_REQUEST` (요청 취소로 처리).
+
 ### 6.5 결재 · 요청 보안 불변식
 
 | 불변식 | 규칙 | 에러코드 |

@@ -14,8 +14,10 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger'
 import { DocumentsService } from './documents.service'
 import { ApprovalActionsService } from './approval-actions.service'
+import { AccessLevel } from '@ablework/shared-constants'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { RolesGuard } from '../../common/guards/roles.guard'
+import { Roles } from '../../common/decorators/roles.decorator'
 import { CompanyId } from '../../common/decorators/company-id.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe'
@@ -105,6 +107,20 @@ export class DocumentsController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.documentsService.remove(companyId, id, user)
+  }
+
+  // AP-05-06 관리자 강제 삭제 (결재 현황 — 임의 상태, GENERAL_ADMIN 이상)
+  @Delete(':id/force')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '문서 강제 삭제 (관리자, 결재 현황)' })
+  @ApiParam({ name: 'id', type: String })
+  forceDelete(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.documentsService.forceDelete(companyId, id, user)
   }
 
   // AP-02-04 상신 / 재상신
