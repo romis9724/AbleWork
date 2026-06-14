@@ -8,10 +8,10 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Divider from '@mui/material/Divider'
 import Paper from '@mui/material/Paper'
 import Snackbar from '@mui/material/Snackbar'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
+import ApprovalActionDialog, { type ApprovalActionOption } from './ApprovalActionDialog'
 import { useConfirm } from '@/hooks/useConfirm'
 import { useSnackbar } from '@/hooks/useSnackbar'
 import { useAuthStore } from '@/stores/auth.store'
@@ -31,6 +31,10 @@ import { DocStatusChip } from './StatusChips'
 import { HISTORY_ACTION_LABEL, dateTimeText } from './approval-constants'
 
 const ACTED_STATUSES = ['APPROVED', 'PRE_APPROVED', 'PROXY_APPROVED', 'REJECTED', 'RETURNED']
+/** 결재하기 팝업(라디오 결정)으로 처리하는 역할 — 그 외(확인/수신)는 직접 버튼 */
+const DECISION_ROLES = ['APPROVER', 'AGREEMENT', 'DEPT_COLLABORATOR']
+/** 의견 입력 필수 액션 (카카오워크: 반려/전단계반려/전결/반송) */
+const COMMENT_REQUIRED_ACTIONS: StepAction[] = ['reject', 'return-prev', 'pre-approve', 'bounce']
 
 interface Props {
   documentId: string
@@ -141,7 +145,9 @@ export default function DocumentDetailView({
   const recallMutation = useRecallDocument()
   const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm()
-  const [comment, setComment] = useState('')
+  // 통합 결재하기 팝업 / 반송 팝업 열림 상태
+  const [decisionOpen, setDecisionOpen] = useState(false)
+  const [bounceOpen, setBounceOpen] = useState(false)
 
   const steps: ApprovalStepDetail[] = doc?.approvalLines?.flatMap((l) => l.steps) ?? []
   const formFields = readFormFields(forms.find((f) => f.id === doc?.form?.id)?.fieldsSchema)
@@ -178,6 +184,10 @@ export default function DocumentDetailView({
     !isHrLinked && myPendingStep && actionsVisibleForStatus(myPendingStep.role, doc?.status)
       ? buildStepActions(myPendingStep, doc?.form?.allowPreApproval ?? false)
       : []
+  // 결재하기 팝업(라디오 결정) vs 직접 버튼(확인/수신/반송)
+  const isDecisionStep =
+    !!myPendingStep && stepActions.length > 0 && DECISION_ROLES.includes(myPendingStep.role)
+  const directActions = isDecisionStep ? [] : stepActions
 
   const hasFooterAction =
     stepActions.length > 0 ||
@@ -202,34 +212,34 @@ export default function DocumentDetailView({
     return prev?.assignee?.name ?? null
   })()
 
-  const runStepAction = async (def: ActionDef, stepId: string) => {
-    if (!doc) return
-    if (def.needsConfirm) {
-      const message =
-        def.action === 'return-prev'
-          ? `직전 결재자${previousApproverName ? `(${previousApproverName})` : ''}에게 결재권을 반환합니다. 계속하시겠습니까?`
-          : `이 문서를 ${def.label} 처리하시겠습니까?`
-      const ok = await confirm({
-        title: def.label,
-        message,
-        confirmLabel: def.label,
-        confirmColor: 'error',
-      })
-      if (!ok) return
-    }
+  /** 결재하기/반송 팝업·직접 버튼에서 호출 — step 액션 처리 */
+  const submitAction = async (action: StepAction, actionComment: string) => {
+    if (!doc || !myPendingStep) return
     try {
       await stepAction.mutateAsync({
         documentId: doc.id,
-        stepId,
-        action: def.action,
-        comment: comment || undefined,
+        stepId: myPendingStep.id,
+        action,
+        comment: actionComment || undefined,
       })
-      setComment('')
-      showSnackbar(`${def.label} 처리가 완료됐습니다.`)
+      setDecisionOpen(false)
+      setBounceOpen(false)
+      const label = stepActions.find((a) => a.action === action)?.label ?? '처리'
+      showSnackbar(`${label} 처리가 완료됐습니다.`)
     } catch {
       showSnackbar('처리 중 오류가 발생했습니다.', 'error')
     }
   }
+
+  // 결재하기 팝업 라디오 옵션 (전단계 반려는 결재권 반환 안내 표시)
+  const decisionOptions: ApprovalActionOption[] = stepActions.map((a) => ({
+    action: a.action,
+    label: a.label,
+    helper:
+      a.action === 'return-prev'
+        ? `직전 결재자${previousApproverName ? `(${previousApproverName})` : ''}에게 결재권을 반환합니다.`
+        : undefined,
+  }))
 
   const handleRecall = async () => {
     if (!doc) return
@@ -262,9 +272,7 @@ export default function DocumentDetailView({
         documentId: doc.id,
         stepId: myApprovedStep.id,
         action: 'cancel-approval',
-        comment: comment || undefined,
       })
-      setComment('')
       showSnackbar('결재를 취소했습니다.')
     } catch {
       showSnackbar('처리 중 오류가 발생했습니다.', 'error')
@@ -393,19 +401,6 @@ export default function DocumentDetailView({
             </Box>
           </Box>
         )}
-
-        {/* 코멘트 입력 (액션 가능 시) */}
-        {(stepActions.length > 0 || (canCancelApproval && !isHrLinked)) && (
-          <TextField
-            label="코멘트"
-            placeholder="처리 의견을 입력하세요 (선택)"
-            multiline
-            rows={2}
-            fullWidth
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-          />
-        )}
       </Box>
 
       {/* 하단 sticky 푸터 — 결재/회수/재상신/재기안 액션 */}
@@ -455,19 +450,58 @@ export default function DocumentDetailView({
               결재 취소
             </Button>
           )}
-          {stepActions.map((def) => (
-            <Button
-              key={def.action}
-              variant={['approve', 'agree', 'receive', 'view', 'dept-collab'].includes(def.action) ? 'contained' : 'outlined'}
-              color={def.color}
-              disabled={busy}
-              onClick={() => runStepAction(def, myPendingStep!.id)}
-            >
-              {def.label}
+
+          {/* 결재 결정 역할 → 통합 [결재] 버튼(결재하기 팝업) */}
+          {isDecisionStep && (
+            <Button variant="contained" disabled={busy} onClick={() => setDecisionOpen(true)}>
+              결재
             </Button>
-          ))}
+          )}
+
+          {/* 확인/수신/반송 등 직접 액션 */}
+          {directActions.map((def) =>
+            def.action === 'bounce' ? (
+              <Button key={def.action} variant="outlined" color="error" disabled={busy} onClick={() => setBounceOpen(true)}>
+                {def.label}
+              </Button>
+            ) : (
+              <Button
+                key={def.action}
+                variant={['receive', 'view'].includes(def.action) ? 'contained' : 'outlined'}
+                color={def.color}
+                disabled={busy}
+                onClick={() => submitAction(def.action, '')}
+              >
+                {def.label}
+              </Button>
+            ),
+          )}
         </Paper>
       )}
+
+      {/* C1 통합 결재하기 팝업 */}
+      <ApprovalActionDialog
+        open={decisionOpen}
+        title="결재하기"
+        options={decisionOptions}
+        commentRequiredFor={COMMENT_REQUIRED_ACTIONS}
+        busy={busy}
+        submitLabel="결재"
+        onClose={() => setDecisionOpen(false)}
+        onSubmit={submitAction}
+      />
+
+      {/* C2 반송 팝업 (의견 필수) */}
+      <ApprovalActionDialog
+        open={bounceOpen}
+        title="반송"
+        options={[{ action: 'bounce', label: '반송' }]}
+        commentRequiredFor={['bounce']}
+        busy={busy}
+        submitLabel="반송"
+        onClose={() => setBounceOpen(false)}
+        onSubmit={submitAction}
+      />
 
       <ConfirmDialog
         open={confirmState.open}
