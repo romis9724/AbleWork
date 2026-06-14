@@ -639,7 +639,7 @@ HR 요청은 **전자결재 모듈의 기안**과 연동되어 처리된다.
 | 협조 | 개인 협조 처리 (승인 흐름에 영향 없음) |
 | 부서협조 | 내부결재 후 처리, 내부결재 반려 시 부서협조도 반려 |
 | 부서수신 | 문서담당자가 [접수]/[수신확인]/[반송] 처리 |
-| 문서담당자 지정 | 부서별 담당자 지정 (팀장 기본, 추가 가능) |
+| 문서담당자 지정 | 부서별 담당자 **다중 지정**(`organization_doc_managers`) — 전용 메뉴(전자결재>문서담당 관리). 첫 번째=대표, 미지정 시 팀장(approverId) fallback |
 | 문서대장 | 완료 문서 조회, 권한별 가시성 다름 |
 | 공용 결재선 | 인사이동 시 일괄 변경 가능한 공유 결재선 |
 | 결재 현황 (관리자) | 진행중 전자결재(상신/진행중/반려)만 조회 — 카카오워크 동일. 상신일·기안양식·결재상태·제목 필터 + 체크박스 다중선택 [선택 삭제] |
@@ -939,6 +939,11 @@ notification_rules {
 - **양식 메타**: `visibilityScope`(PUBLIC/DEPARTMENT/PRIVATE)·`retentionYears`(보존연한, 백업 retention과 연동)·`abbreviation`(문서번호 약어)·`description`(설명).
 - **공개범위 enforcement**(`assertCanUseForm`): 접근규칙(`form_access_rules`)이 있으면 규칙 매칭(기존 동작). 규칙이 **없을 때** `PUBLIC`은 전체 허용(기존 동작 유지), `DEPARTMENT`/`PRIVATE`은 양식 담당자(`formOwnerId`)만 작성 가능(그 외 `FORM_ACCESS_DENIED`). 기존 양식은 마이그레이션 기본값 `PUBLIC`이라 동작 변화 없음.
 - **확장 필드 타입**(`DocumentFieldDef.type`): text/textarea/number/date/select에 더해 **`richtext`**(서식 텍스트, 줄바꿈 유지 다행 입력)·**`table`**(표 — `columns[]` 헤더 정의 + 작성 시 행 추가/삭제, 값은 `string[][]`)를 추가. 양식 관리 화면은 **3탭 위저드(기본정보/입력필드/권한·옵션)** + 양식함 분류 관리 다이얼로그를 제공한다.
+
+**부서 문서담당자 다중(AP-04-07)**: `organization_doc_managers`(부서 N:M 직원, `sortOrder` 순서) 조인으로 부서당 다수 담당자를 둔다.
+- 관리: `GET/PATCH /organizations/:id/doc-managers`(목록/집합 교체, GENERAL_ADMIN) + 전용 화면 `전자결재 > 문서담당 관리`(조직 트리 + 담당자 Autocomplete). 조직 다이얼로그의 단일 담당자 입력은 제거. 교체 시 레거시 `Organization.docManagerId`를 **대표(첫 번째)** 로 동기화(점진 이관·fallback 유지).
+- 부서 step assignee 해석(`resolveSteps`): **대표 담당자 ?? 레거시 docManagerId ?? 팀장(approverId)**. 모두 없으면 `DEPT_NO_MANAGER`.
+- 결재 처리 권한(`resolveActor`): 부서 step은 **해당 부서 담당자 누구나** 처리 가능(assignee 불일치여도 `organization_doc_managers` 멤버면 허용). 부서문서함(`box=dept-docs`)도 assignee 또는 내가 담당하는 부서의 step을 노출.
 
 ### 6.5 결재 · 요청 보안 불변식
 

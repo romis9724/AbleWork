@@ -96,6 +96,56 @@ export class OrganizationsService {
     })
   }
 
+  // ── AP-04-07 부서 문서담당자 (다중) ────────────────────────────────────────────
+
+  /** 부서 문서담당자 목록 (sortOrder 순 — 첫 번째가 대표) */
+  async getDocManagers(companyId: string, orgId: string) {
+    await this.findOneOrThrow(orgId, companyId)
+    return this.prisma.organizationDocManager.findMany({
+      where: { organizationId: orgId },
+      orderBy: { sortOrder: 'asc' },
+      select: { employeeId: true, sortOrder: true, employee: { select: { id: true, name: true } } },
+    })
+  }
+
+  /**
+   * 부서 문서담당자 집합을 employeeIds(순서=우선순위)로 교체한다.
+   * 첫 번째를 대표로 보고 레거시 docManagerId도 동기화(없으면 null).
+   */
+  async setDocManagers(companyId: string, orgId: string, employeeIds: string[]) {
+    await this.findOneOrThrow(orgId, companyId)
+
+    const uniqueIds = Array.from(new Set(employeeIds))
+    if (uniqueIds.length) {
+      const count = await this.prisma.employee.count({
+        where: { id: { in: uniqueIds }, companyId },
+      })
+      if (count !== uniqueIds.length) {
+        throw new BadRequestException({
+          code: 'EMPLOYEE_NOT_FOUND',
+          message: '문서담당자 중 자사 소속이 아닌 직원이 있습니다.',
+        })
+      }
+    }
+
+    await this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (tx: any) => {
+      await tx.organizationDocManager.deleteMany({ where: { organizationId: orgId } })
+      if (uniqueIds.length) {
+        await tx.organizationDocManager.createMany({
+          data: uniqueIds.map((employeeId, i) => ({ organizationId: orgId, employeeId, sortOrder: i })),
+        })
+      }
+      // 레거시 단일 docManagerId = 대표(첫 번째) 담당자로 동기화
+      await tx.organization.update({
+        where: { id: orgId },
+        data: { docManagerId: uniqueIds[0] ?? null },
+      })
+    })
+
+    return this.getDocManagers(companyId, orgId)
+  }
+
   async remove(id: string, companyId: string): Promise<void> {
     await this.findOneOrThrow(id, companyId)
 

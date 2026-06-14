@@ -49,3 +49,30 @@ export const useDeleteOrganization = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }
+
+// AP-04-07 부서 문서담당자 (다중)
+export interface OrgDocManager {
+  employeeId: string
+  sortOrder: number
+  employee: { id: string; name: string }
+}
+
+export const useOrgDocManagers = (orgId: string | null) =>
+  useQuery({
+    queryKey: [...QUERY_KEY, orgId, 'doc-managers'],
+    queryFn: () =>
+      apiClient.get(`/organizations/${orgId}/doc-managers`) as Promise<OrgDocManager[]>,
+    enabled: !!orgId,
+  })
+
+export const useSetOrgDocManagers = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ orgId, employeeIds }: { orgId: string; employeeIds: string[] }) =>
+      apiClient.patch(`/organizations/${orgId}/doc-managers`, { employeeIds }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: [...QUERY_KEY, vars.orgId, 'doc-managers'] })
+      qc.invalidateQueries({ queryKey: QUERY_KEY })
+    },
+  })
+}

@@ -79,6 +79,7 @@ model Organization {
   children         Organization[]         @relation("OrgHierarchy")
   approver         Employee?              @relation("OrgApprover", fields: [approverId], references: [id])
   docManager       Employee?              @relation("OrgDocManager", fields: [docManagerId], references: [id], onDelete: SetNull)
+  docManagers      OrganizationDocManager[]
   deptSteps        ApprovalStep[]         @relation("StepDept")
   employeeOrgs     EmployeeOrganization[]
   timeclockAreas   TimeclockArea[]
@@ -86,6 +87,23 @@ model Organization {
 
   @@index([companyId, isActive])
   @@map("organizations")
+}
+
+// AP-04-07 부서 문서담당자 (다중) — 부서협조/부서수신 step을 처리할 수 있는 담당자 집합.
+// 단일 docManagerId는 1차(primary) fallback으로 유지(점진 이관). sortOrder 최소 = 대표 담당자.
+model OrganizationDocManager {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  employeeId     String   @map("employee_id")
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee     Employee     @relation("DocManagerEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, employeeId])
+  @@index([employeeId])
+  @@map("organization_doc_managers")
 }
 
 model CompanyHoliday {
@@ -188,6 +206,7 @@ model Employee {
   approvalHistories     ApprovalHistory[]
   managedOrgs           Organization[]             @relation("OrgApprover")
   managedDocOrgs        Organization[]             @relation("OrgDocManager")
+  docManagerOf          OrganizationDocManager[]   @relation("DocManagerEmployee")
   confirmedShifts       Shift[]                    @relation("ShiftConfirmer")
   createdShifts         Shift[]                    @relation("ShiftCreator")
   confirmedAttendances  Attendance[]               @relation("AttendanceConfirmer")

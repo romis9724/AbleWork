@@ -45,7 +45,7 @@ const orgSchema = z.object({
   name: z.string().min(1, '조직명을 입력해 주세요.'),
   parentId: z.string().nullable().optional(),
   approverId: z.string().nullable().optional(),
-  docManagerId: z.string().nullable().optional(),
+  // 문서담당자(docManagerId)는 '문서담당 관리' 메뉴에서 다중 지정 — 조직 다이얼로그에서 제거
   address: z.string().optional(),
 })
 
@@ -81,7 +81,6 @@ function OrgDialog({ open, initial, organizations, employees, loading, onSubmit,
       name: initial?.name ?? '',
       parentId: initial?.parentId ?? null,
       approverId: initial?.approverId ?? null,
-      docManagerId: initial?.docManagerId ?? null,
       address: initial?.address ?? '',
     },
   })
@@ -134,26 +133,10 @@ function OrgDialog({ open, initial, organizations, employees, loading, onSubmit,
             />
           )}
         />
-        <Controller
-          name="docManagerId"
-          control={control}
-          render={({ field }) => (
-            <Autocomplete
-              options={employees}
-              getOptionLabel={(e) => e.name}
-              value={employees.find((e) => e.id === field.value) ?? null}
-              onChange={(_, v) => field.onChange(v?.id ?? null)}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="문서담당자"
-                  helperText="미지정 시 결재권자(팀장)가 부서협조·부서수신을 처리합니다."
-                />
-              )}
-              isOptionEqualToValue={(a, b) => a.id === b.id}
-            />
-          )}
-        />
+        <Alert severity="info" sx={{ '& .MuiAlert-message': { fontSize: 13 } }}>
+          문서담당자는 <b>전자결재 &gt; 문서담당 관리</b> 메뉴에서 부서별 다중 지정합니다.
+          미지정 시 결재권자(팀장)가 부서협조·부서수신을 처리합니다.
+        </Alert>
         <Controller
           name="address"
           control={control}
@@ -210,7 +193,6 @@ export default function OrganizationsPage() {
       ...values,
       parentId: values.parentId ?? undefined,
       approverId: values.approverId ?? undefined,
-      docManagerId: values.docManagerId ?? undefined,
     }, {
       onSuccess: () => { setDialogOpen(false); showSnack('조직이 추가되었습니다.', 'success') },
       onError: () => showSnack('조직 추가에 실패했습니다.', 'error'),

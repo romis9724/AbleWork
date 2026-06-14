@@ -36,6 +36,14 @@ const mockPrisma = {
     update: jest.fn(),
     count: jest.fn(),
   },
+  organizationDocManager: {
+    findMany: jest.fn(),
+    deleteMany: jest.fn(),
+    createMany: jest.fn(),
+  },
+  employee: {
+    count: jest.fn(),
+  },
   employeeOrganization: {
     count: jest.fn(),
   },
@@ -45,6 +53,7 @@ const mockPrisma = {
   shift: {
     count: jest.fn(),
   },
+  $transaction: jest.fn(),
 }
 
 describe('OrganizationsService', () => {
@@ -60,6 +69,9 @@ describe('OrganizationsService', () => {
 
     service = module.get<OrganizationsService>(OrganizationsService)
     jest.clearAllMocks()
+    mockPrisma.$transaction.mockImplementation(
+      async (cb: (tx: typeof mockPrisma) => Promise<unknown>) => cb(mockPrisma),
+    )
   })
 
   describe('buildTree', () => {
@@ -299,6 +311,62 @@ describe('OrganizationsService', () => {
       mockPrisma.organization.findFirst.mockResolvedValue(null)
 
       await expect(service.remove('non-existent', 'company-1')).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  describe('부서 문서담당자 (다중)', () => {
+    it('getDocManagers: 조직이 없으면 404', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(null)
+      await expect(service.getDocManagers('company-1', 'org-x')).rejects.toThrow(NotFoundException)
+    })
+
+    it('setDocManagers: 타사 직원 포함 시 EMPLOYEE_NOT_FOUND', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
+      mockPrisma.employee.count.mockResolvedValue(1) // 2명 중 1명만 자사
+
+      await expect(
+        service.setDocManagers('company-1', 'org-1', ['emp-1', 'emp-2']),
+      ).rejects.toMatchObject({ response: { code: 'EMPLOYEE_NOT_FOUND' } })
+    })
+
+    it('setDocManagers: 집합 교체 + sortOrder 부여 + 대표를 docManagerId에 동기화', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
+      mockPrisma.employee.count.mockResolvedValue(2)
+      mockPrisma.organizationDocManager.deleteMany.mockResolvedValue({ count: 0 })
+      mockPrisma.organizationDocManager.createMany.mockResolvedValue({ count: 2 })
+      mockPrisma.organization.update.mockResolvedValue(makeOrg())
+      mockPrisma.organizationDocManager.findMany.mockResolvedValue([])
+
+      await service.setDocManagers('company-1', 'org-1', ['emp-1', 'emp-2'])
+
+      expect(mockPrisma.organizationDocManager.deleteMany).toHaveBeenCalledWith({
+        where: { organizationId: 'org-1' },
+      })
+      expect(mockPrisma.organizationDocManager.createMany).toHaveBeenCalledWith({
+        data: [
+          { organizationId: 'org-1', employeeId: 'emp-1', sortOrder: 0 },
+          { organizationId: 'org-1', employeeId: 'emp-2', sortOrder: 1 },
+        ],
+      })
+      expect(mockPrisma.organization.update).toHaveBeenCalledWith({
+        where: { id: 'org-1' },
+        data: { docManagerId: 'emp-1' },
+      })
+    })
+
+    it('setDocManagers: 빈 목록이면 docManagerId=null로 해제', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
+      mockPrisma.organizationDocManager.deleteMany.mockResolvedValue({ count: 1 })
+      mockPrisma.organization.update.mockResolvedValue(makeOrg())
+      mockPrisma.organizationDocManager.findMany.mockResolvedValue([])
+
+      await service.setDocManagers('company-1', 'org-1', [])
+
+      expect(mockPrisma.organizationDocManager.createMany).not.toHaveBeenCalled()
+      expect(mockPrisma.organization.update).toHaveBeenCalledWith({
+        where: { id: 'org-1' },
+        data: { docManagerId: null },
+      })
     })
   })
 })
