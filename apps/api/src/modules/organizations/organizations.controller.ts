@@ -21,6 +21,7 @@ import { CompanyId } from '../../common/decorators/company-id.decorator'
 import { AccessLevel } from '@ablework/shared-constants'
 import { CreateOrganizationSchema, CreateOrganizationDto } from './dto/create-organization.dto'
 import { UpdateOrganizationSchema, UpdateOrganizationDto } from './dto/update-organization.dto'
+import { SetDocManagersSchema, SetDocManagersDto } from './dto/set-doc-managers.dto'
 
 @ApiTags('organizations')
 @Controller('organizations')
@@ -66,5 +67,25 @@ export class OrganizationsController {
   @ApiOperation({ summary: '조직 소프트 삭제 (GENERAL_ADMIN 이상)' })
   remove(@Param('id') id: string, @CompanyId() companyId: string) {
     return this.organizationsService.remove(id, companyId)
+  }
+
+  // ── AP-04-07 부서 문서담당자(다중) ─────────────────────────────────────────────
+
+  @Get(':id/doc-managers')
+  @ApiOperation({ summary: '부서 문서담당자 목록 (대표=첫 번째)' })
+  getDocManagers(@Param('id') id: string, @CompanyId() companyId: string) {
+    return this.organizationsService.getDocManagers(companyId, id)
+  }
+
+  @Patch(':id/doc-managers')
+  @UseGuards(RolesGuard)
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '부서 문서담당자 집합 교체 (GENERAL_ADMIN 이상)' })
+  setDocManagers(
+    @Param('id') id: string,
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(SetDocManagersSchema)) dto: SetDocManagersDto,
+  ) {
+    return this.organizationsService.setDocManagers(companyId, id, dto.employeeIds)
   }
 }

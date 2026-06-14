@@ -96,6 +96,9 @@ const mockPrisma = {
   organization: {
     findMany: jest.fn(),
   },
+  organizationDocManager: {
+    findMany: jest.fn(),
+  },
   $transaction: jest.fn(),
 }
 
@@ -622,14 +625,25 @@ describe('DocumentsService', () => {
       expect(where.approvalLines.some.steps.some).toEqual({ role: 'REFERENCE', assigneeId: DRAFTER_ID })
     })
 
-    it('dept-docs 박스: 내가 부서 담당자인 부서협조/부서수신 문서만 조회한다', async () => {
+    it('dept-docs 박스: 내가 담당자(assignee 또는 담당 부서)인 부서협조/부서수신 문서를 조회한다', async () => {
+      mockPrisma.organizationDocManager.findMany.mockResolvedValue([{ organizationId: 'org-7' }])
       await service.findAll(COMPANY_ID, { box: 'dept-docs', page: 1, limit: 20 }, makeUser())
 
       const where = mockPrisma.document.findMany.mock.calls[0][0].where
-      expect(where.approvalLines.some.steps.some).toEqual({
-        role: { in: ['DEPT_COLLABORATOR', 'DEPT_RECEIVER'] },
-        assigneeId: DRAFTER_ID,
-      })
+      const stepSome = where.approvalLines.some.steps.some
+      expect(stepSome.role).toEqual({ in: ['DEPT_COLLABORATOR', 'DEPT_RECEIVER'] })
+      expect(stepSome.OR).toEqual([
+        { assigneeId: DRAFTER_ID },
+        { organizationId: { in: ['org-7'] } },
+      ])
+    })
+
+    it('dept-docs 박스: 담당 부서가 없으면 assignee 매칭만 사용한다', async () => {
+      mockPrisma.organizationDocManager.findMany.mockResolvedValue([])
+      await service.findAll(COMPANY_ID, { box: 'dept-docs', page: 1, limit: 20 }, makeUser())
+
+      const where = mockPrisma.document.findMany.mock.calls[0][0].where
+      expect(where.approvalLines.some.steps.some.OR).toEqual([{ assigneeId: DRAFTER_ID }])
     })
 
     it('ledger 박스: GENERAL_ADMIN 미만은 403', async () => {

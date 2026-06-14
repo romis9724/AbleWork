@@ -30,7 +30,16 @@ erDiagram
     int    depth
     int    sort_order
     uuid   approver_id FK
+    uuid   doc_manager_id FK
+    string address
     bool   is_active
+  }
+
+  organization_doc_managers {
+    uuid   id PK
+    uuid   organization_id FK
+    uuid   employee_id FK
+    int    sort_order
   }
 
   company_holidays {
@@ -52,6 +61,8 @@ erDiagram
 
   companies ||--o{ organizations : "has"
   organizations ||--o{ organizations : "has children"
+  organizations ||--o{ organization_doc_managers : "has managers"
+  employees ||--o{ organization_doc_managers : "manages dept docs"
   companies ||--o{ company_holidays : "has"
   companies ||--o{ company_settings : "has"
 
@@ -771,7 +782,7 @@ erDiagram
 
 ---
 
-## 테이블 목록 (54개 도메인 테이블)
+## 테이블 목록 (55개 도메인 테이블)
 
 | # | 테이블 | 설명 |
 |---|---|---|

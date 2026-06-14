@@ -805,18 +805,29 @@ export class DocumentsService {
         return { where: stepBoxWhere(StepRole.VIEWER), myAssigneeIds }
       case 'receiver':
         return { where: stepBoxWhere(StepRole.RECEIVER), myAssigneeIds }
-      case 'dept-docs':
-        // AP-05-04 부서문서함: 내가 부서 담당자(상신 시 해석된 assignee)인 부서협조/부서수신 문서
+      case 'dept-docs': {
+        // AP-05-04 부서문서함: 내가 부서 담당자인 부서협조/부서수신 문서.
+        // 다중 담당자 지원 — 상신 시 해석된 assignee(대표)뿐 아니라 내가 담당자인 부서의 step도 포함.
+        const managedOrgs = await this.prisma.organizationDocManager.findMany({
+          where: { employeeId: me },
+          select: { organizationId: true },
+        })
+        const managedOrgIds = managedOrgs.map((m: { organizationId: string }) => m.organizationId)
+        const stepMatch: Record<string, unknown>[] = [{ assigneeId: me }]
+        if (managedOrgIds.length) {
+          stepMatch.push({ organizationId: { in: managedOrgIds } })
+        }
         return {
           where: {
             companyId,
             status: { not: DocStatus.DRAFT },
             approvalLines: {
-              some: { steps: { some: { role: { in: DEPT_ROLES }, assigneeId: me } } },
+              some: { steps: { some: { role: { in: DEPT_ROLES }, OR: stepMatch } } },
             },
           },
           myAssigneeIds,
         }
+      }
       case 'status': {
         // AP-05-06 결재 현황 (관리자 — 카카오워크 동일: 상신/진행중/반려만)
         if (!this.isCompanyAdmin(user)) {
@@ -999,11 +1010,20 @@ export class DocumentsService {
           .map((s) => s.organizationId as string),
       ),
     )
-    const orgMap = new Map<string, { docManagerId: string | null; approverId: string | null }>()
+    const orgMap = new Map<
+      string,
+      { primaryManagerId: string | null; docManagerId: string | null; approverId: string | null }
+    >()
     if (deptOrgIds.length) {
       const orgs = await this.prisma.organization.findMany({
         where: { id: { in: deptOrgIds }, companyId, isActive: true },
-        select: { id: true, docManagerId: true, approverId: true },
+        select: {
+          id: true,
+          docManagerId: true,
+          approverId: true,
+          // 다중 문서담당자 — sortOrder 최소(대표)를 1차 assignee로 사용
+          docManagers: { orderBy: { sortOrder: 'asc' }, select: { employeeId: true } },
+        },
       })
       if (orgs.length !== deptOrgIds.length) {
         throw new BadRequestException({
@@ -1012,15 +1032,19 @@ export class DocumentsService {
         })
       }
       for (const org of orgs) {
-        orgMap.set(org.id, { docManagerId: org.docManagerId, approverId: org.approverId })
+        orgMap.set(org.id, {
+          primaryManagerId: org.docManagers?.[0]?.employeeId ?? null,
+          docManagerId: org.docManagerId,
+          approverId: org.approverId,
+        })
       }
     }
 
-    // ③ 해석
+    // ③ 해석 — 부서 step assignee = 대표 문서담당자(다중) ?? 단일 docManagerId(레거시) ?? 팀장
     return steps.map((s) => {
       if (DEPT_ROLES.includes(s.role)) {
         const org = orgMap.get(s.organizationId as string)
-        const assignee = org?.docManagerId ?? org?.approverId
+        const assignee = org?.primaryManagerId ?? org?.docManagerId ?? org?.approverId
         if (!assignee) {
           throw new BadRequestException({
             code: 'DEPT_NO_MANAGER',

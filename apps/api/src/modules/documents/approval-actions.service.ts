@@ -15,6 +15,7 @@ import {
   APPROVAL_FLOW_ROLES,
   RECEIVER_ROLES,
   CANCEL_ON_REJECT_ROLES,
+  DEPT_ROLES,
   HistoryAction,
 } from './documents.constants'
 import { ApprovalCommentDto } from './dto/document.dto'
@@ -24,6 +25,7 @@ type StepRecord = {
   lineId: string
   role: string
   assigneeId: string
+  organizationId: string | null
   stepOrder: number
   status: string
   isProxy: boolean
@@ -716,6 +718,17 @@ export class ApprovalActionsService {
   private async resolveActor(step: StepRecord, actor: JwtPayload): Promise<ActorContext> {
     if (step.assigneeId === actor.employeeId) {
       return { isProxy: false }
+    }
+
+    // 부서 step(부서협조/부서수신): 해당 부서 문서담당자(다중) 누구나 처리 가능
+    if (DEPT_ROLES.includes(step.role) && step.organizationId) {
+      const isManager = await this.prisma.organizationDocManager.findFirst({
+        where: { organizationId: step.organizationId, employeeId: actor.employeeId },
+        select: { id: true },
+      })
+      if (isManager) {
+        return { isProxy: false }
+      }
     }
 
     const setting = await this.prisma.proxySettings.findFirst({
