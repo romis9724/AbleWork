@@ -2,14 +2,20 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { NOTIFIABLE_EVENTS } from '@ablework/shared-constants'
 import { DiscordWebhookService } from './discord-webhook.service'
+import { MailService } from '../mail/mail.service'
 import { PrismaService } from '../../prisma/prisma.service'
+
+/** 이벤트명 → 한국어 라벨 (email/in_app 제목·본문 구성용) */
+const EVENT_LABEL: Record<string, string> = Object.fromEntries(
+  NOTIFIABLE_EVENTS.map((e) => [e.event, e.label]),
+)
 
 /**
  * 알림 이벤트 구독자.
  *
  * 구독 대상은 단일 출처 `NOTIFIABLE_EVENTS`(@ablework/shared-constants)에서 부트스트랩 시 일괄 등록한다.
- * 개별 @OnEvent 데코레이터를 쓰지 않는 이유: 이벤트가 늘 때마다 핸들러를 누락하는 드리프트(고아 이벤트)를 막기 위함.
- * 새 알림 이벤트는 NOTIFIABLE_EVENTS에 추가하면 발송·기본규칙·FE 토글이 함께 따라온다.
+ * 채널별 디스패치: discord(회사 webhook 브로드캐스트) / email(수신자 개인 메일) / in_app(사내 메시지함).
+ * email·in_app 수신자는 payload에서 assigneeId(결재 차례) ?? drafterId(기안자) ?? requesterId(신청자) 순으로 해석한다.
  */
 @Injectable()
 export class NotificationListener implements OnApplicationBootstrap {
@@ -19,6 +25,7 @@ export class NotificationListener implements OnApplicationBootstrap {
     private readonly discordWebhookService: DiscordWebhookService,
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly mailService: MailService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -48,21 +55,11 @@ export class NotificationListener implements OnApplicationBootstrap {
         let errorMessage: string | undefined
 
         try {
-          if (rule.channelType === 'discord' && rule.webhookUrl) {
-            const embed = {
-              ...(typeof rule.embedTemplate === 'object' && rule.embedTemplate !== null
-                ? (rule.embedTemplate as object)
-                : {}),
-              ...payload,
-            }
-            await this.discordWebhookService.send(rule.webhookUrl, embed)
-          }
+          await this.dispatch(rule, eventType, payload, companyId)
         } catch (err) {
           status = 'failed'
           errorMessage = err instanceof Error ? err.message : String(err)
-          this.logger.error(
-            `알림 발송 실패 — rule=${rule.id} event=${eventType}: ${errorMessage}`,
-          )
+          this.logger.error(`알림 발송 실패 — rule=${rule.id} event=${eventType}: ${errorMessage}`)
         }
 
         try {
@@ -89,5 +86,70 @@ export class NotificationListener implements OnApplicationBootstrap {
         `알림 처리 실패 — event=${eventType}: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
+  }
+
+  /** 채널별 발송 디스패치 */
+  private async dispatch(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rule: any,
+    eventType: string,
+    payload: Record<string, unknown>,
+    companyId: string,
+  ): Promise<void> {
+    if (rule.channelType === 'discord') {
+      if (!rule.webhookUrl) return
+      const embed = {
+        ...(typeof rule.embedTemplate === 'object' && rule.embedTemplate !== null
+          ? (rule.embedTemplate as object)
+          : {}),
+        ...payload,
+      }
+      await this.discordWebhookService.send(rule.webhookUrl, embed)
+      return
+    }
+
+    // email / in_app — 개인 수신자 해석 필요
+    const recipientId = this.resolveRecipientId(payload)
+    if (!recipientId) return // 수신자를 특정할 수 없으면 skip (discord 브로드캐스트가 보완)
+
+    const { title, content } = this.buildMessage(eventType, payload)
+
+    if (rule.channelType === 'email') {
+      const employee = await this.prisma.employee.findFirst({
+        where: { id: recipientId, companyId },
+        select: { user: { select: { email: true } } },
+      })
+      const email = employee?.user?.email
+      if (email) await this.mailService.sendMessageMail(email, title, content)
+      return
+    }
+
+    if (rule.channelType === 'in_app') {
+      await this.prisma.message.create({
+        data: {
+          companyId,
+          type: 'auto',
+          title,
+          content,
+          recipients: { create: [{ recipientId }] },
+        },
+      })
+    }
+  }
+
+  /** payload에서 알림 수신 직원 id 해석 */
+  private resolveRecipientId(payload: Record<string, unknown>): string | null {
+    const candidate = payload.assigneeId ?? payload.drafterId ?? payload.requesterId
+    return typeof candidate === 'string' && candidate ? candidate : null
+  }
+
+  /** email/in_app 제목·본문 구성 (이벤트 라벨 + payload.title) */
+  private buildMessage(
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): { title: string; content: string } {
+    const label = EVENT_LABEL[eventType] ?? eventType
+    const subject = typeof payload.title === 'string' && payload.title ? ` — ${payload.title}` : ''
+    return { title: `[알림] ${label}`, content: `${label}${subject}` }
   }
 }
