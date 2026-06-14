@@ -33,14 +33,15 @@ import { ShiftFilterSchema, ShiftFilterDto } from './dto/shift-filter.dto'
 export class ShiftsController {
   constructor(private readonly shiftsService: ShiftsService) {}
 
-  // HR-04-04 근무일정 조회
+  // HR-04-04 근무일정 조회 (비관리자는 본인 일정만 — 서버측 스코핑)
   @Get()
-  @ApiOperation({ summary: '근무일정 조회' })
+  @ApiOperation({ summary: '근무일정 조회 (EMPLOYEE는 본인 일정만)' })
   findAll(
     @CompanyId() companyId: string,
     @Query(new ZodValidationPipe(ShiftFilterSchema)) filter: ShiftFilterDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.shiftsService.findAll(companyId, filter)
+    return this.shiftsService.findAll(companyId, filter, user)
   }
 
   // HR-04-05 단일 근무일정 생성

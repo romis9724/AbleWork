@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
-import { AccessLevel, ShiftStatus } from '@ablework/shared-constants'
+import { AccessLevel, ACCESS_LEVEL_HIERARCHY, ShiftStatus } from '@ablework/shared-constants'
 import { CreateShiftDto, UpdateShiftDto } from './dto/create-shift.dto'
 import { BulkCreateShiftDto } from './dto/bulk-create-shift.dto'
 import { ShiftFilterDto } from './dto/shift-filter.dto'
@@ -46,12 +46,18 @@ export class ShiftsService {
 
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
 
-  async findAll(companyId: string, filter: ShiftFilterDto) {
+  async findAll(companyId: string, filter: ShiftFilterDto, user: JwtPayload) {
     const { employeeId, organizationId, startAt, endAt } = filter
+
+    // 보안(C6-4): ORG_ADMIN 미만은 본인 일정만 조회하도록 employeeId를 서버측에서 강제한다.
+    // 관리자(ORG_ADMIN+)는 회사/조직 범위 조회 허용.
+    const isManager =
+      ACCESS_LEVEL_HIERARCHY[user.accessLevel] >= ACCESS_LEVEL_HIERARCHY[AccessLevel.ORG_ADMIN]
+    const scopedEmployeeId = isManager ? employeeId : user.employeeId
 
     const where: Record<string, unknown> = {
       organization: { companyId },
-      ...(employeeId && { employeeId }),
+      ...(scopedEmployeeId && { employeeId: scopedEmployeeId }),
       ...(organizationId && { organizationId }),
       ...((startAt || endAt) && {
         startAt: {

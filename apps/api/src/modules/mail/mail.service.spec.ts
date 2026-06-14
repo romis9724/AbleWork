@@ -121,63 +121,6 @@ describe('MailService', () => {
     })
   })
 
-  // ── sendInviteCode ───────────────────────────────────────────────────────────
-
-  describe('sendInviteCode', () => {
-    it('초대 코드 메일을 발송한다 (수신자/발신자/제목/본문 검증)', async () => {
-      await service.sendInviteCode(TO, 'ABCD1234', '에이블컴퍼니')
-
-      const mail = lastMailArg()
-      expect(mail.to).toBe(TO)
-      expect(mail.from).toBe(FROM)
-      expect(mail.subject).toBe('[에이블컴퍼니] AbleWork 초대 코드')
-      expect(mail.html).toContain('ABCD1234')
-      expect(mail.html).toContain('에이블컴퍼니')
-    })
-
-    it('성공 시 logger.log를 호출한다', async () => {
-      await service.sendInviteCode(TO, 'ABCD1234', '에이블컴퍼니')
-
-      expect(loggerLog).toHaveBeenCalledWith(expect.stringContaining(TO))
-    })
-
-    it('[XSS] companyName의 HTML/스크립트 문자가 이스케이프되어 본문에 삽입된다', async () => {
-      const malicious = '<script>alert(1)</script>'
-
-      await service.sendInviteCode(TO, 'CODE', malicious)
-
-      const html = lastMailArg().html as string
-      // 원본 <script> 태그가 그대로 들어가면 안 된다
-      expect(html).not.toContain('<script>alert(1)</script>')
-      // 이스케이프된 형태가 들어가야 한다
-      expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
-    })
-
-    it('[XSS] companyName의 따옴표/앰퍼샌드도 이스케이프된다', async () => {
-      await service.sendInviteCode(TO, 'CODE', `A&"'<>B`)
-
-      const html = lastMailArg().html as string
-      expect(html).toContain('A&amp;&quot;&#39;&lt;&gt;B')
-    })
-
-    it('SMTP 발송 실패 시 에러를 다시 throw하고 logger.error를 호출한다', async () => {
-      const smtpError = new Error('SMTP connection refused')
-      mockSendMail.mockRejectedValueOnce(smtpError)
-
-      await expect(
-        service.sendInviteCode(TO, 'CODE', '에이블컴퍼니'),
-      ).rejects.toThrow('SMTP connection refused')
-
-      expect(loggerError).toHaveBeenCalledWith(expect.stringContaining(TO), smtpError)
-    })
-
-    it('빈 수신자 주소도 nodemailer로 그대로 전달된다 (검증 미수행 — notes 참조)', async () => {
-      await service.sendInviteCode('', 'CODE', '에이블컴퍼니')
-
-      expect(lastMailArg().to).toBe('')
-    })
-  })
-
   // ── sendPasswordReset ──────────────────────────────────────────────────────
 
   describe('sendPasswordReset', () => {

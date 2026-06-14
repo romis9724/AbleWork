@@ -91,6 +91,52 @@ describe('ShiftsService', () => {
     )
   })
 
+  // ── findAll (조회 스코핑, C6-4 보안) ─────────────────────────────────────────
+
+  describe('findAll', () => {
+    beforeEach(() => {
+      mockPrisma.shift.findMany.mockResolvedValue([])
+    })
+
+    it('EMPLOYEE는 filter.employeeId를 무시하고 본인 일정만 조회한다', async () => {
+      await service.findAll(
+        COMPANY_ID,
+        { employeeId: 'someone-else' },
+        makeRequester(AccessLevel.EMPLOYEE, 'me-1'),
+      )
+
+      const where = mockPrisma.shift.findMany.mock.calls[0][0].where
+      expect(where.employeeId).toBe('me-1') // 타인 id 무시, 본인으로 강제
+      expect(where.organization).toEqual({ companyId: COMPANY_ID })
+    })
+
+    it('EMPLOYEE가 필터를 생략해도 본인 일정만 조회한다 (전직원 노출 차단)', async () => {
+      await service.findAll(COMPANY_ID, {}, makeRequester(AccessLevel.EMPLOYEE, 'me-1'))
+
+      const where = mockPrisma.shift.findMany.mock.calls[0][0].where
+      expect(where.employeeId).toBe('me-1')
+    })
+
+    it('ORG_ADMIN은 filter.employeeId로 타 직원 일정을 조회할 수 있다', async () => {
+      await service.findAll(
+        COMPANY_ID,
+        { employeeId: 'target-emp' },
+        makeRequester(AccessLevel.ORG_ADMIN, 'admin-1'),
+      )
+
+      const where = mockPrisma.shift.findMany.mock.calls[0][0].where
+      expect(where.employeeId).toBe('target-emp')
+    })
+
+    it('ORG_ADMIN이 employeeId 필터 없이 조회하면 회사 전체(employeeId 무제한)를 조회한다', async () => {
+      await service.findAll(COMPANY_ID, {}, makeRequester(AccessLevel.GENERAL_ADMIN, 'admin-1'))
+
+      const where = mockPrisma.shift.findMany.mock.calls[0][0].where
+      expect(where.employeeId).toBeUndefined()
+      expect(where.organization).toEqual({ companyId: COMPANY_ID })
+    })
+  })
+
   // ── create ───────────────────────────────────────────────────────────────────
 
   describe('create', () => {
