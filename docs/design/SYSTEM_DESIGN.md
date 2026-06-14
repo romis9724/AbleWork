@@ -950,6 +950,11 @@ notification_rules {
 - **최종결재자=협조자 금지**: 마지막 APPROVER 단계 담당자가 동일 결재선의 협조자(AGREEMENT/부서협조)로도 지정되면 `FINAL_APPROVER_IS_COLLABORATOR`.
 - (follow-up) **소속부서 팀장 동적 결재자 토큰**: 상신 시 기안자 소속부서 팀장으로 해석되는 동적 단계는 `ApprovalStep.assigneeId` NOT NULL 제약 + 상신 시점 drafter-org 해석이 필요해 별도 단계로 보류.
 
+**전자결재 공통 관리 정책(AP-01 공통)**:
+- **문서번호 `{ABBR}` 토큰**: 채번 패턴(`DocumentNumberRule.pattern`)에서 `{ABBR}`는 양식의 `abbreviation`으로 치환(기존 `{YYYY}`/`{MM}`/`{SEQ:n}`에 추가). 예: `{ABBR}-{YYYY}-{SEQ:4}`.
+- **전단계 반려 정책 토글**: `approval.enable_prev_step_reject`(기본 `true`). OFF면 `returnToPrevious`가 `APPROVAL_PREV_REJECT_DISABLED`(400)로 차단. 회사 설정 > 전자결재 탭에서 토글.
+- (follow-up) `enable_upper_line_change`(상위 결재선 변경 허용)는 해당 기능(공람/협조 사후추가, AP-기안결재 정합 단계)과 함께, `Employee.nickname` 표시형식은 별도 단계로 진행.
+
 ### 6.5 결재 · 요청 보안 불변식
 
 | 불변식 | 규칙 | 에러코드 |

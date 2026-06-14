@@ -682,6 +682,12 @@ export class DocumentsService {
     const year = now.getFullYear()
 
     const rule = await tx.documentNumberRule.findFirst({ where: { companyId, formId } })
+    // {ABBR} 토큰 치환용 — 양식 약어 (없으면 빈 문자열)
+    const form = await tx.documentForm.findFirst({
+      where: { id: formId, companyId },
+      select: { abbreviation: true },
+    })
+    const abbr = form?.abbreviation ?? ''
 
     if (!rule) {
       const prefix = `DOC-${year}-`
@@ -716,14 +722,15 @@ export class DocumentsService {
     })
     const updatedRule = await tx.documentNumberRule.findFirst({ where: { id: rule.id } })
 
-    return this.renderDocNumber(rule.pattern, now, updatedRule.currentSeq)
+    return this.renderDocNumber(rule.pattern, now, updatedRule.currentSeq, abbr)
   }
 
-  /** pattern 토큰 치환: {YYYY}, {MM}, {SEQ:n}(0패딩 n자리, n 생략 시 패딩 없음) */
-  private renderDocNumber(pattern: string, date: Date, seq: number): string {
+  /** pattern 토큰 치환: {YYYY}, {MM}, {SEQ:n}(0패딩 n자리, n 생략 시 패딩 없음), {ABBR}(양식 약어) */
+  private renderDocNumber(pattern: string, date: Date, seq: number, abbr = ''): string {
     return pattern
       .replace(/\{YYYY\}/g, String(date.getFullYear()))
       .replace(/\{MM\}/g, String(date.getMonth() + 1).padStart(2, '0'))
+      .replace(/\{ABBR\}/g, abbr)
       .replace(/\{SEQ(?::(\d+))?\}/g, (_match, width?: string) =>
         width ? String(seq).padStart(Number(width), '0') : String(seq),
       )

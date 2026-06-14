@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
+import { CompanySettingsService } from '../companies/company-settings.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { EVENTS } from '../../events/domain-events'
 import {
@@ -56,6 +57,7 @@ export class ApprovalActionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly settings: CompanySettingsService,
   ) {}
 
   // ── AP-03-01 승인 ────────────────────────────────────────────────────────────
@@ -307,6 +309,20 @@ export class ApprovalActionsService {
     this.assertStepRole(step, APPROVAL_FLOW_ROLES)
     this.assertStepPending(step)
     await this.resolveActor(step, actor)
+
+    // AP 정책: 회사 설정에서 전단계 반려를 비활성화하면 차단
+    const allowed = await this.settings.get<boolean>(
+      companyId,
+      'approval',
+      'enable_prev_step_reject',
+      true,
+    )
+    if (!allowed) {
+      throw new BadRequestException({
+        code: 'APPROVAL_PREV_REJECT_DISABLED',
+        message: '회사 정책상 전단계 반려가 비활성화되어 있습니다.',
+      })
+    }
 
     // 직전 결재 단계: stepOrder가 바로 아래이고 결재 처리(APPROVED류)된 단계
     const previous = steps

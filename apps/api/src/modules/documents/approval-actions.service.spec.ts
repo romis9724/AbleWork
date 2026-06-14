@@ -7,6 +7,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { ApprovalActionsService } from './approval-actions.service'
 import { PrismaService } from '../../prisma/prisma.service'
+import { CompanySettingsService } from '../companies/company-settings.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { AccessLevel } from '@ablework/shared-constants'
 
@@ -86,6 +87,7 @@ const mockPrisma = {
 }
 
 const mockEvents = { emit: jest.fn() }
+const mockSettings = { get: jest.fn().mockResolvedValue(true) }
 
 describe('ApprovalActionsService', () => {
   let service: ApprovalActionsService
@@ -96,11 +98,13 @@ describe('ApprovalActionsService', () => {
         ApprovalActionsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
+        { provide: CompanySettingsService, useValue: mockSettings },
       ],
     }).compile()
 
     service = module.get<ApprovalActionsService>(ApprovalActionsService)
     jest.clearAllMocks()
+    mockSettings.get.mockResolvedValue(true)
 
     mockPrisma.$transaction.mockImplementation(
       async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
@@ -371,6 +375,16 @@ describe('ApprovalActionsService', () => {
         'document.step_pending',
         expect.objectContaining({ assigneeId: 'approver-1' }),
       )
+    })
+
+    it('회사 정책상 전단계 반려 비활성 시 APPROVAL_PREV_REJECT_DISABLED 400', async () => {
+      mockSettings.get.mockResolvedValue(false)
+      mockPrisma.document.findFirst.mockResolvedValueOnce(makeDocument())
+
+      await expect(
+        service.returnToPrevious(COMPANY_ID, DOCUMENT_ID, 'step-2', {}, actor('approver-2')),
+      ).rejects.toMatchObject({ response: { code: 'APPROVAL_PREV_REJECT_DISABLED' } })
+      expect(mockPrisma.approvalStep.update).not.toHaveBeenCalled()
     })
 
     it('첫 결재 단계면 APPROVAL_STEP_NO_PREVIOUS 400', async () => {

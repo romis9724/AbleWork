@@ -29,6 +29,7 @@ const PatchSettingsSchema = z
     autoBreakEnabled: z.boolean().optional(),
     shiftBreakEnabled: z.boolean().optional(),
     approvalServiceEnabled: z.boolean().optional(),
+    approvalPrevStepReject: z.boolean().optional(),
   })
   .strip()
 
