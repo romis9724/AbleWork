@@ -18,12 +18,14 @@ import { useSnackbar } from '@/hooks/useSnackbar'
 import { useAuthStore } from '@/stores/auth.store'
 import {
   useDocument,
+  useDocumentForms,
   useDocumentStepAction,
   useRecallDocument,
   type ApprovalStepDetail,
   type DocumentDetail,
   type StepAction,
 } from '@/lib/query/documents'
+import { readFormFields } from '@ablework/shared-constants'
 import ApprovalTimeline from './ApprovalTimeline'
 import { DocStatusChip } from './StatusChips'
 import { HISTORY_ACTION_LABEL, dateTimeText } from './approval-constants'
@@ -87,6 +89,7 @@ export default function DocumentDetailDialog({
 }: Props) {
   const myEmployeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
   const { data: doc, isLoading } = useDocument(open ? documentId : null)
+  const { data: forms = [] } = useDocumentForms()
   const stepAction = useDocumentStepAction()
   const recallMutation = useRecallDocument()
   const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
@@ -94,6 +97,8 @@ export default function DocumentDetailDialog({
   const [comment, setComment] = useState('')
 
   const steps: ApprovalStepDetail[] = doc?.approvalLines?.flatMap((l) => l.steps) ?? []
+  // 양식 동적 필드(AP-01-02) — 라벨 매핑해 제출 값을 표시
+  const formFields = readFormFields(forms.find((f) => f.id === doc?.form?.id)?.fieldsSchema)
   const isHrLinked = !!doc?.requestId
   const isDrafter = doc?.drafter?.id ? doc.drafter.id === myEmployeeId : isMineHint
 
@@ -221,6 +226,35 @@ export default function DocumentDetailDialog({
                   기안자 {doc.drafter?.name ?? '—'} · 상신일 {dateTimeText(doc.submittedAt)}
                 </Typography>
               </Box>
+
+              {/* 양식 동적 필드 값 (AP-01-02) */}
+              {formFields.length > 0 && (
+                <Box
+                  sx={{
+                    p: 1.5,
+                    bgcolor: 'background.default',
+                    borderRadius: 1,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1,
+                  }}
+                >
+                  {formFields.map((f) => {
+                    const v = (doc.content as Record<string, unknown> | undefined)?.[f.key]
+                    const text = v === undefined || v === null || v === '' ? '—' : String(v)
+                    return (
+                      <Box key={f.key} sx={{ display: 'flex', gap: 1.5 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 96, fontWeight: 600 }}>
+                          {f.label}
+                        </Typography>
+                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{text}</Typography>
+                      </Box>
+                    )
+                  })}
+                </Box>
+              )}
 
               {/* 내용 */}
               <Box
