@@ -25,6 +25,7 @@ import {
 import ApprovalLineBuilder from './ApprovalLineBuilder'
 import DynamicFormFields from './DynamicFormFields'
 import AttachmentPanel from './AttachmentPanel'
+import RichTextEditor from './RichTextEditor'
 import { isDeptRole } from './approval-constants'
 import { readFormFields } from '@ablework/shared-constants'
 
@@ -270,15 +271,12 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
               disabled={busy}
             />
 
-            <TextField
-              label="내용"
-              multiline
-              rows={6}
-              fullWidth
-              placeholder="기안 내용을 입력하세요"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                내용
+              </Typography>
+              <RichTextEditor value={body} onChange={setBody} disabled={busy} />
+            </Box>
 
             {/* 첨부파일 (AP-02-01) — 문서가 저장된 뒤(editingId)에만 첨부 가능 */}
             {editingId ? (

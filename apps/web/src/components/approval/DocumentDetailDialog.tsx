@@ -25,9 +25,10 @@ import {
   type DocumentDetail,
   type StepAction,
 } from '@/lib/query/documents'
-import { readFormFields } from '@ablework/shared-constants'
+import { readFormFields, DocumentFieldType } from '@ablework/shared-constants'
 import ApprovalTimeline from './ApprovalTimeline'
 import AttachmentPanel from './AttachmentPanel'
+import RichTextView from './RichTextView'
 import { DocStatusChip } from './StatusChips'
 import { HISTORY_ACTION_LABEL, dateTimeText } from './approval-constants'
 
@@ -95,6 +96,33 @@ function actionsVisibleForStatus(role: ApprovalStepDetail['role'], status?: stri
   if (role === 'RECEIVER' || role === 'DEPT_RECEIVER') return status === 'APPROVED'
   if (role === 'REFERENCE' || role === 'VIEWER') return true // 비차단 — 상태 무관 확인 가능
   return status === 'PENDING' // APPROVER/AGREEMENT/DEPT_COLLABORATOR
+}
+
+/** table 필드 값(string[][]) 읽기 전용 표 렌더 */
+function FieldTable({ columns, rows }: { columns?: string[]; rows: string[][] }) {
+  const cols = columns?.length ? columns : ['항목', '내용']
+  if (!rows.length) return <Typography variant="body2" color="text.secondary">—</Typography>
+  return (
+    <Box
+      component="table"
+      sx={{
+        borderCollapse: 'collapse',
+        width: '100%',
+        fontSize: 13,
+        '& td, & th': { border: '1px solid', borderColor: 'divider', p: 0.5, textAlign: 'left' },
+        '& th': { bgcolor: 'background.default', fontWeight: 600 },
+      }}
+    >
+      <thead>
+        <tr>{cols.map((c, i) => <th key={i}>{c}</th>)}</tr>
+      </thead>
+      <tbody>
+        {rows.map((row, ri) => (
+          <tr key={ri}>{cols.map((_, ci) => <td key={ci}>{row[ci] ?? ''}</td>)}</tr>
+        ))}
+      </tbody>
+    </Box>
+  )
 }
 
 /** 문서 상세 다이얼로그 — 내용 + 결재선 타임라인 + 이력 + 내 차례 액션 */
@@ -280,13 +308,22 @@ export default function DocumentDetailDialog({
                 >
                   {formFields.map((f) => {
                     const v = (doc.content as Record<string, unknown> | undefined)?.[f.key]
-                    const text = v === undefined || v === null || v === '' ? '—' : String(v)
                     return (
-                      <Box key={f.key} sx={{ display: 'flex', gap: 1.5 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 96, fontWeight: 600 }}>
+                      <Box key={f.key} sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 96, fontWeight: 600, pt: 0.25 }}>
                           {f.label}
                         </Typography>
-                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{text}</Typography>
+                        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                          {f.type === DocumentFieldType.RICHTEXT ? (
+                            <RichTextView html={typeof v === 'string' ? v : ''} emptyText="—" />
+                          ) : f.type === DocumentFieldType.TABLE ? (
+                            <FieldTable columns={f.columns} rows={Array.isArray(v) ? (v as string[][]) : []} />
+                          ) : (
+                            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                              {v === undefined || v === null || v === '' ? '—' : String(v)}
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
                     )
                   })}
@@ -303,11 +340,9 @@ export default function DocumentDetailDialog({
                   borderColor: 'divider',
                 }}
               >
-                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                  {typeof doc.content?.body === 'string' && doc.content.body.length > 0
-                    ? doc.content.body
-                    : '내용이 없습니다.'}
-                </Typography>
+                <RichTextView
+                  html={typeof doc.content?.body === 'string' ? doc.content.body : ''}
+                />
               </Box>
 
               {/* 첨부파일 (AP-02-01) — 열람 권한자 다운로드 */}

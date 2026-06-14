@@ -13,6 +13,7 @@ import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { DocumentFieldType, type DocumentFieldDef } from '@ablework/shared-constants'
+import RichTextEditor from './RichTextEditor'
 
 interface Props {
   fields: DocumentFieldDef[]
@@ -111,13 +112,18 @@ export default function DynamicFormFields({ fields, values, onChange, disabled }
             return <TextField key={f.key} {...common} multiline rows={3} placeholder={f.placeholder} />
           case DocumentFieldType.RICHTEXT:
             return (
-              <TextField
-                key={f.key}
-                {...common}
-                multiline
-                rows={8}
-                placeholder={f.placeholder ?? '서식 텍스트 (줄바꿈 유지)'}
-              />
+              <Box key={f.key}>
+                <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 600 }}>
+                  {f.label}{f.required && ' *'}
+                </Typography>
+                <RichTextEditor
+                  value={toStr(values[f.key])}
+                  onChange={(html) => onChange(f.key, html)}
+                  disabled={disabled}
+                  minHeight={160}
+                  placeholder={f.placeholder}
+                />
+              </Box>
             )
           case DocumentFieldType.NUMBER:
             return <TextField key={f.key} {...common} type="number" placeholder={f.placeholder} />
