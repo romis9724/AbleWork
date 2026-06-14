@@ -1,8 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useForm, Controller } from 'react-hook-form'
-import { z } from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
+import { useRouter } from 'next/navigation'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -11,16 +9,12 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
-import Divider from '@mui/material/Divider'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
-import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
-import Tab from '@mui/material/Tab'
-import Tabs from '@mui/material/Tabs'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -42,58 +36,14 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import { useConfirm } from '@/hooks/useConfirm'
 import {
   useDocumentForms,
-  useCreateDocumentForm,
   useUpdateDocumentForm,
   useDeleteDocumentForm,
   useDocumentNumberRule,
   useSaveDocumentNumberRule,
-  useSharedApprovalLines,
   useFormCategories,
   type DocumentForm,
 } from '@/lib/query/documents'
-import FormFieldsBuilder from '@/components/approval/FormFieldsBuilder'
-import FormAccessRulesPanel from '@/components/approval/FormAccessRulesPanel'
 import FormCategoryManagerDialog from '@/components/approval/FormCategoryManagerDialog'
-import { useEmployees } from '@/lib/query/employees'
-import { readFormFields, type DocumentFieldDef } from '@ablework/shared-constants'
-
-const VISIBILITY_OPTIONS = [
-  { value: 'PUBLIC', label: '공개 (전 직원)' },
-  { value: 'DEPARTMENT', label: '부서공개 (접근 권한 지정)' },
-  { value: 'PRIVATE', label: '비공개 (담당자/권한 지정)' },
-] as const
-
-const schema = z.object({
-  name: z.string().min(1, '양식명을 입력해주세요'),
-  categoryId: z.string().optional(),
-  visibilityScope: z.enum(['PUBLIC', 'DEPARTMENT', 'PRIVATE']),
-  abbreviation: z.string().max(20).optional(),
-  retentionYears: z.number().int().min(0).max(100),
-  description: z.string().max(1000).optional(),
-  defaultLineId: z.string().optional(),
-  formOwnerId: z.string().optional(),
-  allowZipUpload: z.boolean(),
-  sortOrder: z.number().int().min(0),
-  allowReDraft: z.boolean(),
-  allowPreApproval: z.boolean(),
-})
-
-type FormValues = z.infer<typeof schema>
-
-const DEFAULT_VALUES: FormValues = {
-  name: '',
-  categoryId: '',
-  visibilityScope: 'PUBLIC',
-  abbreviation: '',
-  retentionYears: 0,
-  description: '',
-  defaultLineId: '',
-  formOwnerId: '',
-  allowZipUpload: false,
-  sortOrder: 0,
-  allowReDraft: true,
-  allowPreApproval: false,
-}
 
 const DEFAULT_PATTERN = 'HR-{YYYY}-{SEQ:4}'
 
@@ -187,100 +137,21 @@ function NumberRuleDialog({ form, onClose, onSuccess }: NumberRuleDialogProps) {
   )
 }
 
+/** 기안양식 관리 — 목록 + 문서번호 규칙 + 분류 관리. 등록·수정은 위저드 PAGE로 라우팅 */
 export default function ApprovalFormsPage() {
+  const router = useRouter()
   const { data: forms = [], isLoading } = useDocumentForms()
-  const { data: sharedLines = [] } = useSharedApprovalLines()
   const { data: categories = [] } = useFormCategories()
-  const { data: employeeData } = useEmployees({ limit: 200, isActive: true })
-  const employeeOptions = employeeData?.items ?? []
-  const createMutation = useCreateDocumentForm()
   const updateMutation = useUpdateDocumentForm()
   const deleteMutation = useDeleteDocumentForm()
 
   const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm()
 
-  const [dialog, setDialog] = useState<{ open: boolean; editing: DocumentForm | null }>({
-    open: false,
-    editing: null,
-  })
-  const [dialogTab, setDialogTab] = useState(0)
   const [catManagerOpen, setCatManagerOpen] = useState(false)
   const [ruleTarget, setRuleTarget] = useState<DocumentForm | null>(null)
 
-  const { control, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: DEFAULT_VALUES,
-  })
-  // 동적 입력 필드(fieldsSchema)는 RHF 밖에서 별도 관리 (중첩 동적 배열)
-  const [fields, setFields] = useState<DocumentFieldDef[]>([])
-
   const sortedForms = [...forms].sort((a, b) => a.sortOrder - b.sortOrder)
-
-  const openCreate = () => {
-    reset(DEFAULT_VALUES)
-    setFields([])
-    setDialogTab(0)
-    setDialog({ open: true, editing: null })
-  }
-
-  const openEdit = (form: DocumentForm) => {
-    reset({
-      name: form.name,
-      categoryId: form.categoryId ?? '',
-      visibilityScope: form.visibilityScope ?? 'PUBLIC',
-      abbreviation: form.abbreviation ?? '',
-      retentionYears: form.retentionYears ?? 0,
-      description: form.description ?? '',
-      defaultLineId: form.defaultLineId ?? '',
-      formOwnerId: form.formOwnerId ?? '',
-      allowZipUpload: form.allowZipUpload ?? false,
-      sortOrder: form.sortOrder,
-      allowReDraft: form.allowReDraft,
-      allowPreApproval: form.allowPreApproval,
-    })
-    setFields(readFormFields(form.fieldsSchema))
-    setDialogTab(0)
-    setDialog({ open: true, editing: form })
-  }
-
-  const closeDialog = () => setDialog({ open: false, editing: null })
-
-  const onSubmit = async (values: FormValues) => {
-    const payload = {
-      name: values.name,
-      sortOrder: values.sortOrder,
-      allowReDraft: values.allowReDraft,
-      allowPreApproval: values.allowPreApproval,
-      // AP-01 양식함 분류 (빈 값=미지정 → null)
-      categoryId: values.categoryId || null,
-      // AP-01 공개범위·메타
-      visibilityScope: values.visibilityScope,
-      abbreviation: values.abbreviation || null,
-      retentionYears: values.retentionYears > 0 ? values.retentionYears : null,
-      description: values.description || null,
-      // AP-01-03 양식별 기본 결재선 (빈 값=해제 → null)
-      defaultLineId: values.defaultLineId || null,
-      // AP-01-07 양식 담당자 (빈 값=해제 → null)
-      formOwnerId: values.formOwnerId || null,
-      // AP-01-06 ZIP 첨부 허용
-      allowZipUpload: values.allowZipUpload,
-      // 동적 입력 필드 설계 저장 (AP-01-02)
-      fieldsSchema: { fields },
-    }
-    try {
-      if (dialog.editing) {
-        await updateMutation.mutateAsync({ id: dialog.editing.id, ...payload })
-        showSnackbar('양식이 수정되었습니다.')
-      } else {
-        await createMutation.mutateAsync(payload)
-        showSnackbar('양식이 추가되었습니다.')
-      }
-      closeDialog()
-    } catch {
-      showSnackbar('저장 중 오류가 발생했습니다.', 'error')
-    }
-  }
 
   const handleToggleActive = async (form: DocumentForm) => {
     try {
@@ -325,7 +196,11 @@ export default function ApprovalFormsPage() {
             <Button variant="outlined" onClick={() => setCatManagerOpen(true)}>
               분류 관리
             </Button>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => router.push('/admin/approval/forms/new')}
+            >
               양식 추가
             </Button>
           </Box>
@@ -336,7 +211,11 @@ export default function ApprovalFormsPage() {
         <EmptyState
           message="등록된 기안양식이 없습니다."
           action={
-            <Button variant="outlined" startIcon={<AddIcon />} onClick={openCreate}>
+            <Button
+              variant="outlined"
+              startIcon={<AddIcon />}
+              onClick={() => router.push('/admin/approval/forms/new')}
+            >
               첫 양식 추가
             </Button>
           }
@@ -393,7 +272,11 @@ export default function ApprovalFormsPage() {
                         <TagIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <IconButton size="small" onClick={() => openEdit(form)} aria-label="수정">
+                    <IconButton
+                      size="small"
+                      onClick={() => router.push(`/admin/approval/forms/${form.id}/edit`)}
+                      aria-label="수정"
+                    >
                       <EditOutlinedIcon fontSize="small" />
                     </IconButton>
                     <IconButton size="small" color="error" onClick={() => handleDelete(form)} aria-label="삭제">
@@ -406,205 +289,6 @@ export default function ApprovalFormsPage() {
           </Table>
         </TableContainer>
       )}
-
-      {/* 추가/수정 다이얼로그 — 3탭 위저드 (기본정보 / 입력필드 / 권한·옵션) */}
-      <Dialog open={dialog.open} onClose={closeDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>{dialog.editing ? '양식 수정' : '양식 추가'}</DialogTitle>
-        <Tabs
-          value={dialogTab}
-          onChange={(_, v) => setDialogTab(v)}
-          variant="fullWidth"
-          sx={{ borderBottom: 1, borderColor: 'divider' }}
-        >
-          <Tab label="기본정보" />
-          <Tab label="입력필드" />
-          <Tab label="권한·옵션" />
-        </Tabs>
-        <DialogContent dividers>
-          {/* 탭 0 — 기본정보 */}
-          <Box
-            component="form"
-            sx={{ display: dialogTab === 0 ? 'flex' : 'none', flexDirection: 'column', gap: 2.5, pt: 0.5 }}
-          >
-            <Controller
-              name="name"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  label="양식명"
-                  required
-                  fullWidth
-                  error={!!errors.name}
-                  helperText={errors.name?.message}
-                />
-              )}
-            />
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <Controller
-                name="categoryId"
-                control={control}
-                render={({ field }) => (
-                  <TextField {...field} select label="양식함(분류)" sx={{ flexGrow: 1, minWidth: 160 }}>
-                    <MenuItem value="">미분류</MenuItem>
-                    {categories.map((c) => (
-                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                    ))}
-                  </TextField>
-                )}
-              />
-              <Controller
-                name="visibilityScope"
-                control={control}
-                render={({ field }) => (
-                  <TextField {...field} select label="공개범위" sx={{ flexGrow: 1, minWidth: 200 }}>
-                    {VISIBILITY_OPTIONS.map((v) => (
-                      <MenuItem key={v.value} value={v.value}>{v.label}</MenuItem>
-                    ))}
-                  </TextField>
-                )}
-              />
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <Controller
-                name="abbreviation"
-                control={control}
-                render={({ field }) => (
-                  <TextField {...field} label="문서번호 약어" placeholder="예: HR" sx={{ width: 160 }} />
-                )}
-              />
-              <Controller
-                name="retentionYears"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    label="보존연한 (년, 0=미설정)"
-                    type="number"
-                    inputProps={{ min: 0, max: 100 }}
-                    value={field.value}
-                    onChange={(e) => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
-                    sx={{ width: 200 }}
-                  />
-                )}
-              />
-            </Box>
-            <Controller
-              name="description"
-              control={control}
-              render={({ field }) => (
-                <TextField {...field} label="설명" fullWidth multiline rows={2} placeholder="양식 용도 설명 (선택)" />
-              )}
-            />
-            <Controller
-              name="sortOrder"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  label="정렬 순서"
-                  type="number"
-                  fullWidth
-                  inputProps={{ min: 0 }}
-                  value={field.value}
-                  onChange={(e) => field.onChange(e.target.value === '' ? 0 : Number(e.target.value))}
-                  error={!!errors.sortOrder}
-                  helperText={errors.sortOrder?.message}
-                />
-              )}
-            />
-          </Box>
-
-          {/* 탭 1 — 입력필드 설계 */}
-          <Box sx={{ display: dialogTab === 1 ? 'block' : 'none', pt: 0.5 }}>
-            <FormFieldsBuilder fields={fields} onChange={setFields} disabled={isSubmitting} />
-          </Box>
-
-          {/* 탭 2 — 권한·옵션 (결재선/담당자/옵션 + 접근규칙) */}
-          <Box
-            sx={{ display: dialogTab === 2 ? 'flex' : 'none', flexDirection: 'column', gap: 2.5, pt: 0.5 }}
-          >
-            <Controller
-              name="defaultLineId"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  select
-                  label="기본 결재선"
-                  fullWidth
-                  helperText="작성 시 결재선을 비워두면 이 공용 결재선이 기본 적용됩니다 (선택)"
-                >
-                  <MenuItem value="">지정 안 함</MenuItem>
-                  {sharedLines.map((l) => (
-                    <MenuItem key={l.id} value={l.id}>{l.name}</MenuItem>
-                  ))}
-                </TextField>
-              )}
-            />
-            <Controller
-              name="formOwnerId"
-              control={control}
-              render={({ field }) => (
-                <TextField {...field} select label="양식 담당자" fullWidth helperText="이 양식의 관리 담당자 (선택)">
-                  <MenuItem value="">지정 안 함</MenuItem>
-                  {employeeOptions.map((e) => (
-                    <MenuItem key={e.id} value={e.id}>{e.name}</MenuItem>
-                  ))}
-                </TextField>
-              )}
-            />
-            <Controller
-              name="allowReDraft"
-              control={control}
-              render={({ field }) => (
-                <FormControlLabel
-                  control={<Switch checked={field.value} onChange={(e) => field.onChange(e.target.checked)} />}
-                  label="재기안 허용 (반려/회수 후 재상신)"
-                />
-              )}
-            />
-            <Controller
-              name="allowPreApproval"
-              control={control}
-              render={({ field }) => (
-                <FormControlLabel
-                  control={<Switch checked={field.value} onChange={(e) => field.onChange(e.target.checked)} />}
-                  label="전결 허용"
-                />
-              )}
-            />
-            <Controller
-              name="allowZipUpload"
-              control={control}
-              render={({ field }) => (
-                <FormControlLabel
-                  control={<Switch checked={field.value} onChange={(e) => field.onChange(e.target.checked)} />}
-                  label="ZIP 첨부 허용"
-                />
-              )}
-            />
-
-            {/* AP-01-07 접근규칙 — 저장된 양식에만 (formId 필요) */}
-            {dialog.editing ? (
-              <>
-                <Divider sx={{ my: 0.5 }} />
-                <Typography variant="subtitle2" fontWeight={700}>작성 권한 (접근규칙)</Typography>
-                <FormAccessRulesPanel formId={dialog.editing.id} />
-              </>
-            ) : (
-              <Typography variant="caption" color="text.secondary">
-                접근규칙은 양식 저장 후 수정 화면에서 지정할 수 있습니다.
-              </Typography>
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeDialog} disabled={isSubmitting}>취소</Button>
-          <Button variant="contained" onClick={handleSubmit(onSubmit)} disabled={isSubmitting}>
-            {isSubmitting ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
-            {dialog.editing ? '수정' : '추가'}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* 문서번호 규칙 다이얼로그 */}
       {ruleTarget && (

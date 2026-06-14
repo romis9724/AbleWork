@@ -51,8 +51,8 @@
 ### ⚠ 컨테이너 불일치 — 우리가 모달/탭인데 PDF는 PAGE (최우선)
 | # | 화면 | PDF | 우리 | 조치 |
 |---|---|---|---|---|
-| A1 | 기안양식 등록 위저드 | PAGE(3-step 탭+이전/다음/저장 푸터) | Dialog sm 3탭 | `/admin/approval/forms/new` 페이지 승격 |
-| A2 | 기안양식 수정 위저드 | PAGE | 동일 Dialog | `/admin/approval/forms/[id]/edit` 페이지 승격 |
+| A1 | 기안양식 등록 위저드 | PAGE(3-step 탭+이전/다음/저장 푸터) | ✅ 해소 → `DocumentFormWizard` + `/admin/approval/forms/new`. 3-step 탭(기본정보/입력필드/권한·옵션) + 하단 [이전][다음][저장] 푸터. 브라우저 E2E 검증 |
+| A2 | 기안양식 수정 위저드 | PAGE | ✅ 해소 → `/admin/approval/forms/[id]/edit`(동일 위저드, 접근규칙 패널 포함). 목록 페이지는 행 [수정]→라우팅, NumberRuleDialog·분류관리 유지 |
 | A3 | 기안 양식 선택(양식함) | PAGE(카드 그리드) | ✅ 해소 → 신규 작성 진입 시 양식함 카드 그리드(분류 필터) 표시 → 선택 시 작성 폼 전환 |
 | A4 | 기안 작성/상신 | PAGE(풀페이지) | ✅ 해소 → `DocumentComposeForm`(풀페이지: 메타정보표+결재선 섹션+기안내용 WYSIWYG+sticky 푸터) + 라우트 `/me/documents/new`·`/[id]/edit`·`/admin/approval/inbox/new`·`/[id]/edit`. 본인 결재자 지정 금지 가드, 재기안(`?from=`)·이어쓰기·재상신 일원화. `DocumentComposeDialog` 제거 |
 | A5 | 기안 상세 | PAGE(하단 목록/결재 푸터) | ✅ 해소 → `DocumentDetailView` + 라우트 `/me/documents/[id]`·`/admin/approval/inbox/[id]`·`/admin/approval/documents/[id]`·`/admin/approval/status/[id]`. 결재 액션 하단 sticky 푸터(승인/반려/전결/전단계반려/회수/결재취소), drafter 셸은 재상신·재기안 노출. 4개 호출부 네비게이션 전환, `DocumentDetailDialog` 제거 |
@@ -72,7 +72,7 @@
 - **LAYER_POPUP**: 결재선·공람·참조·협조 대상 선택(조직 트리), 결재 처리(결재하기/반송), 기초 분류 CRUD, 공용결재선 검색, 대리결재자, 파괴적 액션 확인(ConfirmDialog).
 - **INLINE_SECTION**: 검색 필터 바, 데이터 테이블+페이지네이션, 설정 토글 행, 첨부 영역.
 - 제외: NumberRuleDialog(PDF 미수록 자체 기능), 상태 전이 다이어그램(설명 삽화).
-- 권장 처리 순서: ✅ **A3/A4(양식함 진입·작성 PAGE)** → ✅ **A5(상세 PAGE)** → ✅ **C1/C2(결재·반송 팝업)** → C3~C7(결재선 설정 팝업) → A1/A2(양식 등록·수정 페이지) → B(문서함 IA).
+- 권장 처리 순서: ✅ **A3/A4(양식함 진입·작성 PAGE)** → ✅ **A5(상세 PAGE)** → ✅ **C1/C2(결재·반송 팝업)** → ✅ **C3(결재선 설정 팝업)** → ✅ **A1/A2(양식 등록·수정 페이지)** → C4~C7(공람/참조 사후지정·상위결재선 변경, BE 필요) → B(문서함 IA).
 
 ## 보류 (NEVER/모델 사유)
 - 공용 결재선 '결재권자' 동적 탭(조직 leader 모델 신규) — 단기 보류, DEPT_* 로 부분 대응.
