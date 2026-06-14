@@ -162,12 +162,22 @@ export interface DocumentDetail {
     name: string
     allowReDraft?: boolean
     allowPreApproval?: boolean
+    allowZipUpload?: boolean
   } | null
   drafter?: { id?: string; name: string } | null
   submittedAt?: string | null
   approvalLines?: { steps: ApprovalStepDetail[] }[]
   history?: DocumentHistoryEntry[]
   requestId?: string | null
+}
+
+export interface DocumentAttachment {
+  id: string
+  fileName: string
+  contentType: string
+  size: number
+  createdAt: string
+  uploader?: { id: string; name: string } | null
 }
 
 export interface ProxySetting {
@@ -426,6 +436,59 @@ export const useDocumentStepAction = () => {
     }) => apiClient.post(`/documents/${documentId}/steps/${stepId}/${action}`, { comment }),
     onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
   })
+}
+
+// ---------- 기안 첨부파일 (AP-02-01) ----------
+
+const ATTACH_KEY = (documentId: string) => [...DOCS_KEY, 'attachments', documentId]
+
+export const useDocumentAttachments = (documentId: string | null) =>
+  useQuery({
+    queryKey: ATTACH_KEY(documentId ?? ''),
+    queryFn: () =>
+      apiClient.get(`/documents/${documentId}/attachments`) as Promise<DocumentAttachment[]>,
+    enabled: !!documentId,
+  })
+
+export const useUploadAttachment = (documentId: string) => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      return apiClient.post(`/documents/${documentId}/attachments`, formData) as Promise<DocumentAttachment>
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ATTACH_KEY(documentId) }),
+  })
+}
+
+export const useDeleteAttachment = (documentId: string) => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (attachmentId: string) =>
+      apiClient.delete(`/documents/${documentId}/attachments/${attachmentId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ATTACH_KEY(documentId) }),
+  })
+}
+
+/** 첨부 다운로드 — Blob 응답을 받아 브라우저 저장 트리거 */
+export async function downloadAttachment(
+  documentId: string,
+  attachmentId: string,
+  fileName: string,
+): Promise<void> {
+  const blob = (await apiClient.get(
+    `/documents/${documentId}/attachments/${attachmentId}/download`,
+    { responseType: 'blob' },
+  )) as unknown as Blob
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 // ---------- 대리결재 설정 ----------

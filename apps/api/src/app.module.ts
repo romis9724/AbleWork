@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule'
 import { BullModule } from '@nestjs/bullmq'
 import { ThrottlerModule } from '@nestjs/throttler'
 import { PrismaModule } from './prisma/prisma.module'
+import { StorageModule } from './common/storage/storage.module'
 import { AuthModule } from './modules/auth/auth.module'
 import { CompaniesModule } from './modules/companies/companies.module'
 import { OrganizationsModule } from './modules/organizations/organizations.module'
@@ -44,6 +45,7 @@ import { MailModule } from './modules/mail/mail.module'
       { name: 'attendance-check' },
     ),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+    StorageModule,
     AuthModule,
     CompaniesModule,
     OrganizationsModule,

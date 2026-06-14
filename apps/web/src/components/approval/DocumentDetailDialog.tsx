@@ -27,6 +27,7 @@ import {
 } from '@/lib/query/documents'
 import { readFormFields } from '@ablework/shared-constants'
 import ApprovalTimeline from './ApprovalTimeline'
+import AttachmentPanel from './AttachmentPanel'
 import { DocStatusChip } from './StatusChips'
 import { HISTORY_ACTION_LABEL, dateTimeText } from './approval-constants'
 
@@ -308,6 +309,14 @@ export default function DocumentDetailDialog({
                     : '내용이 없습니다.'}
                 </Typography>
               </Box>
+
+              {/* 첨부파일 (AP-02-01) — 열람 권한자 다운로드 */}
+              {documentId && (
+                <AttachmentPanel
+                  documentId={documentId}
+                  onError={(m) => showSnackbar(m, 'error')}
+                />
+              )}
 
               {/* 결재선 타임라인 */}
               <Box>
