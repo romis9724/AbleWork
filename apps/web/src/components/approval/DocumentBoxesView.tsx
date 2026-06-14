@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -25,12 +26,17 @@ import { useSnackbar } from '@/hooks/useSnackbar'
 import { useDocuments, type DocumentBox, type DocumentListItem } from '@/lib/query/documents'
 import { BOX_TABS, dateText } from './approval-constants'
 import { DocStatusChip } from './StatusChips'
-import DocumentComposeDialog from './DocumentComposeDialog'
 import DocumentDetailDialog from './DocumentDetailDialog'
 import ProxySettingsDialog from './ProxySettingsDialog'
 
 const PAGE_LIMIT = 20
 const MINE_BOXES: DocumentBox[] = ['draft', 'in_progress', 'completed']
+
+/** 기안 작성/편집 페이지 베이스 경로 — me/admin 각 셸의 라우트 */
+const COMPOSE_BASE: Record<'me' | 'admin', string> = {
+  me: '/me/documents',
+  admin: '/admin/approval/inbox',
+}
 
 interface Props {
   /** me: 모바일형(FAB), admin: 데스크톱형(헤더 버튼) */
@@ -39,13 +45,11 @@ interface Props {
 
 /** 직원 문서함 탭 뷰 — 기안함/진행중/완료/결재함/참조/공람/수신 + 기안 작성 + 대리결재 설정 */
 export default function DocumentBoxesView({ variant }: Props) {
+  const router = useRouter()
+  const composeBase = COMPOSE_BASE[variant]
   const [box, setBox] = useState<DocumentBox>('draft')
   const [page, setPage] = useState(1)
   const [detailId, setDetailId] = useState<string | null>(null)
-  const [composeState, setComposeState] = useState<{ open: boolean; editingId: string | null }>({
-    open: false,
-    editingId: null,
-  })
   const [proxyOpen, setProxyOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
@@ -76,7 +80,7 @@ export default function DocumentBoxesView({ variant }: Props) {
 
   const handleItemClick = (item: DocumentListItem) => {
     if (item.status === 'DRAFT' && isMineBox) {
-      setComposeState({ open: true, editingId: item.id })
+      router.push(`${composeBase}/${item.id}/edit`)
       return
     }
     setDetailId(item.id)
@@ -84,11 +88,10 @@ export default function DocumentBoxesView({ variant }: Props) {
 
   const handleResubmit = (docId: string) => {
     setDetailId(null)
-    setComposeState({ open: true, editingId: docId })
+    router.push(`${composeBase}/${docId}/edit`)
   }
 
-  const openCompose = () => setComposeState({ open: true, editingId: null })
-  const closeCompose = () => setComposeState({ open: false, editingId: null })
+  const openCompose = () => router.push(`${composeBase}/new`)
 
   return (
     <Box sx={{ position: 'relative', pb: variant === 'me' ? 4 : 0 }}>
@@ -204,16 +207,6 @@ export default function DocumentBoxesView({ variant }: Props) {
         >
           <AddIcon />
         </Fab>
-      )}
-
-      {/* 다이얼로그 — 열릴 때만 마운트해 내부 상태 초기화 */}
-      {composeState.open && (
-        <DocumentComposeDialog
-          open
-          editingId={composeState.editingId}
-          onClose={closeCompose}
-          onSuccess={(msg) => showSnackbar(msg)}
-        />
       )}
 
       <DocumentDetailDialog
