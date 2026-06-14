@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { NOTIFIABLE_EVENTS } from '@ablework/shared-constants'
 import { NotificationListener } from './notification.listener'
 import { DiscordWebhookService } from './discord-webhook.service'
+import { MailService } from '../mail/mail.service'
 import { PrismaService } from '../../prisma/prisma.service'
 
 const flush = () => new Promise((resolve) => setImmediate(resolve))
@@ -17,9 +18,12 @@ describe('NotificationListener', () => {
     }),
   }
   const mockDiscord = { send: jest.fn().mockResolvedValue(undefined) }
+  const mockMail = { sendMessageMail: jest.fn().mockResolvedValue(undefined) }
   const mockPrisma = {
     notificationRule: { findMany: jest.fn() },
     notificationLog: { create: jest.fn().mockResolvedValue({}) },
+    employee: { findFirst: jest.fn() },
+    message: { create: jest.fn().mockResolvedValue({}) },
   }
 
   beforeEach(async () => {
@@ -29,6 +33,7 @@ describe('NotificationListener', () => {
         { provide: DiscordWebhookService, useValue: mockDiscord },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEmitter },
+        { provide: MailService, useValue: mockMail },
       ],
     }).compile()
 
@@ -130,6 +135,66 @@ describe('NotificationListener', () => {
       expect(() => handlers['leave.requested']({ companyId: 'company-1' })).not.toThrow()
       await expect(flush()).resolves.toBeUndefined()
       expect(mockDiscord.send).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── M2 email / in_app 채널 ─────────────────────────────────────────────────────
+
+  describe('email / in_app 채널 디스패치', () => {
+    it('email 규칙: 수신자(drafterId) 메일 주소로 발송한다', async () => {
+      mockPrisma.notificationRule.findMany.mockResolvedValue([
+        { id: 'rule-e', channelType: 'email', webhookUrl: null },
+      ])
+      mockPrisma.employee.findFirst.mockResolvedValue({ user: { email: 'drafter@x.io' } })
+      listener.onApplicationBootstrap()
+
+      handlers['document.approved']({ companyId: 'company-1', drafterId: 'emp-1', title: '지출결의서' })
+      await flush()
+
+      expect(mockPrisma.employee.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'emp-1', companyId: 'company-1' } }),
+      )
+      expect(mockMail.sendMessageMail).toHaveBeenCalledWith(
+        'drafter@x.io',
+        expect.stringContaining('문서 최종 승인'),
+        expect.stringContaining('지출결의서'),
+      )
+      expect(mockPrisma.notificationLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'success' }) }),
+      )
+    })
+
+    it('in_app 규칙: 수신자(assigneeId)에게 사내 메시지를 생성한다', async () => {
+      mockPrisma.notificationRule.findMany.mockResolvedValue([
+        { id: 'rule-i', channelType: 'in_app', webhookUrl: null },
+      ])
+      listener.onApplicationBootstrap()
+
+      handlers['document.step_pending']({ companyId: 'company-1', assigneeId: 'approver-9' })
+      await flush()
+
+      expect(mockPrisma.message.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            companyId: 'company-1',
+            recipients: { create: [{ recipientId: 'approver-9' }] },
+          }),
+        }),
+      )
+    })
+
+    it('수신자를 특정할 수 없으면(payload에 대상 없음) email/in_app 발송을 건너뛴다', async () => {
+      mockPrisma.notificationRule.findMany.mockResolvedValue([
+        { id: 'rule-e', channelType: 'email', webhookUrl: null },
+      ])
+      listener.onApplicationBootstrap()
+
+      handlers['leave.accrued']?.({ companyId: 'company-1' }) // 대상 필드 없음
+      // leave.accrued가 미구독이면 무발송 — 대상 필드 없는 임의 이벤트로 대체 검증
+      handlers['document.recalled']({ companyId: 'company-1' }) // drafterId 없음
+      await flush()
+
+      expect(mockMail.sendMessageMail).not.toHaveBeenCalled()
     })
   })
 })
