@@ -38,8 +38,10 @@ interface Props {
   open: boolean
   documentId: string | null
   onClose: () => void
-  /** REJECTED/RECALLED 문서 재상신 — 기안 작성 다이얼로그로 연결 */
+  /** REJECTED/RECALLED 문서 재상신 — 기안 편집 페이지로 연결 */
   onResubmit?: (doc: DocumentDetail) => void
+  /** 완료(APPROVED) 문서 재기안 — 내용 복제 후 신규 작성 페이지로 연결 */
+  onRedraft?: (doc: DocumentDetail) => void
   /** drafter.id 미제공 응답 시 본인 문서 여부 힌트 (기안함/진행중/완료함 등) */
   isMineHint?: boolean
 }
@@ -131,6 +133,7 @@ export default function DocumentDetailDialog({
   documentId,
   onClose,
   onResubmit,
+  onRedraft,
   isMineHint = false,
 }: Props) {
   const myEmployeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
@@ -168,6 +171,12 @@ export default function DocumentDetailDialog({
     isDrafter &&
     (doc?.status === 'REJECTED' || doc?.status === 'RECALLED') &&
     doc?.form?.allowReDraft !== false
+  // 완료 문서 재기안 — 양식이 재기안 허용 시 본인 문서를 복제해 신규 작성 (카카오워크 PDF)
+  const canRedraft =
+    !!onRedraft &&
+    isDrafter &&
+    doc?.status === 'APPROVED' &&
+    doc?.form?.allowReDraft === true
 
   const stepActions =
     !isHrLinked && myPendingStep && actionsVisibleForStatus(myPendingStep.role, doc?.status)
@@ -406,6 +415,11 @@ export default function DocumentDetailDialog({
           {canResubmit && doc && (
             <Button variant="outlined" onClick={() => onResubmit!(doc)} disabled={busy}>
               재상신
+            </Button>
+          )}
+          {canRedraft && doc && (
+            <Button variant="outlined" onClick={() => onRedraft!(doc)} disabled={busy}>
+              재기안
             </Button>
           )}
           {canRecall && (

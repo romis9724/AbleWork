@@ -91,6 +91,11 @@ export default function DocumentBoxesView({ variant }: Props) {
     router.push(`${composeBase}/${docId}/edit`)
   }
 
+  const handleRedraft = (docId: string) => {
+    setDetailId(null)
+    router.push(`${composeBase}/new?from=${docId}`)
+  }
+
   const openCompose = () => router.push(`${composeBase}/new`)
 
   return (
@@ -215,6 +220,7 @@ export default function DocumentBoxesView({ variant }: Props) {
         onClose={() => setDetailId(null)}
         isMineHint={isMineBox}
         onResubmit={(doc) => handleResubmit(doc.id)}
+        onRedraft={(doc) => handleRedraft(doc.id)}
       />
 
       {proxyOpen && (
