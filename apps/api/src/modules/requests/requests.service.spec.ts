@@ -228,6 +228,40 @@ describe('RequestsService', () => {
         'leave.requested',
         expect.objectContaining({ requestId: REQUEST_ID }),
       )
+      // §6.6 #3 적용 규칙 없음 → ruleId null 스냅샷
+      expect(mockPrisma.request.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ ruleId: null }) }),
+      )
+    })
+
+    it('적용 규칙이 있으면 Request.ruleId에 규칙 id를 스냅샷한다 (§6.6 #3)', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' } }
+
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.request.create.mockResolvedValue({ ...basePendingRequest, documentId: null })
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        id: EMPLOYEE_ID,
+        companyId: COMPANY_ID,
+        name: '홍길동',
+        organizations: [{ organizationId: 'org-1' }],
+        positions: [],
+      })
+      // 비자동 규칙 적용 (rule-1) — 기본 결재선 경로
+      mockPrisma.approvalRule.findMany.mockResolvedValue([{ ...baseApprovalRule, isAutoApprove: false }])
+      mockPrisma.documentForm.findFirst.mockResolvedValue({ id: 'form-1', companyId: COMPANY_ID, category: 'leave_request' })
+      mockPrisma.document.create.mockResolvedValue({ id: DOCUMENT_ID, companyId: COMPANY_ID })
+      mockPrisma.approvalLine.create.mockResolvedValue({ id: 'line-1', documentId: DOCUMENT_ID })
+      mockPrisma.approvalStep.create.mockResolvedValue({})
+      mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest })
+
+      await service.createRequest(COMPANY_ID, dto, requester)
+
+      expect(mockPrisma.request.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ ruleId: 'rule-1' }) }),
+      )
     })
 
     it('isAutoApprove 규칙이면 자동 승인되고 leave.approved 이벤트를 emit한다', async () => {

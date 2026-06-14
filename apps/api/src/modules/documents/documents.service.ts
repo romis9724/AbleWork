@@ -238,7 +238,12 @@ export class DocumentsService {
         stepOrder: s.stepOrder,
       }))
 
-    const { steps, sharedLineId } = await this.resolveSubmitSteps(companyId, dto, existingSteps)
+    const { steps, sharedLineId } = await this.resolveSubmitSteps(
+      companyId,
+      dto,
+      existingSteps,
+      document.form.defaultLineId,
+    )
     const resolvedSteps = await this.resolveSteps(companyId, steps)
 
     // docNumber unique 충돌(동시 채번) 시 1회 재시도
@@ -505,34 +510,52 @@ export class DocumentsService {
     return StepStatus.PENDING // REFERENCE/VIEWER — 즉시 확인 가능(비차단)
   }
 
-  /** 상신 결재선 결정 우선순위: dto.steps > sharedLineId > DRAFT 보관 steps */
+  /** 공용 결재선 id로 steps 로드 (자사 소속 + 구성 검증) */
+  private async loadSharedLineSteps(companyId: string, lineId: string): Promise<StepInput[]> {
+    const sharedLine = await this.prisma.sharedApprovalLine.findFirst({
+      where: { id: lineId, companyId },
+    })
+    if (!sharedLine) {
+      throw new NotFoundException({
+        code: 'SHARED_LINE_NOT_FOUND',
+        message: '공용 결재선을 찾을 수 없습니다.',
+      })
+    }
+    const parsed = z.array(StepInputSchema).safeParse(sharedLine.steps)
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'SHARED_LINE_INVALID',
+        message: '공용 결재선의 단계 구성이 올바르지 않습니다.',
+      })
+    }
+    return parsed.data
+  }
+
+  /**
+   * 상신 결재선 결정 우선순위: dto.steps > dto.sharedLineId > DRAFT 보관 steps > 양식 기본 결재선(AP-01-03).
+   */
   private async resolveSubmitSteps(
     companyId: string,
     dto: SubmitDocumentDto,
     existingSteps: StepInput[],
+    formDefaultLineId?: string | null,
   ): Promise<{ steps: StepInput[]; sharedLineId?: string }> {
     let steps: StepInput[] | undefined = dto.steps?.length ? dto.steps : undefined
     let sharedLineId: string | undefined
 
     if (!steps && dto.sharedLineId) {
-      const sharedLine = await this.prisma.sharedApprovalLine.findFirst({
-        where: { id: dto.sharedLineId, companyId },
-      })
-      if (!sharedLine) {
-        throw new NotFoundException({
-          code: 'SHARED_LINE_NOT_FOUND',
-          message: '공용 결재선을 찾을 수 없습니다.',
-        })
-      }
-      const parsed = z.array(StepInputSchema).safeParse(sharedLine.steps)
-      if (!parsed.success) {
-        throw new BadRequestException({
-          code: 'SHARED_LINE_INVALID',
-          message: '공용 결재선의 단계 구성이 올바르지 않습니다.',
-        })
-      }
-      steps = parsed.data
-      sharedLineId = sharedLine.id
+      steps = await this.loadSharedLineSteps(companyId, dto.sharedLineId)
+      sharedLineId = dto.sharedLineId
+    }
+
+    if (!steps?.length && existingSteps.length) {
+      steps = existingSteps
+    }
+
+    // 양식별 기본 결재선 — 명시 결재선·DRAFT 보관분이 모두 없을 때 최종 fallback
+    if (!steps?.length && formDefaultLineId) {
+      steps = await this.loadSharedLineSteps(companyId, formDefaultLineId)
+      sharedLineId = formDefaultLineId
     }
 
     if (!steps?.length) {

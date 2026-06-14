@@ -228,8 +228,18 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
                 fullWidth
                 value={formId}
                 onChange={(e) => {
-                  setFormId(e.target.value)
+                  const nextFormId = e.target.value
+                  setFormId(nextFormId)
                   setFieldValues({}) // 양식 변경 시 동적 필드 값 초기화
+                  // AP-01-03 양식별 기본 결재선 — 결재선이 비어 있으면 기본 결재선을 자동 로드
+                  const defaultLineId = forms.find((f) => f.id === nextFormId)?.defaultLineId
+                  if (defaultLineId && steps.length === 0) {
+                    const line = sharedLines.find((l) => l.id === defaultLineId)
+                    if (line) {
+                      setSharedLineId(defaultLineId)
+                      setSteps(line.steps.map((s, i) => ({ ...s, stepOrder: i + 1 })))
+                    }
+                  }
                 }}
               >
                 {activeForms.length === 0 && (
