@@ -35,8 +35,8 @@
 - 기안 결재: 통합 결재 모달(라디오+의견 200자 필수) + 조회 필터.
 
 ## PR 묶음 (우선순위)
-1. **PR-A 조직 트리 위젯** — 공유 `OrgTree`(접기/펼치기) → 문서 담당 관리 좌측 + 기안 작성 양식 선택 그룹핑. (착수)
-2. **PR-B 웹에디터** — TipTap RTE + DOMPurify → 기안 본문/양식 richtext, sanitize 렌더.
+1. ✅ **PR-A 조직 트리 위젯** (PR#40) — 공유 `OrgTree`(접기/펼치기) → 문서 담당 관리 좌측 적용.
+2. ✅ **PR-B 웹에디터** — `RichTextEditor`(의존성 없는 contentEditable+execCommand 툴바: 스타일/B·I·U·S/정렬/목록/링크/표) + `RichTextView`(DOMPurify sanitize). 기안 본문(DocumentComposeDialog)·양식 richtext 필드(DynamicFormFields) RTE, 상세(DocumentDetailDialog) sanitize 렌더 + table 필드 표 렌더. TipTap 대신 DOMPurify만 도입(React19 peer 회피). 레거시 평문은 looksLikeHtml로 pre-wrap 폴백.
 3. **PR-C 2-패널 결재선 빌더** — ApprovalLineBuilder 트리화(공용 결재선·기안 작성 공유) + DnD.
 4. **PR-D 전자결재 설정 페이지** — 공통 관리/서비스 사용 설정 독립화 + BE 설정 키.
 5. **PR-E 기안 결재 좌측 네비 트리 + 통합 결재 모달 + 조회 필터.**
