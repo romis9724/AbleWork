@@ -33,9 +33,9 @@ export type UpdateNotificationRuleDto = z.infer<typeof UpdateNotificationRuleSch
 
 // ─── Update webhook URL (company-wide) ────────────────────────────────────
 
+// 알림 규칙 모델은 회사 단위 단일 webhook을 사용한다(채널별 분리 webhook 미지원).
+// 채널 단위 분리가 필요하면 NotificationRule에 channel 컬럼 추가 + 마이그레이션이 선행되어야 한다.
 export const UpdateWebhookSchema = z.object({
-  // FE가 채널 구분용으로 보내는 값 (현재 규칙 모델은 회사 단위 webhook을 사용하므로 참고용)
-  channel: z.string().max(50).optional(),
   webhookUrl: z.union([z.string().url('유효한 URL을 입력하세요.'), z.literal('')]),
 })
 
