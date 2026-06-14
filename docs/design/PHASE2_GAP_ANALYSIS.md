@@ -8,6 +8,25 @@
 
 **전체 완성도 ~83%.** 핵심 골격(양식/작성/상신/결재처리/HR연동/문서함)은 견고하게 동작한다. 가장 큰 미완 영역: **부서협조·부서수신(G14) 전체 미구현**, **결재 알림 기본 활성화 경로 단절(G17/G15)**, **양식 동적필드 빌더 부재(G11/G12)**.
 
+## 부서협조/부서수신 구현 계획 (G14 잔여 — 스키마 준비 완료, 마이그레이션 불필요)
+
+> 설계 결정(2026-06-14): 부서협조 "내부결재" = **부서 문서담당자 단일 결정**(접수 후 완료/반려). 중첩 결재선 없음.
+> 스키마 준비됨(PR#15): `Organization.docManagerId`(null→approverId 팀장 fallback), `ApprovalStep.organizationId`.
+
+**상수** (`documents.constants.ts`, 코드만): StepRole `DEPT_COLLABORATOR`/`DEPT_RECEIVER`; StepStatus `ACCEPTED`(접수)/`BOUNCED`(반송).
+
+**BE 엔진**
+1. **step 생성**(`documents.service` submit + DTO): `ApprovalStepInput`에 `organizationId?` 추가, dept role이면 `assigneeId` 선택(생략 시 BE가 해석). submit 시 dept step의 `assigneeId = org.docManagerId ?? org.approverId`(팀장 fallback), `organizationId` 저장. org 자사 소속 검증.
+2. **액션**(`approval-actions.service`): 부서협조 = `approveFlowStep`에 `DEPT_COLLABORATOR` 합류(완료=APPROVED/반려=REJECTED, 담당자 단일). 부서수신 = `deptReceive`(접수=ACCEPTED→수신확인=RECEIVED) + `bounce`(반송=BOUNCED, 기안자에게 반환/거절 처리). 권한: actor = 해당 org의 docManager(없으면 approver).
+3. **box**(`buildBoxWhere` `dept-docs`): `approvalLines.some.steps.some(role in [DEPT_*], organization.{docManagerId|approverId}=me)` — 내가 부서 담당자인 부서협조/부서수신 문서.
+4. **엔드포인트**: `POST /documents/:id/steps/:stepId/dept-collab|dept-receive|bounce` (controller @Roles 불필요 — 담당자 본인 검증).
+
+**FE**
+- `ApprovalLineBuilder`: dept role 선택 시 직원 대신 **조직(부서) 선택**.
+- 부서문서함 화면(`/me`·`/admin`, box=dept-docs) + 접수/수신확인/반송/완료/반려 액션 버튼.
+
+**테스트**: dept step 생성(담당자 해석), 부서협조 완료/반려, 부서수신 접수/수신확인/반송, 권한(담당자만), box 필터.
+
 ## 구현 진행 (2026-06-14 업데이트)
 
 - ✅ **G14 AP-04-07 문서담당자 완료** (마이그레이션 협업): 스키마에 `Organization.docManagerId`(+`ApprovalStep.organizationId`) 추가 — 마이그레이션 `20260614062318_g14_dept_collab_doc_manager`. 조직 관리 화면에 문서담당자 지정(미지정 시 팀장=approverId fallback 표기). 부서협조/부서수신(AP-04-02/06)에서 이 담당자로 라우팅 예정.
