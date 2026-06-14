@@ -900,7 +900,7 @@ notification_rules {
 **참조처가 없어 삭제가 안전한 기초 데이터**(가드 불필요, 검증 완료): 발생규칙 `LeaveAccrualRule`(자식 item만 `Cascade`, 잔액은 유형을 참조하므로 규칙 삭제와 무관), 표준화규칙 `StandardizationRule`(역참조 없음), 스케줄패턴 `SchedulePattern`(생성된 근무일정과 FK 분리), 공용결재선 `SharedApprovalLine`(`ApprovalLine.sharedLineRef` `SetNull`, 상신 시 단계가 복사되어 원본 삭제와 무관).
 
 **수정(update) 정책**: 기초 데이터 수정은 차단하지 않되, **기존 데이터는 스냅샷으로 보존**한다.
-- 기안양식 `fieldsSchema` 변경 → 기존 문서의 `content`는 작성 시점 값으로 보존(양식 스키마 변경이 과거 문서를 손상시키지 않음).
+- 기안양식 `fieldsSchema` 변경 → 기존 문서의 `content`는 작성 시점 값으로 보존(양식 스키마 변경이 과거 문서를 손상시키지 않음). `fieldsSchema`는 `{ fields: DocumentFieldDef[] }` 구조(AP-01-02) — `DocumentFieldDef`/`readFormFields` 단일 출처는 `@ablework/shared-constants`. 필드 타입: text/textarea/number/date/select. 작성 시 `DynamicFormFields`로 렌더해 값을 `content`의 `field.key`별로 저장한다.
 - 휴가유형 `deductionDays` 변경 → 이미 승인된 휴가의 `daysUsed`는 불변(미래 신청부터 적용).
 - 커스텀 요청유형 `fields` 교체 → 기존 요청의 `payload` 스냅샷 보존.
 - 승인규칙 변경의 진행 중 요청 소급 방지(규칙 스냅샷)는 §6.6 향후 과제.

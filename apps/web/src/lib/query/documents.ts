@@ -1,8 +1,11 @@
 'use client'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import type { DocumentFieldDef } from '@ablework/shared-constants'
 import apiClient from '@/lib/api-client'
 
 // ---------- 타입 ----------
+
+export type { DocumentFieldDef }
 
 export type DocumentStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'RECALLED'
 
@@ -49,6 +52,7 @@ export interface DocumentForm {
   allowPreApproval: boolean
   sortOrder: number
   isActive: boolean
+  fieldsSchema?: { fields?: DocumentFieldDef[] } | null
 }
 
 export interface DocumentNumberRule {

@@ -23,6 +23,8 @@ import {
   type ApprovalStepInput,
 } from '@/lib/query/documents'
 import ApprovalLineBuilder from './ApprovalLineBuilder'
+import DynamicFormFields from './DynamicFormFields'
+import { readFormFields } from '@ablework/shared-constants'
 
 interface Props {
   open: boolean
@@ -47,12 +49,15 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
   const [formId, setFormId] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
+  const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({})
   const [steps, setSteps] = useState<ApprovalStepInput[]>([])
   const [sharedLineId, setSharedLineId] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [initializedFor, setInitializedFor] = useState<string | null>(null)
 
   const activeForms = forms.filter((f) => f.isActive)
+  // 선택한 양식의 동적 입력 필드 (AP-01-02)
+  const dynamicFields = readFormFields(forms.find((f) => f.id === formId)?.fieldsSchema)
   const busy =
     createMutation.isPending ||
     updateMutation.isPending ||
@@ -65,6 +70,7 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
       setFormId('')
       setTitle('')
       setBody('')
+      setFieldValues({})
       setSteps([])
       setSharedLineId('')
       setErrorMessage('')
@@ -78,6 +84,13 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
     setFormId(editingDoc.form?.id ?? '')
     setTitle(editingDoc.title)
     setBody(typeof editingDoc.content?.body === 'string' ? editingDoc.content.body : '')
+    // content에서 body를 제외한 나머지를 동적 필드 값으로 복원
+    {
+      const content = (editingDoc.content ?? {}) as Record<string, unknown>
+      const { body: _body, ...rest } = content
+      void _body
+      setFieldValues(rest)
+    }
     setSteps(
       (editingDoc.approvalLines?.flatMap((l) => l.steps) ?? [])
         .filter((s) => !!s.assignee?.id)
@@ -104,18 +117,26 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
       setErrorMessage('제목을 입력해주세요.')
       return false
     }
+    const missing = dynamicFields.find(
+      (f) => f.required && !String(fieldValues[f.key] ?? '').trim(),
+    )
+    if (missing) {
+      setErrorMessage(`'${missing.label}' 항목을 입력해주세요.`)
+      return false
+    }
     return true
   }
 
   const ensureDocumentId = async (): Promise<string> => {
+    const content = { body, ...fieldValues }
     if (editingId) {
-      await updateMutation.mutateAsync({ id: editingId, title: title.trim(), content: { body } })
+      await updateMutation.mutateAsync({ id: editingId, title: title.trim(), content })
       return editingId
     }
     const created = await createMutation.mutateAsync({
       formId,
       title: title.trim(),
-      content: { body },
+      content,
     })
     return created.id
   }
@@ -199,7 +220,10 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
                 required
                 fullWidth
                 value={formId}
-                onChange={(e) => setFormId(e.target.value)}
+                onChange={(e) => {
+                  setFormId(e.target.value)
+                  setFieldValues({}) // 양식 변경 시 동적 필드 값 초기화
+                }}
               >
                 {activeForms.length === 0 && (
                   <MenuItem value="" disabled>사용 가능한 양식이 없습니다</MenuItem>
@@ -218,6 +242,14 @@ export default function DocumentComposeDialog({ open, editingId = null, onClose,
               fullWidth
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+            />
+
+            {/* 양식 동적 입력 필드 (AP-01-02) */}
+            <DynamicFormFields
+              fields={dynamicFields}
+              values={fieldValues}
+              onChange={(key, value) => setFieldValues((prev) => ({ ...prev, [key]: value }))}
+              disabled={busy}
             />
 
             <TextField

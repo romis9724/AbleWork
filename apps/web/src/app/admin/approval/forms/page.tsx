@@ -11,6 +11,7 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
+import Divider from '@mui/material/Divider'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
@@ -45,6 +46,8 @@ import {
   useSaveDocumentNumberRule,
   type DocumentForm,
 } from '@/lib/query/documents'
+import FormFieldsBuilder from '@/components/approval/FormFieldsBuilder'
+import { readFormFields, type DocumentFieldDef } from '@ablework/shared-constants'
 
 const schema = z.object({
   name: z.string().min(1, '양식명을 입력해주세요'),
@@ -174,11 +177,14 @@ export default function ApprovalFormsPage() {
     resolver: zodResolver(schema),
     defaultValues: DEFAULT_VALUES,
   })
+  // 동적 입력 필드(fieldsSchema)는 RHF 밖에서 별도 관리 (중첩 동적 배열)
+  const [fields, setFields] = useState<DocumentFieldDef[]>([])
 
   const sortedForms = [...forms].sort((a, b) => a.sortOrder - b.sortOrder)
 
   const openCreate = () => {
     reset(DEFAULT_VALUES)
+    setFields([])
     setDialog({ open: true, editing: null })
   }
 
@@ -190,6 +196,7 @@ export default function ApprovalFormsPage() {
       allowReDraft: form.allowReDraft,
       allowPreApproval: form.allowPreApproval,
     })
+    setFields(readFormFields(form.fieldsSchema))
     setDialog({ open: true, editing: form })
   }
 
@@ -202,6 +209,8 @@ export default function ApprovalFormsPage() {
       allowReDraft: values.allowReDraft,
       allowPreApproval: values.allowPreApproval,
       ...(values.category ? { category: values.category } : {}),
+      // 동적 입력 필드 설계 저장 (AP-01-02)
+      fieldsSchema: { fields },
     }
     try {
       if (dialog.editing) {
@@ -395,6 +404,9 @@ export default function ApprovalFormsPage() {
                 />
               )}
             />
+
+            <Divider sx={{ my: 0.5 }} />
+            <FormFieldsBuilder fields={fields} onChange={setFields} disabled={isSubmitting} />
           </Box>
         </DialogContent>
         <DialogActions>
