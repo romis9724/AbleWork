@@ -48,6 +48,7 @@ export class OrganizationsService {
         sortOrder: dto.sortOrder,
         approverId: dto.approverId ?? null,
         docManagerId: dto.docManagerId ?? null,
+        address: dto.address ?? null,
         depth,
         isActive: true,
       },
@@ -89,6 +90,7 @@ export class OrganizationsService {
         ...(dto.sortOrder !== undefined && { sortOrder: dto.sortOrder }),
         ...(dto.approverId !== undefined && { approverId: dto.approverId }),
         ...(dto.docManagerId !== undefined && { docManagerId: dto.docManagerId }),
+        ...(dto.address !== undefined && { address: dto.address }),
         ...(depth !== undefined && { depth }),
       },
     })

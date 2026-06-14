@@ -11,6 +11,7 @@ export interface Organization {
   sortOrder: number
   approverId: string | null
   docManagerId: string | null
+  address?: string | null
   isActive: boolean
   children?: Organization[]
 }
