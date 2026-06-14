@@ -466,13 +466,26 @@ erDiagram
   %% 9. 전자결재
   %% ════════════════════════════════════════════════
 
+  form_categories {
+    uuid   id PK
+    uuid   company_id FK
+    string name
+    int    sort_order
+    bool   is_active
+  }
+
   document_forms {
     uuid   id PK
     uuid   company_id FK
     uuid   form_owner_id FK
+    uuid   category_id FK
     string name
     string category
     jsonb  fields_schema
+    string visibility_scope
+    int    retention_years
+    string abbreviation
+    string description
     int    sort_order
     bool   allow_re_draft
     bool   allow_pre_approval
@@ -577,6 +590,8 @@ erDiagram
     timestamptz updated_at
   }
 
+  companies ||--o{ form_categories : "defines"
+  form_categories ||--o{ document_forms : "groups"
   companies ||--o{ document_forms : "defines"
   document_forms ||--o{ form_access_rules : "restricts"
   document_forms ||--o{ document_number_rules : "has"
@@ -756,7 +771,7 @@ erDiagram
 
 ---
 
-## 테이블 목록 (53개 도메인 테이블)
+## 테이블 목록 (54개 도메인 테이블)
 
 | # | 테이블 | 설명 |
 |---|---|---|
@@ -813,6 +828,7 @@ erDiagram
 | 51 | notification_rules | Discord/이메일 알림 규칙 |
 | 52 | notification_logs | 알림 발송 이력 |
 | 53 | **document_attachments** | **기안 첨부파일 (MinIO 오브젝트 메타)** |
+| 54 | **form_categories** | **기안양식 분류(양식함)** |
 
 ---
 

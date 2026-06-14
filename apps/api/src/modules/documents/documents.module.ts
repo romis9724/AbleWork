@@ -12,6 +12,8 @@ import { ProxySettingsController } from './proxy-settings.controller'
 import { ProxySettingsService } from './proxy-settings.service'
 import { AttachmentsController } from './attachments.controller'
 import { AttachmentsService } from './attachments.service'
+import { FormCategoriesController } from './form-categories.controller'
+import { FormCategoriesService } from './form-categories.service'
 
 /**
  * Phase 2 전자결재 (Goal 11~16)
@@ -24,6 +26,7 @@ import { AttachmentsService } from './attachments.service'
   imports: [CompaniesModule],
   controllers: [
     DocumentFormsController,
+    FormCategoriesController,
     SharedApprovalLinesController,
     ProxySettingsController,
     AttachmentsController,
@@ -33,6 +36,7 @@ import { AttachmentsService } from './attachments.service'
     DocumentsService,
     ApprovalActionsService,
     DocumentFormsService,
+    FormCategoriesService,
     SharedApprovalLinesService,
     ProxySettingsService,
     AttachmentsService,

@@ -29,12 +29,18 @@ export class DocumentFormsService {
   async create(companyId: string, dto: CreateDocumentFormDto) {
     await this.assertDefaultLineValid(companyId, dto.defaultLineId)
     await this.assertFormOwnerValid(companyId, dto.formOwnerId)
+    await this.assertCategoryValid(companyId, dto.categoryId)
     return this.prisma.documentForm.create({
       data: {
         companyId,
         name: dto.name,
         category: dto.category ?? null,
+        categoryId: dto.categoryId ?? null,
         fieldsSchema: dto.fieldsSchema as Prisma.InputJsonValue,
+        visibilityScope: dto.visibilityScope,
+        retentionYears: dto.retentionYears ?? null,
+        abbreviation: dto.abbreviation ?? null,
+        description: dto.description ?? null,
         defaultLineId: dto.defaultLineId ?? null,
         formOwnerId: dto.formOwnerId ?? null,
         allowZipUpload: dto.allowZipUpload,
@@ -54,6 +60,9 @@ export class DocumentFormsService {
     }
     if (dto.formOwnerId !== undefined) {
       await this.assertFormOwnerValid(companyId, dto.formOwnerId)
+    }
+    if (dto.categoryId !== undefined) {
+      await this.assertCategoryValid(companyId, dto.categoryId)
     }
 
     const { fieldsSchema, ...rest } = dto
@@ -107,7 +116,19 @@ export class DocumentFormsService {
     user: { employeeId: string },
   ): Promise<void> {
     const rules = await this.prisma.formAccessRule.findMany({ where: { formId } })
-    if (rules.length === 0) return // 규칙 없음 = 전체 허용
+    if (rules.length === 0) {
+      // 규칙 없음: 공개(PUBLIC)면 전체 허용(기존 동작), 부서공개/비공개면 양식 담당자만 작성 가능
+      const form = await this.prisma.documentForm.findFirst({
+        where: { id: formId, companyId },
+        select: { visibilityScope: true, formOwnerId: true },
+      })
+      if (!form || form.visibilityScope === 'PUBLIC') return
+      if (form.formOwnerId === user.employeeId) return
+      throw new ForbiddenException({
+        code: 'FORM_ACCESS_DENIED',
+        message: '제한 공개 양식입니다. 접근 권한(부서/직무)이 지정되어야 작성할 수 있습니다.',
+      })
+    }
 
     const orgIds = rules.filter((r) => r.scopeType === 'ORGANIZATION').map((r) => r.scopeId)
     const posIds = rules.filter((r) => r.scopeType === 'POSITION').map((r) => r.scopeId)
@@ -198,6 +219,21 @@ export class DocumentFormsService {
       throw new NotFoundException({
         code: 'SHARED_LINE_NOT_FOUND',
         message: '기본 결재선으로 지정한 공용 결재선을 찾을 수 없습니다.',
+      })
+    }
+  }
+
+  /** 양식 분류(categoryId)가 지정된 경우 자사 양식함인지 검증 (AP-01) */
+  private async assertCategoryValid(companyId: string, categoryId?: string | null) {
+    if (!categoryId) return
+    const category = await this.prisma.formCategory.findFirst({
+      where: { id: categoryId, companyId },
+      select: { id: true },
+    })
+    if (!category) {
+      throw new NotFoundException({
+        code: 'FORM_CATEGORY_NOT_FOUND',
+        message: '지정한 양식 분류를 찾을 수 없습니다.',
       })
     }
   }

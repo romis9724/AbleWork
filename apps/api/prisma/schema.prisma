@@ -53,6 +53,7 @@ model Company {
   notificationRules    NotificationRule[]
   employeeCustomFields EmployeeCustomField[]
   documentAttachments  DocumentAttachment[]
+  formCategories       FormCategory[]
 
   @@map("companies")
 }
@@ -715,13 +716,37 @@ model RequestApproval {
 // 9. 전자결재
 // ════════════════════════════════════════════════
 
+// AP-01 양식함 — 기안양식 분류(카테고리)
+model FormCategory {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String   @db.VarChar(100)
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company        @relation(fields: [companyId], references: [id])
+  forms   DocumentForm[]
+
+  @@index([companyId, isActive])
+  @@map("form_categories")
+}
+
 model DocumentForm {
   id              String  @id @default(uuid())
   companyId       String  @map("company_id")
   formOwnerId     String? @map("form_owner_id")
+  // AP-01 양식함 분류 (FormCategory). 레거시 free-text는 category 컬럼 유지(점진 이관).
+  categoryId      String? @map("category_id")
   name            String  @db.VarChar(200)
   category        String? @db.VarChar(100)
   fieldsSchema    Json    @map("fields_schema")
+  // AP-01 양식 메타: 공개범위(PUBLIC/DEPARTMENT/PRIVATE)·보존연한·문서번호 약어·설명
+  visibilityScope String  @default("PUBLIC") @map("visibility_scope") @db.VarChar(20)
+  retentionYears  Int?    @map("retention_years")
+  abbreviation    String? @db.VarChar(20)
+  description     String? @db.Text
   // AP-01-03 양식별 기본 결재선 — 상신 시 결재선 미지정이면 이 공용 결재선을 기본 적용
   defaultLineId   String? @map("default_line_id")
   sortOrder       Int     @default(0) @map("sort_order")
@@ -733,6 +758,7 @@ model DocumentForm {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   company         Company              @relation(fields: [companyId], references: [id])
+  categoryRef     FormCategory?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   defaultLine     SharedApprovalLine?  @relation("FormDefaultLine", fields: [defaultLineId], references: [id], onDelete: SetNull)
   accessRules     FormAccessRule[]
   numberRules     DocumentNumberRule[]
