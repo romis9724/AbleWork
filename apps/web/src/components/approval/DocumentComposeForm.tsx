@@ -24,17 +24,19 @@ import {
   useSharedApprovalLines,
   useSubmitDocument,
   useUpdateDocument,
-  type DocumentForm,
   type FormVisibilityScope,
   type ApprovalStepInput,
 } from '@/lib/query/documents'
 import { useAuthStore } from '@/stores/auth.store'
+import { useEmployees } from '@/lib/query/employees'
+import { useOrganizations, type Organization } from '@/lib/query/organizations'
 import { readFormFields } from '@ablework/shared-constants'
-import ApprovalLineBuilder from './ApprovalLineBuilder'
+import ApprovalLineDialog from './ApprovalLineDialog'
 import DynamicFormFields from './DynamicFormFields'
 import AttachmentPanel from './AttachmentPanel'
 import RichTextEditor from './RichTextEditor'
-import { isDeptRole, dateText } from './approval-constants'
+import Chip from '@mui/material/Chip'
+import { isDeptRole, dateText, STEP_ROLE_LABEL } from './approval-constants'
 
 const VISIBILITY_LABEL: Record<FormVisibilityScope, string> = {
   PUBLIC: '공개',
@@ -70,6 +72,8 @@ export default function DocumentComposeForm({
   const { data: forms = [] } = useDocumentForms()
   const { data: categories = [] } = useFormCategories()
   const { data: sharedLines = [] } = useSharedApprovalLines()
+  const { data: orgData } = useOrganizations()
+  const { data: empData } = useEmployees({ limit: 500, isActive: true })
   // 편집/재기안 원본 로드
   const sourceId = editingId ?? redraftFromId
   const { data: sourceDoc, isLoading: isLoadingDoc } = useDocument(sourceId)
@@ -89,6 +93,29 @@ export default function DocumentComposeForm({
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [initializedFor, setInitializedFor] = useState<string | null>(null)
+  const [lineDialogOpen, setLineDialogOpen] = useState(false)
+
+  // 결재선 요약 카드용 이름 해석 맵
+  const orgNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    const walk = (nodes: Organization[]) => {
+      for (const n of nodes) {
+        map.set(n.id, n.name)
+        if (n.children?.length) walk(n.children)
+      }
+    }
+    walk(orgData ?? [])
+    return map
+  }, [orgData])
+  const empNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const e of empData?.items ?? []) map.set(e.id, e.name)
+    return map
+  }, [empData])
+  const stepName = (s: ApprovalStepInput): string =>
+    isDeptRole(s.role)
+      ? (orgNameById.get(s.organizationId ?? '') ?? '부서')
+      : (empNameById.get(s.assigneeId ?? '') ?? '직원')
 
   const activeForms = useMemo(() => forms.filter((f) => f.isActive), [forms])
   const selectedForm = forms.find((f) => f.id === formId) ?? null
@@ -137,12 +164,6 @@ export default function DocumentComposeForm({
     setSharedLineId('')
     setInitializedFor(sourceDoc.id)
   }, [sourceDoc, initializedFor])
-
-  const loadSharedLine = () => {
-    const line = sharedLines.find((l) => l.id === sharedLineId)
-    if (!line) return
-    setSteps(line.steps.map((s, i) => ({ ...s, stepOrder: i + 1 })))
-  }
 
   const goToList = () => router.push(listPath)
 
@@ -373,29 +394,48 @@ export default function DocumentComposeForm({
         ]}
       />
 
-      {/* 결재선 섹션 */}
-      <SectionTitle>결재선 *</SectionTitle>
-      <Box sx={{ display: 'flex', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>
-        <TextField
-          select
-          size="small"
-          label="공용 결재선"
-          value={sharedLineId}
-          onChange={(e) => setSharedLineId(e.target.value)}
-          sx={{ flexGrow: 1, minWidth: 200 }}
-        >
-          {sharedLines.length === 0 && (
-            <MenuItem value="" disabled>등록된 공용 결재선이 없습니다</MenuItem>
-          )}
-          {sharedLines.map((l) => (
-            <MenuItem key={l.id} value={l.id}>{l.name}</MenuItem>
-          ))}
-        </TextField>
-        <Button variant="outlined" size="small" disabled={!sharedLineId} onClick={loadSharedLine}>
-          불러오기
+      {/* 결재선 섹션 — [결재선 설정] 팝업(조직 트리)으로 편집 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1 }}>
+        <SectionTitle>결재선 *</SectionTitle>
+        <Button variant="outlined" size="small" onClick={() => setLineDialogOpen(true)} disabled={busy}>
+          결재선 설정
         </Button>
       </Box>
-      <ApprovalLineBuilder steps={steps} onChange={setSteps} disabled={busy} />
+      {steps.length === 0 ? (
+        <Box sx={{ border: '1px dashed', borderColor: 'divider', borderRadius: 1, p: 2, textAlign: 'center' }}>
+          <Typography variant="body2" color="text.secondary">
+            결재선이 설정되지 않았습니다. [결재선 설정]에서 결재자·협조·참조·공람을 지정하세요.
+          </Typography>
+        </Box>
+      ) : (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          {steps.map((s, i) => (
+            <Box
+              key={`${s.role}-${i}`}
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                minWidth: 96,
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                px: 1.5,
+                py: 1,
+              }}
+            >
+              <Chip
+                size="small"
+                label={STEP_ROLE_LABEL[s.role]}
+                color={s.role === 'APPROVER' ? 'primary' : 'default'}
+                variant={s.role === 'APPROVER' ? 'filled' : 'outlined'}
+                sx={{ mb: 0.5 }}
+              />
+              <Typography variant="body2" fontWeight={600} noWrap>{stepName(s)}</Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
 
       <Divider sx={{ my: 3 }} />
 
@@ -472,6 +512,20 @@ export default function DocumentComposeForm({
           {isRedraft ? '재기안 상신' : isResubmit ? '재상신' : '상신하기'}
         </Button>
       </Paper>
+
+      {/* C3 결재선 설정 LAYER_POPUP */}
+      <ApprovalLineDialog
+        open={lineDialogOpen}
+        steps={steps}
+        sharedLines={sharedLines}
+        drafterName={currentUserName}
+        onApply={(next, lineId) => {
+          setSteps(next)
+          setSharedLineId(lineId ?? '')
+          setLineDialogOpen(false)
+        }}
+        onClose={() => setLineDialogOpen(false)}
+      />
 
       <Snackbar
         open={!!successMessage}
