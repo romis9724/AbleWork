@@ -89,6 +89,13 @@ export const useResetDevice = () =>
     mutationFn: (id: string) => apiClient.post(`/employees/${id}/reset-device`),
   })
 
+/** 직원 로그인 비밀번호 재설정 (계정 활성화) */
+export const useResetPassword = () =>
+  useMutation({
+    mutationFn: ({ id, newPassword }: { id: string; newPassword: string }) =>
+      apiClient.post(`/employees/${id}/reset-password`, { newPassword }),
+  })
+
 export const useWageInfos = (employeeId: string) =>
   useQuery({
     queryKey: ['wage-infos', employeeId],

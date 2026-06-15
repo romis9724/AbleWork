@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common'
 import * as bcrypt from 'bcryptjs'
 import { PrismaService } from '../../prisma/prisma.service'
+import { AuditService } from '../audit/audit.service'
 import { CreateCompanyDto } from './dto/create-company.dto'
 import { UpdateCompanyDto } from './dto/update-company.dto'
 import { JoinCompanyDto } from './dto/join-company.dto'
@@ -16,7 +17,10 @@ const INVITE_CODE_KEY = 'code'
 
 @Injectable()
 export class CompaniesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async create(dto: CreateCompanyDto) {
     const { adminEmail, adminPassword, adminName, ...companyData } = dto
@@ -81,13 +85,31 @@ export class CompaniesService {
     return company
   }
 
-  async update(id: string, companyId: string, dto: UpdateCompanyDto) {
+  async update(id: string, companyId: string, dto: UpdateCompanyDto, actorId?: string) {
     await this.findById(id, companyId)
 
-    return this.prisma.company.update({
+    const updated = await this.prisma.company.update({
       where: { id },
       data: dto,
     })
+
+    // 감사 로그 (회사 설정/정보 변경)
+    try {
+      await this.audit.record({
+        companyId,
+        actorId,
+        action: 'SETTINGS_UPDATE',
+        targetType: 'COMPANY',
+        targetId: id,
+        targetLabel: updated.name,
+        result: 'SUCCESS',
+        detail: { changedKeys: Object.keys(dto) },
+      })
+    } catch {
+      // 감사 로그 실패가 본 동작을 막지 않도록 무시
+    }
+
+    return updated
   }
 
   async generateInviteCode(companyId: string): Promise<{ inviteCode: string }> {

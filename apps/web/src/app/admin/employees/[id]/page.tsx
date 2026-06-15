@@ -44,11 +44,14 @@ import {
   useDeactivateEmployee,
   useActivateEmployee,
   useResetDevice,
+  useResetPassword,
   useWageInfos,
   useCreateWageInfo,
 } from '@/lib/query/employees'
 import { useOrganizations, type Organization } from '@/lib/query/organizations'
 import { usePositions } from '@/lib/query/positions'
+import { usePermission } from '@/hooks/usePermission'
+import { ACTION_KEYS } from '@ablework/shared-constants'
 
 interface EmployeeFormValues {
   name: string
@@ -124,13 +127,6 @@ function formatWorkDays(days: string): string {
     .join(', ')
 }
 
-const ACCESS_LEVEL_LABEL: Record<string, string> = {
-  EMPLOYEE: '직원',
-  ORG_ADMIN: '조직관리자',
-  GENERAL_ADMIN: '총괄관리자',
-  SUPER_ADMIN: '최고관리자',
-}
-
 export default function EmployeeDetailPage() {
   const router = useRouter()
   const { id } = useParams<{ id: string }>()
@@ -138,6 +134,8 @@ export default function EmployeeDetailPage() {
   const [deactivateOpen, setDeactivateOpen] = useState(false)
   const [activateOpen, setActivateOpen] = useState(false)
   const [resetDeviceOpen, setResetDeviceOpen] = useState(false)
+  const [resetPwOpen, setResetPwOpen] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
   const [addWageOpen, setAddWageOpen] = useState(false)
   const [wageForm, setWageForm] = useState<WageInfoForm>({
     hourlyWage: '',
@@ -152,11 +150,19 @@ export default function EmployeeDetailPage() {
     severity: 'success',
   })
 
+  const perm = usePermission()
+  const canManage = perm.can(ACTION_KEYS.EMPLOYEE_MANAGE)
+  const canResetPassword = perm.can(ACTION_KEYS.EMPLOYEE_RESET_PASSWORD)
+  const canResetDevice = perm.can(ACTION_KEYS.EMPLOYEE_RESET_DEVICE)
+  const canChangeLevel = perm.isGeneralAdmin // 권한 변경은 GENERAL_ADMIN 이상
+
   const { data: employee, isLoading } = useEmployee(id)
   const updateMutation = useUpdateEmployee()
   const deactivateMutation = useDeactivateEmployee()
   const activateMutation = useActivateEmployee()
   const resetDeviceMutation = useResetDevice()
+  const resetPasswordMutation = useResetPassword()
+  const isPasswordValid = newPassword.length >= 8 && /[A-Za-z]/.test(newPassword) && /[0-9]/.test(newPassword)
   const { data: wageInfosRaw } = useWageInfos(id)
   const createWageInfoMutation = useCreateWageInfo(id)
   const { data: orgsRaw = [] } = useOrganizations()
@@ -248,6 +254,18 @@ export default function EmployeeDetailPage() {
       setSnack({ open: true, message: '기기가 초기화되었습니다.', severity: 'success' })
     } catch {
       setSnack({ open: true, message: '기기 초기화에 실패했습니다.', severity: 'error' })
+    }
+  }
+
+  async function handleResetPassword() {
+    if (!isPasswordValid) return
+    try {
+      await resetPasswordMutation.mutateAsync({ id, newPassword })
+      setResetPwOpen(false)
+      setNewPassword('')
+      setSnack({ open: true, message: '비밀번호가 재설정되고 계정이 활성화되었습니다.', severity: 'success' })
+    } catch {
+      setSnack({ open: true, message: '비밀번호 재설정에 실패했습니다.', severity: 'error' })
     }
   }
 
@@ -496,7 +514,7 @@ export default function EmployeeDetailPage() {
                   name="accessLevel"
                   control={control}
                   render={({ field }) => (
-                    <FormControl size="small" sx={{ width: 200 }}>
+                    <FormControl size="small" sx={{ width: 200 }} disabled={!canChangeLevel}>
                       <InputLabel>액세스 권한</InputLabel>
                       <Select {...field} label="액세스 권한">
                         <MenuItem value="EMPLOYEE">직원</MenuItem>
@@ -509,7 +527,7 @@ export default function EmployeeDetailPage() {
                 />
               </Box>
 
-              <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
+              <Box sx={{ display: 'flex', gap: 2, mt: 1, flexWrap: 'wrap' }}>
                 <Button
                   type="submit"
                   variant="contained"
@@ -517,25 +535,38 @@ export default function EmployeeDetailPage() {
                 >
                   저장
                 </Button>
-                {employee.isActive ? (
+                {canResetPassword && (
                   <Button
                     variant="outlined"
-                    color="error"
-                    onClick={() => setDeactivateOpen(true)}
-                    disabled={deactivateMutation.isPending}
+                    color="primary"
+                    onClick={() => {
+                      setNewPassword('')
+                      setResetPwOpen(true)
+                    }}
                   >
-                    비활성화
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outlined"
-                    color="success"
-                    onClick={() => setActivateOpen(true)}
-                    disabled={activateMutation.isPending}
-                  >
-                    재활성화
+                    비밀번호 재설정
                   </Button>
                 )}
+                {canManage &&
+                  (employee.isActive ? (
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      onClick={() => setDeactivateOpen(true)}
+                      disabled={deactivateMutation.isPending}
+                    >
+                      비활성화
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outlined"
+                      color="success"
+                      onClick={() => setActivateOpen(true)}
+                      disabled={activateMutation.isPending}
+                    >
+                      재활성화
+                    </Button>
+                  ))}
               </Box>
             </Box>
           </CardContent>
@@ -609,13 +640,18 @@ export default function EmployeeDetailPage() {
               variant="outlined"
               color="error"
               onClick={() => setResetDeviceOpen(true)}
-              disabled={!employee.deviceId || resetDeviceMutation.isPending}
+              disabled={!employee.deviceId || !canResetDevice || resetDeviceMutation.isPending}
             >
               기기 초기화
             </Button>
             {!employee.deviceId && (
               <Typography variant="caption" color="text.secondary" display="block" mt={1}>
                 등록된 기기가 없어 초기화할 수 없습니다.
+              </Typography>
+            )}
+            {employee.deviceId && !canResetDevice && (
+              <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+                기기 초기화는 총괄관리자 이상만 가능합니다.
               </Typography>
             )}
           </CardContent>
@@ -657,6 +693,39 @@ export default function EmployeeDetailPage() {
         onConfirm={handleResetDevice}
         onCancel={() => setResetDeviceOpen(false)}
       />
+
+      {/* 비밀번호 재설정 Dialog */}
+      <Dialog open={resetPwOpen} onClose={() => setResetPwOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>비밀번호 재설정</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+          <Typography variant="body2" color="text.secondary">
+            {employee.name} 직원의 로그인 비밀번호를 설정합니다. 설정 시 계정이 활성화되어 즉시
+            로그인할 수 있습니다.
+          </Typography>
+          <TextField
+            label="새 비밀번호"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+            fullWidth
+            size="small"
+            autoFocus
+            error={newPassword.length > 0 && !isPasswordValid}
+            helperText="영문자와 숫자를 포함해 8자 이상 입력하세요."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setResetPwOpen(false)}>취소</Button>
+          <Button
+            variant="contained"
+            onClick={handleResetPassword}
+            disabled={!isPasswordValid || resetPasswordMutation.isPending}
+          >
+            {resetPasswordMutation.isPending ? <CircularProgress size={20} /> : '재설정'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 근로정보 추가 Dialog */}
       <Dialog open={addWageOpen} onClose={() => setAddWageOpen(false)} maxWidth="xs" fullWidth>

@@ -1,0 +1,18 @@
+**/node_modules
+**/.next
+**/dist
+**/.expo
+**/.turbo
+.git
+**/*.log
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+apps/mobile/ios
+apps/mobile/android
+# 빌드에 불필요한 대용량 자산 (Dockerfile COPY 대상 아님)
+refs
+docs
+**/*.tsbuildinfo
+**/.DS_Store

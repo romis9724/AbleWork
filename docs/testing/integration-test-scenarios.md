@@ -1,7 +1,8 @@
 # AbleWork 통합(e2e) 테스트 시나리오
 
-> 기준일: 2026-06-13 · 대상: `apps/api` HTTP 레이어 + 실 PostgreSQL(`ablework_test`)
+> 기준일: 2026-06-15 · 대상: `apps/api` HTTP 레이어 + 실 PostgreSQL(`ablework_test`)
 > 재사용 목적: 향후 세션에서 통합 테스트 범위·전제·기대결과를 즉시 파악 (LLM 토큰 절약).
+> 총계: **9 스위트 / 78 케이스 전부 통과.** 2026-06-15 전자결재 직접 기능(S6·S7·S8) 38건 추가.
 
 ## 하니스 개요
 
@@ -45,6 +46,9 @@
 | `approval-flow.e2e-spec.ts` | 핵심플로우 ②④ | 결재→잔액차감 원자성 + 상태전이 |
 | `tenancy-security.e2e-spec.ts` | 보안 | ORG_ADMIN 타조직 403 + 인증가드 |
 | `integrity-security.e2e-spec.ts` | 무결성·권한 | 레코드 소유권·자기결재 방지·잔액 권한 + 기초데이터 삭제 가드 |
+| `approval-documents.e2e-spec.ts` | 전자결재 직접 결재 | 다단계/반려/전결/협조/공람/수신/결재취소/본인결재자 금지/임시저장 CRUD/사후 공람추가 |
+| `approval-admin.e2e-spec.ts` | 전자결재 관리 CRUD | 기안양식·번호규칙·접근규칙 / 양식분류 / 공용결재선 / 대리결재 + 권한·삭제차단 |
+| `approval-boxes.e2e-spec.ts` | 문서함·부서 | box별(draft/in_progress/completed/pending_approval/viewer/reference/receiver/ledger/status/dept-docs) 조회·검색 + 부서협조/부서수신 |
 
 ### S5/S6. 무결성·권한 (`integrity-security.e2e-spec.ts`)
 | # | 시나리오 | 기대 |
@@ -114,6 +118,66 @@
 | 4-3 | EMPLOYEE가 관리자 전용 엔드포인트(직원 등록 등) 접근 | 403 |
 | 4-4 | 토큰 없이 보호 엔드포인트 | 401 |
 | 4-5 | (가능 시) 타 회사 리소스 ID로 수정/삭제 시도 | 404 (companyId 격리) — 제2 회사 생성 후 검증 |
+
+### S6. 전자결재 직접 기안 결재 흐름 (`approval-documents.e2e-spec.ts`)
+> HR 요청 연동(S2/S3)과 별개로, 전자결재 메뉴의 일반 기안 전 구간을 `documents` API 직접 호출로 검증.
+> 결재자: admin=seed-emp-admin, orgadmin=seed-emp-orgadmin, sales=seed-emp-sales / 기안자: employee(홍길동).
+> 전결 테스트용 `allowPreApproval=true` 양식은 beforeAll에서 생성.
+
+| # | 시나리오 | 기대 |
+|---|---|---|
+| 6-1 | 2단계 순차 결재 | 상신 시 step1=PENDING·step2=WAITING → step1 승인 시 step2=PENDING → step2 승인 시 문서 APPROVED |
+| 6-2 | 반려(reject) | 문서 REJECTED, 이후 결재단계 CANCELLED |
+| 6-3 | 전결(pre-approve, 허용 양식) | 현재 PRE_APPROVED, 이후 결재 SKIPPED, 수신 PENDING, 문서 APPROVED |
+| 6-3b | 전결 미허용 양식에서 pre-approve | 4xx 거부 (`DOCUMENT_PRE_APPROVAL_NOT_ALLOWED`) |
+| 6-4 | 협조(AGREEMENT) → agree | step APPROVED, 흐름 진행/완료 |
+| 6-5 | 공람(VIEWER) → view | 상신 즉시 PENDING(비차단) → VIEWED, 문서 흐름과 독립 |
+| 6-6 | 수신(RECEIVER) → receive | 최종 승인 전 WAITING → 승인 후 PENDING → RECEIVED, 문서 상태 불변 |
+| 6-7 | 결재 취소(cancel-approval) | 승인 후 본인 단계 PENDING 복귀, 다음 단계 WAITING 재대기 |
+| 6-8 | **기안자 본인을 결재자로 지정 후 상신** | **4xx `APPROVAL_SELF_NOT_ALLOWED`** (FE 규칙을 BE에서도 강제 — 본 테스트로 누락 발견·보강) |
+| 6-9 | 임시저장(DRAFT) 수정(PATCH)→삭제(DELETE) | 제목 갱신 후 삭제 시 레코드 제거 |
+| 6-10 | 결재 담당자 아닌 사용자 승인 시도 | 403, 문서 상태 불변 |
+| 6-11 | 진행중 문서에 공람·참조 사후 추가(POST /:id/cc) | VIEWER step 추가, status=PENDING |
+
+### S7. 전자결재 관리 기능 CRUD (`approval-admin.e2e-spec.ts`)
+> 관리 CRUD 권한은 GENERAL_ADMIN↑(admin 충족, employee 거부). 대리결재는 본인 소유만.
+
+| # | 시나리오 | 기대 |
+|---|---|---|
+| 7-1 | 기안양식 생성→수정→삭제 | 소프트 삭제(isActive=false) |
+| 7-2 | EMPLOYEE 양식 생성 | 403 |
+| 7-3 | 사용 중 양식 삭제 | 403 `FORM_IN_USE` |
+| 7-4 | 문서번호 채번 규칙 PUT→GET | pattern 저장·조회 |
+| 7-5 | 양식 접근규칙 POST→GET→DELETE | 조직 scope 규칙 CRUD (scopeId는 string FK, 서비스에서 존재검증) |
+| 7-6 | 양식분류 생성→수정→삭제 | 정상 CRUD |
+| 7-7 | 사용 중 분류 삭제 | 403 `FORM_CATEGORY_IN_USE` |
+| 7-8 | EMPLOYEE 분류 생성 | 403 |
+| 7-9 | 공용결재선 생성→steps 수정→삭제 | steps 변경 시 version 증가 |
+| 7-10 | 결재선 이름 중복 | 400 `SHARED_LINE_DUPLICATE_NAME` |
+| 7-11 | 최종결재자=협조자 충돌 | 400 `FINAL_APPROVER_IS_COLLABORATOR` |
+| 7-12 | EMPLOYEE 결재선 생성 | 403 |
+| 7-13 | 대리결재 생성→조회→수정→삭제 | 본인 소유 CRUD |
+| 7-14 | 본인을 대리결재자로 지정 | 400 `PROXY_SELF_NOT_ALLOWED` |
+| 7-15 | 타인 대리결재 설정 수정 | 4xx (본인만 가능) |
+
+### S8. 문서함 조회 + 부서협조/수신 (`approval-boxes.e2e-spec.ts`)
+> `GET /documents?box=...` 역할·상태별 필터링과 부서 단계 처리 검증. 검색(title)으로 누적 데이터와 격리.
+
+| # | 시나리오 | 기대 |
+|---|---|---|
+| 8-1~8-3 | draft / in_progress / completed | 기안자 본인 문서가 상태별 함에 노출 |
+| 8-4 | pending_approval | 결재자 결재함에 처리 대상 문서 노출 |
+| 8-5 | viewer / reference | 공람·참조 담당자 함에 노출 |
+| 8-6 | receiver | 수신 담당자 함에 노출(최종 승인 후) |
+| 8-7 | ledger / status | 관리자 200, **EMPLOYEE 403** (관리자 전용) |
+| 8-8 | 검색(search) | 제목으로 본인 문서 1건 정확 조회 |
+| 8-9 | 부서협조(DEPT_COLLABORATOR) | 부서 단계 assignee=부서 결재자(seed-emp-orgadmin)로 해석, dept-collab 처리 후 APPROVED |
+| 8-10 | 부서수신(DEPT_RECEIVER) bounce | step BOUNCED, 문서 상태 불변 |
+| 8-11 | dept-docs | 부서 담당자의 부서서류함에 부서 단계 문서 노출 |
+
+> 📌 **본 e2e가 발견·보강한 정합 이슈 2건**
+> 1. `POST /documents/:id/submit` — 기안자 본인을 APPROVER로 지정한 상신을 BE에서 차단하지 않음(FE만 검증) → `APPROVAL_SELF_NOT_ALLOWED` 검증 추가.
+> 2. `CreateFormAccessRuleSchema.scopeId` — `uuid()` 강제가 모듈 내 다른 FK(`organizationId`/`assigneeId`, `min(1)`)와 불일치 → `min(1)`로 완화(존재검증은 서비스 유지).
 
 ---
 

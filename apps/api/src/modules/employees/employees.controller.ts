@@ -20,7 +20,11 @@ import { Roles } from '../../common/decorators/roles.decorator'
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { AccessLevel } from '@ablework/shared-constants'
-import { CreateEmployeeDto, CreateEmployeeSchema } from './dto/create-employee.dto'
+import {
+  CreateEmployeeDto,
+  CreateEmployeeSchema,
+  EmployeePasswordSchema,
+} from './dto/create-employee.dto'
 import { UpdateEmployeeDto, UpdateEmployeeSchema } from './dto/update-employee.dto'
 import { EmployeeFilterDto, EmployeeFilterSchema } from './dto/employee-filter.dto'
 import { CreateWageInfoDto, CreateWageInfoSchema } from '../wage-info/dto/create-wage-info.dto'
@@ -37,6 +41,12 @@ const DeactivateSchema = z
   .default({})
 
 type DeactivateDto = z.infer<typeof DeactivateSchema>
+
+const ResetPasswordSchema = z.object({
+  newPassword: EmployeePasswordSchema,
+})
+
+type ResetPasswordDto = z.infer<typeof ResetPasswordSchema>
 
 @ApiTags('employees')
 @ApiBearerAuth()
@@ -133,6 +143,21 @@ export class EmployeesController {
     @CurrentUser() requester: JwtPayload,
   ) {
     return this.employeesService.resetDevice(companyId, id, requester)
+  }
+
+  // HR-03-10 비밀번호 재설정 (로그인 자격 발급/초기화)
+  @Post(':id/reset-password')
+  @HttpCode(HttpStatus.OK)
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '직원 비밀번호 재설정 (ORG_ADMIN 이상)' })
+  @ApiParam({ name: 'id', type: String })
+  resetPassword(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ResetPasswordSchema)) dto: ResetPasswordDto,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.employeesService.resetPassword(companyId, id, dto.newPassword, requester)
   }
 
   // HR-03-08 근로정보 이력 조회

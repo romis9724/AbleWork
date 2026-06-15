@@ -55,6 +55,7 @@ export class MessagesController {
 
   // ── MSG-01 템플릿 목록 ────────────────────────────────────────────────────────
 
+  @Roles(AccessLevel.ORG_ADMIN)
   @Get('templates')
   @ApiOperation({ summary: '메시지 템플릿 목록 조회' })
   findTemplates(
@@ -143,6 +144,7 @@ export class MessagesController {
 
   // ── MSG-08 자동화 목록 ────────────────────────────────────────────────────────
 
+  @Roles(AccessLevel.ORG_ADMIN)
   @Get('automations')
   @ApiOperation({ summary: '메시지 자동화 목록 조회' })
   findAutomations(

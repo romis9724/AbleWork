@@ -304,6 +304,16 @@ export class DocumentsService {
       existingSteps,
       document.form.defaultLineId,
     )
+
+    // 기안자 본인은 결재(APPROVER) 단계에 지정할 수 없다 (카카오워크 PDF 규칙 · FE 검증과 동일).
+    // FE에서만 막으면 API 직접 호출로 우회되므로 상신 시 서버에서도 강제한다.
+    if (steps.some((s) => s.role === 'APPROVER' && s.assigneeId === document.drafterId)) {
+      throw new BadRequestException({
+        code: 'APPROVAL_SELF_NOT_ALLOWED',
+        message: '기안자 본인은 결재자로 지정할 수 없습니다.',
+      })
+    }
+
     const resolvedSteps = await this.resolveSteps(companyId, steps)
 
     // docNumber unique 충돌(동시 채번) 시 1회 재시도

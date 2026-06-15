@@ -1,41 +1,10 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
-import Autocomplete from '@mui/material/Autocomplete'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
-import CircularProgress from '@mui/material/CircularProgress'
-import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContent from '@mui/material/DialogContent'
-import DialogTitle from '@mui/material/DialogTitle'
-import FormControl from '@mui/material/FormControl'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import IconButton from '@mui/material/IconButton'
-import InputLabel from '@mui/material/InputLabel'
-import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
-import Select from '@mui/material/Select'
-import Snackbar from '@mui/material/Snackbar'
-import Switch from '@mui/material/Switch'
-import Tab from '@mui/material/Tab'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import Tabs from '@mui/material/Tabs'
-import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
-import AddIcon from '@mui/icons-material/Add'
-import DeleteIcon from '@mui/icons-material/Delete'
-import EditIcon from '@mui/icons-material/Edit'
-import SendIcon from '@mui/icons-material/Send'
-import PageHeader from '@/components/common/PageHeader'
-import ConfirmDialog from '@/components/common/ConfirmDialog'
-import EmptyState from '@/components/common/EmptyState'
+import { PageHead } from '@/components/ab/Page'
+import { Badge, Seg, Emp, Radio, Note, TableEmpty } from '@/components/ab/atoms'
+import { I } from '@/components/ab/icons'
+import { Modal, ConfirmDialog } from '@/components/ab/Modal'
+import { useToast } from '@/components/ab/Toast'
 import {
   useMessageTemplates,
   useCreateMessageTemplate,
@@ -48,45 +17,51 @@ import {
 } from '@/lib/query/messages'
 import { useEmployees, type Employee } from '@/lib/query/employees'
 
-// ── Template form ─────────────────────────────────────────────────────────────
+// ── Forms ───────────────────────────────────────────────────────────────────
 
 interface TemplateForm {
   name: string
   content: string
 }
-
-const defaultTemplateForm: TemplateForm = { name: '', content: '' }
-
-// ── Send form ─────────────────────────────────────────────────────────────────
+const EMPTY_TEMPLATE: TemplateForm = { name: '', content: '' }
 
 interface SendForm {
-  name: string
+  title: string
   templateId: string
-  recipients: Employee[]
-  emailNotification: boolean
+  recipientIds: string[]
+  sendEmail: boolean
+}
+const EMPTY_SEND: SendForm = { title: '', templateId: '', recipientIds: [], sendEmail: false }
+
+type SegTab = 'logs' | 'templates'
+
+function unwrap<T>(raw: unknown): T[] {
+  if (Array.isArray(raw)) return raw as T[]
+  return ((raw as { items?: T[] })?.items ?? []) as T[]
 }
 
-const defaultSendForm: SendForm = {
-  name: '',
-  templateId: '',
-  recipients: [],
-  emailNotification: false,
+function fmtDateTime(iso?: string): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function MessagesPage() {
-  const [tab, setTab] = useState(0)
+  const toast = useToast()
+  const [tab, setTab] = useState<SegTab>('logs')
 
   const { data: rawTemplates, isLoading: templatesLoading } = useMessageTemplates()
-  const templates: MessageTemplate[] = Array.isArray(rawTemplates)
-    ? rawTemplates
-    : (((rawTemplates as unknown) as { items?: MessageTemplate[] })?.items ?? [])
+  const templates = unwrap<MessageTemplate>(rawTemplates)
 
   const { data: logsRaw, isLoading: logsLoading } = useMessageLogs()
-  const logs: MessageLog[] = Array.isArray(logsRaw)
-    ? logsRaw
-    : (logsRaw as { items?: MessageLog[] })?.items ?? []
+  const logs = unwrap<MessageLog>(logsRaw)
 
   const { data: employeesData } = useEmployees({ isActive: true })
   const employees: Employee[] = employeesData?.items ?? []
@@ -96,45 +71,35 @@ export default function MessagesPage() {
   const deleteTemplateMutation = useDeleteMessageTemplate()
   const sendMutation = useSendMessage()
 
-  // Template dialog
-  const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+  // Template modal
+  const [templateModalOpen, setTemplateModalOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null)
-  const [templateForm, setTemplateForm] = useState<TemplateForm>(defaultTemplateForm)
+  const [templateForm, setTemplateForm] = useState<TemplateForm>(EMPTY_TEMPLATE)
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<MessageTemplate | null>(null)
 
-  // Send form
-  const [sendForm, setSendForm] = useState<SendForm>(defaultSendForm)
-
-  // Snackbar
-  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
-    open: false,
-    message: '',
-    severity: 'success',
-  })
-
-  function showSnack(message: string, severity: 'success' | 'error' = 'success') {
-    setSnack({ open: true, message, severity })
-  }
+  // Compose (send) modal
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [sendForm, setSendForm] = useState<SendForm>(EMPTY_SEND)
 
   // ── Template actions ──────────────────────────────────────────────────────
 
   function openAddTemplate() {
     setEditingTemplate(null)
-    setTemplateForm(defaultTemplateForm)
-    setTemplateDialogOpen(true)
+    setTemplateForm(EMPTY_TEMPLATE)
+    setTemplateModalOpen(true)
   }
 
   function openEditTemplate(t: MessageTemplate) {
     setEditingTemplate(t)
     setTemplateForm({ name: t.name, content: t.content })
-    setTemplateDialogOpen(true)
+    setTemplateModalOpen(true)
   }
 
   async function handleSaveTemplate() {
     if (!templateForm.name.trim() || !templateForm.content.trim()) return
-    const hasVariables = /\{\{.+?\}\}/.test(templateForm.content)
+    const hasVariables = /#\{.+?\}/.test(templateForm.content)
     try {
       if (editingTemplate) {
         await updateTemplateMutation.mutateAsync({
@@ -143,17 +108,17 @@ export default function MessagesPage() {
           content: templateForm.content.trim(),
           hasVariables,
         })
-        showSnack('템플릿이 수정되었습니다.')
+        toast('템플릿을 수정했습니다')
       } else {
         await createTemplateMutation.mutateAsync({
           name: templateForm.name.trim(),
           content: templateForm.content.trim(),
         })
-        showSnack('템플릿이 추가되었습니다.')
+        toast('템플릿을 추가했습니다')
       }
-      setTemplateDialogOpen(false)
+      setTemplateModalOpen(false)
     } catch {
-      showSnack('저장에 실패했습니다.', 'error')
+      toast('저장에 실패했습니다')
     }
   }
 
@@ -162,347 +127,457 @@ export default function MessagesPage() {
     try {
       await deleteTemplateMutation.mutateAsync(deleteTarget.id)
       setDeleteTarget(null)
-      showSnack('삭제되었습니다.')
+      toast('템플릿을 삭제했습니다')
     } catch {
-      showSnack('삭제에 실패했습니다.', 'error')
+      toast('삭제에 실패했습니다')
     }
   }
 
   // ── Send actions ──────────────────────────────────────────────────────────
 
+  function openCompose() {
+    setSendForm(EMPTY_SEND)
+    setComposeOpen(true)
+  }
+
+  function toggleRecipient(id: string) {
+    setSendForm((f) => ({
+      ...f,
+      recipientIds: f.recipientIds.includes(id)
+        ? f.recipientIds.filter((r) => r !== id)
+        : [...f.recipientIds, id],
+    }))
+  }
+
+  function toggleAllRecipients() {
+    setSendForm((f) => ({
+      ...f,
+      recipientIds: f.recipientIds.length === employees.length ? [] : employees.map((e) => e.id),
+    }))
+  }
+
   async function handleSend() {
-    if (!sendForm.name.trim() || !sendForm.templateId || sendForm.recipients.length === 0) return
+    if (!sendForm.title.trim() || !sendForm.templateId || sendForm.recipientIds.length === 0) return
     const template = templates.find((t) => t.id === sendForm.templateId)
     if (!template) return
     try {
       await sendMutation.mutateAsync({
-        title: sendForm.name.trim(),
+        title: sendForm.title.trim(),
         content: template.content,
         templateId: sendForm.templateId,
-        recipientEmployeeIds: sendForm.recipients.map((e) => e.id),
-        sendEmail: sendForm.emailNotification,
+        recipientEmployeeIds: sendForm.recipientIds,
+        sendEmail: sendForm.sendEmail,
       })
-      setSendForm(defaultSendForm)
-      showSnack(`메시지가 ${sendForm.recipients.length}명에게 발송되었습니다.`)
-      setTab(2) // Switch to log tab
+      setComposeOpen(false)
+      toast(`메시지를 ${sendForm.recipientIds.length}명에게 발송했습니다`)
+      setTab('logs')
     } catch {
-      showSnack('발송에 실패했습니다.', 'error')
+      toast('발송에 실패했습니다')
     }
   }
 
-  const isTemplateSaving =
-    createTemplateMutation.isPending || updateTemplateMutation.isPending
-
+  const isTemplateSaving = createTemplateMutation.isPending || updateTemplateMutation.isPending
   const selectedTemplate = templates.find((t) => t.id === sendForm.templateId)
+  const allRecipients = sendForm.recipientIds.length === employees.length && employees.length > 0
+  const isLoading = tab === 'logs' ? logsLoading : templatesLoading
 
   return (
     <>
-      <PageHeader title="메시지 관리" />
+      <PageHead
+        eyebrow="Message"
+        title="메시지"
+        right={
+          <div className="head-actions">
+            <button className="btn btn-line btn-sm" onClick={() => toast('자동화 규칙 관리')}>
+              자동화 규칙
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={openCompose}>
+              {I.plus({ style: { marginRight: 6 } })}메시지 작성
+            </button>
+          </div>
+        }
+      />
 
-      <Tabs
-        value={tab}
-        onChange={(_, v) => setTab(v)}
-        sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}
-      >
-        <Tab label="템플릿 관리" />
-        <Tab label="메시지 발송" />
-        <Tab label="발송 내역" />
-      </Tabs>
-
-      {/* ── Tab 0: Templates ─────────────────────────────────────────────────── */}
-      {tab === 0 && (
-        <>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openAddTemplate}>
-              템플릿 추가
-            </Button>
-          </Box>
-          {templatesLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-              <CircularProgress />
-            </Box>
-          ) : templates.length === 0 ? (
-            <EmptyState
-              message="등록된 템플릿이 없습니다."
-              action={
-                <Button variant="outlined" startIcon={<AddIcon />} onClick={openAddTemplate}>
-                  템플릿 추가
-                </Button>
-              }
-            />
+      <div className="tbl-bar">
+        <span className="tbl-count">
+          {tab === 'logs' ? (
+            <>
+              수신 <b>{logs.length}</b>건
+            </>
           ) : (
-            <TableContainer
-              component={Paper}
-              elevation={0}
-              sx={{ border: '1px solid', borderColor: 'divider' }}
-            >
-              <Table>
-                <TableHead>
-                  <TableRow sx={{ bgcolor: 'background.default' }}>
-                    <TableCell>이름</TableCell>
-                    <TableCell>내용 미리보기</TableCell>
-                    <TableCell>변수</TableCell>
-                    <TableCell align="right">액션</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {templates.map((t) => (
-                    <TableRow key={t.id} hover>
-                      <TableCell sx={{ fontWeight: 600 }}>{t.name}</TableCell>
-                      <TableCell sx={{ color: 'text.secondary', maxWidth: 320 }}>
-                        <Typography variant="body2" noWrap>
-                          {t.content.slice(0, 50)}
-                          {t.content.length > 50 ? '…' : ''}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        {t.hasVariables ? (
-                          <Chip label="변수 포함" size="small" color="info" variant="outlined" />
-                        ) : (
-                          <Chip label="없음" size="small" variant="outlined" />
-                        )}
-                      </TableCell>
-                      <TableCell align="right">
-                        <IconButton size="small" onClick={() => openEditTemplate(t)}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => setDeleteTarget(t)}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <>
+              템플릿 <b>{templates.length}</b>개
+            </>
           )}
-        </>
+        </span>
+        <div className="tbl-tools">
+          {tab === 'templates' && (
+            <button className="btn btn-ghost btn-sm" onClick={openAddTemplate}>
+              {I.plus({ style: { marginRight: 6 } })}템플릿 추가
+            </button>
+          )}
+          <Seg<SegTab>
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'logs', label: '발송 내역' },
+              { value: 'templates', label: '템플릿' },
+            ]}
+          />
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="ab-loading">
+          <span className="ab-spin" />
+          불러오는 중…
+        </div>
+      ) : tab === 'logs' ? (
+        <div className="tbl-scroll">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>제목</th>
+                <th style={{ width: 110 }} className="c">
+                  읽음
+                </th>
+                <th style={{ width: 150 }}>발송일시</th>
+                <th style={{ width: 100 }} className="c">
+                  상태
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.length === 0 ? (
+                <TableEmpty colSpan={4} message="수신한 메시지가 없습니다" />
+              ) : (
+                logs.map((log) => {
+                  const isRead = !!log.readAt
+                  return (
+                    <tr key={log.id}>
+                      <td className="lead">
+                        <span
+                          className="tbl-link"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toast(`'${log.title ?? '메시지'}' 상세`)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              toast(`'${log.title ?? '메시지'}' 상세`)
+                            }
+                          }}
+                        >
+                          {log.title ?? '—'}
+                        </span>
+                      </td>
+                      <td className="c">
+                        <span
+                          className="att-dur"
+                          style={{ color: isRead ? 'var(--ok)' : 'var(--fg-5)' }}
+                        >
+                          {isRead ? '읽음' : '안읽음'}
+                        </span>
+                      </td>
+                      <td className="muted att-dur">{fmtDateTime(log.sentAt ?? log.createdAt)}</td>
+                      <td className="c">
+                        <Badge kind="b-done">발송됨</Badge>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="tbl-scroll">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>템플릿명</th>
+                <th>내용 미리보기</th>
+                <th style={{ width: 90 }} className="c">
+                  변수
+                </th>
+                <th style={{ width: 120 }}>생성 날짜</th>
+                <th style={{ width: 90 }} className="c">
+                  관리
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {templates.length === 0 ? (
+                <TableEmpty colSpan={5} message="등록된 템플릿이 없습니다" />
+              ) : (
+                templates.map((t) => (
+                  <tr key={t.id}>
+                    <td className="lead">
+                      <span
+                        className="tbl-link"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openEditTemplate(t)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            openEditTemplate(t)
+                          }
+                        }}
+                      >
+                        {t.name}
+                      </span>
+                    </td>
+                    <td className="muted" style={{ fontSize: 12 }}>
+                      {t.content.slice(0, 50)}
+                      {t.content.length > 50 ? '…' : ''}
+                    </td>
+                    <td className="c">
+                      {t.hasVariables ? (
+                        <span style={{ color: 'var(--ab-orange)', fontSize: 12 }}>포함</span>
+                      ) : (
+                        <span className="zero">—</span>
+                      )}
+                    </td>
+                    <td className="muted att-dur">{fmtDateTime(t.createdAt)}</td>
+                    <td className="c">
+                      <span
+                        className="icell"
+                        role="button"
+                        tabIndex={0}
+                        aria-label="템플릿 수정"
+                        onClick={() => openEditTemplate(t)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            openEditTemplate(t)
+                          }
+                        }}
+                      >
+                        {I.edit()}
+                      </span>
+                      <span
+                        className="icell"
+                        style={{ marginLeft: 6, color: 'var(--err)' }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label="템플릿 삭제"
+                        onClick={() => setDeleteTarget(t)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setDeleteTarget(t)
+                          }
+                        }}
+                      >
+                        {I.trash()}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {/* ── Tab 1: Send ───────────────────────────────────────────────────────── */}
-      {tab === 1 && (
-        <Paper
-          elevation={0}
-          sx={{ border: '1px solid', borderColor: 'divider', p: 3, borderRadius: 2, maxWidth: 600 }}
-        >
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <TextField
-              label="메시지명"
-              required
-              value={sendForm.name}
-              onChange={(e) => setSendForm((f) => ({ ...f, name: e.target.value }))}
-              fullWidth
-            />
+      {/* ── 메시지 작성 모달 ──────────────────────────────────────────────── */}
+      <Modal
+        open={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        eyebrow="New Message"
+        title="메시지 작성"
+        maxWidth={680}
+        footer={
+          <>
+            <button className="btn btn-line" style={{ minWidth: 110 }} onClick={() => setComposeOpen(false)}>
+              취소
+            </button>
+            <button
+              className="btn btn-primary"
+              style={{ minWidth: 110 }}
+              disabled={
+                sendMutation.isPending ||
+                !sendForm.title.trim() ||
+                !sendForm.templateId ||
+                sendForm.recipientIds.length === 0
+              }
+              onClick={handleSend}
+            >
+              발송
+            </button>
+          </>
+        }
+      >
+        <div className="doc">
+          <div className="doc-section">
+            <div className="doc-field">
+              <span className="fk">
+                수신 대상<span className="req">*</span>
+              </span>
+              <span className="fv" style={{ width: '100%' }}>
+                <button className="chip add" type="button" onClick={toggleAllRecipients}>
+                  {allRecipients ? '전체 해제' : `전체 직원 (${employees.length})`}
+                </button>
+                <div className="chips" style={{ marginTop: 10 }}>
+                  {employees.map((emp) => {
+                    const on = sendForm.recipientIds.includes(emp.id)
+                    return (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        className={'chip' + (on ? '' : ' add')}
+                        onClick={() => toggleRecipient(emp.id)}
+                      >
+                        {emp.name}
+                        {on && <span className="x">{I.x()}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--fg-5)', margin: '8px 0 0' }}>
+                  {sendForm.recipientIds.length}명 선택됨
+                </p>
+              </span>
+            </div>
 
-            <FormControl fullWidth required>
-              <InputLabel>템플릿 선택</InputLabel>
-              <Select
-                value={sendForm.templateId}
-                label="템플릿 선택"
-                onChange={(e) => setSendForm((f) => ({ ...f, templateId: e.target.value }))}
-              >
-                {templates.map((t) => (
-                  <MenuItem key={t.id} value={t.id}>
-                    {t.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <div className="doc-field">
+              <span className="fk">
+                제목<span className="req">*</span>
+              </span>
+              <span className="fv">
+                <input
+                  className="inp-block"
+                  value={sendForm.title}
+                  onChange={(e) => setSendForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="[사내공지] 제목을 입력하세요"
+                />
+              </span>
+            </div>
+
+            <div className="doc-field">
+              <span className="fk">
+                템플릿<span className="req">*</span>
+              </span>
+              <span className="fv">
+                <select
+                  className="sel"
+                  value={sendForm.templateId}
+                  onChange={(e) => setSendForm((f) => ({ ...f, templateId: e.target.value }))}
+                  style={{ borderBottom: '1px solid var(--warm-500)' }}
+                >
+                  <option value="">템플릿 선택</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </div>
 
             {selectedTemplate && (
-              <Box
-                sx={{
-                  bgcolor: 'background.default',
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 1,
-                  p: 1.5,
-                }}
-              >
-                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                  템플릿 미리보기
-                </Typography>
-                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                  {selectedTemplate.content}
-                </Typography>
-              </Box>
+              <div className="doc-field">
+                <span className="fk">본문</span>
+                <span className="fv" style={{ width: '100%' }}>
+                  <textarea
+                    className="ta"
+                    readOnly
+                    value={selectedTemplate.content}
+                    style={{ minHeight: 110 }}
+                  />
+                </span>
+              </div>
             )}
 
-            <Autocomplete
-              multiple
-              options={employees}
-              getOptionLabel={(e) => e.name}
-              value={sendForm.recipients}
-              onChange={(_, v) => setSendForm((f) => ({ ...f, recipients: v }))}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="수신자 선택 (다중)"
-                  required
-                  helperText={`${sendForm.recipients.length}명 선택됨`}
-                />
-              )}
-            />
+            <div className="doc-field">
+              <span className="fk">발송 시점</span>
+              <span className="fv">
+                <div className="rad-grp">
+                  <Radio on={!sendForm.sendEmail} onChange={() => setSendForm((f) => ({ ...f, sendEmail: false }))}>
+                    인앱 발송
+                  </Radio>
+                  <Radio on={sendForm.sendEmail} onChange={() => setSendForm((f) => ({ ...f, sendEmail: true }))}>
+                    인앱 + 이메일
+                  </Radio>
+                </div>
+              </span>
+            </div>
 
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={sendForm.emailNotification}
-                  onChange={(e) =>
-                    setSendForm((f) => ({ ...f, emailNotification: e.target.checked }))
-                  }
-                />
-              }
-              label="이메일 알림 발송"
-            />
+            <p style={{ fontSize: 11, color: 'var(--fg-5)', margin: '4px 0 0' }}>
+              치환 변수: {'#{employee}'} · {'#{team}'} · {'#{month}'} 사용 가능
+            </p>
+          </div>
+        </div>
+      </Modal>
 
-            <Box>
-              <Button
-                variant="contained"
-                startIcon={
-                  sendMutation.isPending ? (
-                    <CircularProgress size={16} color="inherit" />
-                  ) : (
-                    <SendIcon />
-                  )
-                }
-                onClick={handleSend}
-                disabled={
-                  sendMutation.isPending ||
-                  !sendForm.name.trim() ||
-                  !sendForm.templateId ||
-                  sendForm.recipients.length === 0
-                }
-              >
-                발송하기
-              </Button>
-            </Box>
-          </Box>
-        </Paper>
-      )}
-
-      {/* ── Tab 2: Logs ───────────────────────────────────────────────────────── */}
-      {tab === 2 && (
-        <>
-          {logsLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-              <CircularProgress />
-            </Box>
-          ) : logs.length === 0 ? (
-            <EmptyState message="발송 내역이 없습니다." />
-          ) : (
-            <TableContainer
-              component={Paper}
-              elevation={0}
-              sx={{ border: '1px solid', borderColor: 'divider' }}
+      {/* ── 템플릿 작성/수정 모달 ──────────────────────────────────────────── */}
+      <Modal
+        open={templateModalOpen}
+        onClose={() => setTemplateModalOpen(false)}
+        eyebrow="Template"
+        title={editingTemplate ? '템플릿 수정' : '템플릿 추가'}
+        maxWidth={640}
+        footer={
+          <>
+            <button className="btn btn-line" style={{ minWidth: 110 }} onClick={() => setTemplateModalOpen(false)}>
+              취소
+            </button>
+            <button
+              className="btn btn-primary"
+              style={{ minWidth: 110 }}
+              disabled={isTemplateSaving || !templateForm.name.trim() || !templateForm.content.trim()}
+              onClick={handleSaveTemplate}
             >
-              <Table>
-                <TableHead>
-                  <TableRow sx={{ bgcolor: 'background.default' }}>
-                    <TableCell>발송일</TableCell>
-                    <TableCell>제목</TableCell>
-                    <TableCell align="right">수신자수</TableCell>
-                    <TableCell align="right">읽음수</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {logs.map((log) => (
-                    <TableRow key={log.id} hover>
-                      <TableCell sx={{ color: 'text.secondary' }}>
-                        {new Date(log.sentAt ?? log.createdAt).toLocaleString('ko-KR')}
-                      </TableCell>
-                      <TableCell sx={{ fontWeight: 500 }}>{log.title ?? '—'}</TableCell>
-                      <TableCell align="right">{log.recipientCount}명</TableCell>
-                      <TableCell align="right">
-                        <Chip
-                          label={`${log.readCount} / ${log.recipientCount}`}
-                          size="small"
-                          color={log.readCount === log.recipientCount ? 'success' : 'default'}
-                          variant="outlined"
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </>
-      )}
-
-      {/* ── Template Dialog ───────────────────────────────────────────────────── */}
-      <Dialog
-        open={templateDialogOpen}
-        onClose={() => setTemplateDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
+              {editingTemplate ? '수정' : '추가'}
+            </button>
+          </>
+        }
       >
-        <DialogTitle>{editingTemplate ? '템플릿 수정' : '템플릿 추가'}</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-          <TextField
-            label="이름"
-            required
-            value={templateForm.name}
-            onChange={(e) => setTemplateForm((f) => ({ ...f, name: e.target.value }))}
-            fullWidth
-          />
-          <TextField
-            label="내용"
-            required
-            multiline
-            rows={5}
-            value={templateForm.content}
-            onChange={(e) => setTemplateForm((f) => ({ ...f, content: e.target.value }))}
-            fullWidth
-            helperText="변수는 {{변수명}} 형식으로 입력하세요. 예: {{직원명}}, {{날짜}}"
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setTemplateDialogOpen(false)}>취소</Button>
-          <Button
-            variant="contained"
-            onClick={handleSaveTemplate}
-            disabled={
-              isTemplateSaving ||
-              !templateForm.name.trim() ||
-              !templateForm.content.trim()
-            }
-          >
-            {editingTemplate ? '수정' : '추가'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        <div className="doc">
+          <div className="doc-section">
+            <div className="doc-field">
+              <span className="fk">
+                템플릿명<span className="req">*</span>
+              </span>
+              <span className="fv">
+                <input
+                  className="inp-block"
+                  value={templateForm.name}
+                  onChange={(e) => setTemplateForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="템플릿 이름"
+                />
+              </span>
+            </div>
+            <div className="doc-field">
+              <span className="fk">
+                내용<span className="req">*</span>
+              </span>
+              <span className="fv" style={{ width: '100%' }}>
+                <textarea
+                  className="ta"
+                  value={templateForm.content}
+                  onChange={(e) => setTemplateForm((f) => ({ ...f, content: e.target.value }))}
+                  placeholder="안녕하세요, #{employee}님."
+                  style={{ minHeight: 120 }}
+                />
+              </span>
+            </div>
+            <Note title="치환 변수">
+              {'#{employee}'} · {'#{team}'} · {'#{month}'} 형식으로 입력하면 발송 시 자동 치환됩니다.
+            </Note>
+          </div>
+        </div>
+      </Modal>
 
-      {/* ── Delete Confirm ─────────────────────────────────────────────────────── */}
       <ConfirmDialog
         open={!!deleteTarget}
         title="템플릿 삭제"
         message={`"${deleteTarget?.name}" 템플릿을 삭제하시겠습니까?`}
         confirmLabel="삭제"
-        confirmColor="error"
-        loading={deleteTemplateMutation.isPending}
         onConfirm={handleDeleteTemplate}
         onCancel={() => setDeleteTarget(null)}
       />
-
-      <Snackbar
-        open={snack.open}
-        autoHideDuration={3000}
-        onClose={() => setSnack((s) => ({ ...s, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          severity={snack.severity}
-          variant="filled"
-          onClose={() => setSnack((s) => ({ ...s, open: false }))}
-        >
-          {snack.message}
-        </Alert>
-      </Snackbar>
     </>
   )
 }

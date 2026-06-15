@@ -1,30 +1,9 @@
 'use client'
-import { useState } from 'react'
-import Alert from '@mui/material/Alert'
-import Autocomplete from '@mui/material/Autocomplete'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
-import FormControl from '@mui/material/FormControl'
-import InputLabel from '@mui/material/InputLabel'
-import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
-import Select from '@mui/material/Select'
-import Snackbar from '@mui/material/Snackbar'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableFooter from '@mui/material/TableFooter'
-import TableHead from '@mui/material/TableHead'
-import TablePagination from '@mui/material/TablePagination'
-import TableRow from '@mui/material/TableRow'
-import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
-import DownloadIcon from '@mui/icons-material/Download'
-import SearchIcon from '@mui/icons-material/Search'
-import PageHeader from '@/components/common/PageHeader'
-import EmptyState from '@/components/common/EmptyState'
+import { type ReactNode, useState } from 'react'
+import { PageHead, FilterPanel } from '@/components/ab/Page'
+import { Avatar, Field, DateInput, Pager } from '@/components/ab/atoms'
+import { I, HRI } from '@/components/ab/icons'
+import { useToast } from '@/components/ab/Toast'
 import { useEmployees, type Employee } from '@/lib/query/employees'
 import { useOrganizations, type Organization } from '@/lib/query/organizations'
 import apiClient from '@/lib/api-client'
@@ -45,6 +24,14 @@ function minutesToHours(minutes: number): string {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
   return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
+function avgPerDay(totalMinutes: number, days: number): string {
+  if (!days) return '—'
+  const per = Math.round(totalMinutes / days)
+  const h = Math.floor(per / 60)
+  const m = per % 60
+  return `${h}h ${String(m).padStart(2, '0')}m`
 }
 
 function flattenOrgs(orgs: Organization[]): Organization[] {
@@ -73,10 +60,45 @@ interface ReportRow {
 }
 
 const LATE_OPTIONS = [0, 5, 10, 15, 30]
+const PAGE_SIZE = 25
+
+// 와이드 표 컬럼: 라벨(2줄)과 데이터 accessor를 한 배열로 묶어 헤더↔본문 정합 보장.
+// 직원열은 sticky로 별도 렌더. CSV export 필드 매핑과 일관(근로시간=totalWorkMinutes,
+// 표준화근로시간=standardizedWorkMinutes).
+interface RepCol {
+  label: string
+  cell: (r: ReportRow) => { value: ReactNode; className?: string }
+}
+const REP_COLS: RepCol[] = [
+  { label: '소정\n근로일', cell: (r) => ({ value: r.scheduledWorkDays }) },
+  {
+    label: '승인\n근로일',
+    cell: (r) => ({ value: r.totalWorkDays, className: r.scheduledWorkDays > r.totalWorkDays ? 'warnv' : '' }),
+  },
+  { label: '실\n근로일', cell: (r) => ({ value: r.normalCount }) },
+  { label: '유급\n휴가일', cell: (r) => ({ value: r.usedLeaveDays, className: r.usedLeaveDays === 0 ? 'zero' : '' }) },
+  { label: '소정\n근로시간', cell: (r) => ({ value: minutesToHours(r.scheduledWorkMinutes) }) },
+  {
+    label: '승인\n근로시간',
+    cell: (r) => ({
+      value: minutesToHours(r.totalWorkMinutes),
+      className: r.totalWorkMinutes !== r.scheduledWorkMinutes ? 'warnv' : '',
+    }),
+  },
+  { label: '실\n근로시간', cell: (r) => ({ value: minutesToHours(r.totalWorkMinutes) }) },
+  { label: '표준\n근로시간', cell: (r) => ({ value: minutesToHours(r.standardizedWorkMinutes) }) },
+  { label: '1일\n평균', cell: (r) => ({ value: avgPerDay(r.totalWorkMinutes, r.totalWorkDays) }) },
+  {
+    label: '지각',
+    cell: (r) => ({ value: r.lateCount, className: r.lateCount > 2 ? 'alert' : r.lateCount === 0 ? 'zero' : '' }),
+  },
+]
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
+  const toast = useToast()
+
   const { data: employeesData } = useEmployees({ isActive: true })
   const employees: Employee[] = employeesData?.items ?? []
 
@@ -86,43 +108,39 @@ export default function ReportsPage() {
   // Filters
   const [startDate, setStartDate] = useState(startOfMonth())
   const [endDate, setEndDate] = useState(today())
-  const [orgFilter, setOrgFilter] = useState<Organization | null>(null)
-  const [employeeFilter, setEmployeeFilter] = useState<Employee | null>(null)
+  const [orgId, setOrgId] = useState('')
+  const [employeeId, setEmployeeId] = useState('')
   const [lateThreshold, setLateThreshold] = useState(0)
   const [earlyLeaveThreshold, setEarlyLeaveThreshold] = useState(0)
 
   // Result state
   const [rows, setRows] = useState<ReportRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
 
   // Pagination
-  const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(25)
-
-  // Snackbar
-  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
-    open: false,
-    message: '',
-    severity: 'success',
-  })
+  const [page, setPage] = useState(1)
 
   async function handleSearch() {
     setLoading(true)
-    setPage(0)
+    setPage(1)
+    setHasSearched(true)
     try {
       const params: Record<string, string | undefined> = {
         startDate,
         endDate,
-        organizationId: orgFilter?.id,
-        employeeId: employeeFilter?.id,
+        organizationId: orgId || undefined,
+        employeeId: employeeId || undefined,
         lateThresholdMinutes: lateThreshold > 0 ? String(lateThreshold) : undefined,
         earlyLeaveThresholdMinutes: earlyLeaveThreshold > 0 ? String(earlyLeaveThreshold) : undefined,
       }
-      const result = await apiClient.get('/reports/realtime', { params }) as ReportRow[] | { items: ReportRow[] }
-      const data = Array.isArray(result) ? result : result.items ?? []
+      const result = (await apiClient.get('/reports/realtime', { params })) as
+        | ReportRow[]
+        | { items: ReportRow[] }
+      const data = Array.isArray(result) ? result : (result.items ?? [])
       setRows(data)
     } catch {
-      setSnack({ open: true, message: '리포트 조회에 실패했습니다.', severity: 'error' })
+      toast('리포트 조회에 실패했습니다')
       setRows([])
     } finally {
       setLoading(false)
@@ -158,203 +176,158 @@ export default function ReportsPage() {
     a.download = `근태리포트_${startDate}_${endDate}.csv`
     a.click()
     URL.revokeObjectURL(url)
+    toast('엑셀로 내보냈습니다')
   }
 
-  const paginatedRows = rows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const paginatedRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <>
-      <PageHeader
-        title="근태 리포트"
-        actions={
-          rows.length > 0 && (
-            <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleExport}>
-              엑셀 다운로드
-            </Button>
-          )
+      <PageHead
+        eyebrow="Real-time Report"
+        title="리포트"
+        right={
+          rows.length > 0 ? (
+            <button className="btn btn-ghost btn-sm" onClick={handleExport}>
+              {I.down({ style: { marginRight: 7 } })}다운로드
+            </button>
+          ) : undefined
         }
       />
 
-      {/* Filter bar */}
-      <Paper
-        elevation={0}
-        sx={{ border: '1px solid', borderColor: 'divider', p: 2, mb: 3, borderRadius: 2 }}
-      >
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-          <TextField
-            label="시작일"
-            type="date"
-            size="small"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 160 }}
-          />
-          <TextField
-            label="종료일"
-            type="date"
-            size="small"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 160 }}
-          />
-
-          <Autocomplete
-            size="small"
-            sx={{ minWidth: 200 }}
-            options={organizations}
-            getOptionLabel={(o) => o.name}
-            value={orgFilter}
-            onChange={(_, v) => setOrgFilter(v)}
-            renderInput={(params) => <TextField {...params} label="조직" />}
-          />
-
-          <Autocomplete
-            size="small"
-            sx={{ minWidth: 200 }}
-            options={employees}
-            getOptionLabel={(e) => e.name}
-            value={employeeFilter}
-            onChange={(_, v) => setEmployeeFilter(v)}
-            renderInput={(params) => <TextField {...params} label="직원" />}
-          />
-
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel>지각 표시 범위</InputLabel>
-            <Select
-              value={lateThreshold}
-              label="지각 표시 범위"
-              onChange={(e) => setLateThreshold(Number(e.target.value))}
-            >
-              <MenuItem value={0}>전체</MenuItem>
-              {LATE_OPTIONS.filter((v) => v > 0).map((v) => (
-                <MenuItem key={v} value={v}>
-                  {v}분 이상
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel>조퇴 표시 범위</InputLabel>
-            <Select
-              value={earlyLeaveThreshold}
-              label="조퇴 표시 범위"
-              onChange={(e) => setEarlyLeaveThreshold(Number(e.target.value))}
-            >
-              <MenuItem value={0}>전체</MenuItem>
-              {LATE_OPTIONS.filter((v) => v > 0).map((v) => (
-                <MenuItem key={v} value={v}>
-                  {v}분 이상
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          <Button
-            variant="contained"
-            startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <SearchIcon />}
-            onClick={handleSearch}
-            disabled={loading}
+      {/* 필터 패널 — 실제 편집 가능 */}
+      <FilterPanel>
+        <Field label="기간">
+          <div className="fld-range">
+            <DateInput value={startDate} onChange={setStartDate} />
+            <span className="dash">~</span>
+            <DateInput value={endDate} onChange={setEndDate} />
+          </div>
+        </Field>
+        <Field label="조직">
+          <select className="sel" value={orgId} onChange={(e) => setOrgId(e.target.value)}>
+            <option value="">전체 조직</option>
+            {organizations.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="직원">
+          <select className="sel" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+            <option value="">전체 직원</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="지각 범위">
+          <select
+            className="sel"
+            value={lateThreshold}
+            onChange={(e) => setLateThreshold(Number(e.target.value))}
           >
-            조회
-          </Button>
-        </Box>
-      </Paper>
+            <option value={0}>전체</option>
+            {LATE_OPTIONS.filter((v) => v > 0).map((v) => (
+              <option key={v} value={v}>
+                {v}분 이상
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="조퇴 범위">
+          <select
+            className="sel"
+            value={earlyLeaveThreshold}
+            onChange={(e) => setEarlyLeaveThreshold(Number(e.target.value))}
+          >
+            <option value={0}>전체</option>
+            {LATE_OPTIONS.filter((v) => v > 0).map((v) => (
+              <option key={v} value={v}>
+                {v}분 이상
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="filter-action">
+          <button className="btn btn-primary btn-query" onClick={handleSearch} disabled={loading}>
+            {loading ? '조회 중…' : '조회'}
+          </button>
+        </div>
+      </FilterPanel>
 
-      {/* Results */}
+      {/* 요약 바 */}
+      <div className="fbar">
+        <span style={{ fontSize: 12, color: 'var(--fg-4)' }}>
+          {HRI.up({ style: { display: 'inline', verticalAlign: 'middle', marginRight: 6 } })}
+          실근로시간 = 휴게 차감 기준 · 총 <b style={{ color: 'var(--ab-orange)' }}>{rows.length}</b>명
+        </span>
+      </div>
+
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-          <CircularProgress />
-        </Box>
+        <div className="ab-loading">
+          <span className="ab-spin" />
+          불러오는 중…
+        </div>
       ) : rows.length === 0 ? (
-        <EmptyState message="조회 버튼을 눌러 리포트를 생성하세요." />
+        <div className="note">
+          {hasSearched ? '조건에 맞는 데이터가 없습니다.' : '조회 버튼을 눌러 리포트를 생성하세요.'}
+        </div>
       ) : (
         <>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            총 {rows.length}명
-          </Typography>
-          <TableContainer
-            component={Paper}
-            elevation={0}
-            sx={{ border: '1px solid', borderColor: 'divider' }}
-          >
-            <Table size="small">
-              <TableHead>
-                <TableRow sx={{ bgcolor: 'background.default' }}>
-                  <TableCell>직원명</TableCell>
-                  <TableCell align="right">근로일수</TableCell>
-                  <TableCell align="right">일정일수</TableCell>
-                  <TableCell align="right">일정근로시간</TableCell>
-                  <TableCell align="right">정상출근</TableCell>
-                  <TableCell align="right">근로시간</TableCell>
-                  <TableCell align="right">표준화근로시간</TableCell>
-                  <TableCell align="right">연장근로시간</TableCell>
-                  <TableCell align="right">지각</TableCell>
-                  <TableCell align="right">조퇴</TableCell>
-                  <TableCell align="right">결근</TableCell>
-                  <TableCell align="right">퇴근누락</TableCell>
-                  <TableCell align="right">무일정근무</TableCell>
-                  <TableCell align="right">휴가사용</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {paginatedRows.map((row) => (
-                  <TableRow key={row.employeeId} hover>
-                    <TableCell sx={{ fontWeight: 500 }}>{row.employeeName}</TableCell>
-                    <TableCell align="right">{row.totalWorkDays}일</TableCell>
-                    <TableCell align="right">{row.scheduledWorkDays}일</TableCell>
-                    <TableCell align="right">{minutesToHours(row.scheduledWorkMinutes)}</TableCell>
-                    <TableCell align="right">{row.normalCount}회</TableCell>
-                    <TableCell align="right">{minutesToHours(row.totalWorkMinutes)}</TableCell>
-                    <TableCell align="right">{minutesToHours(row.standardizedWorkMinutes)}</TableCell>
-                    <TableCell align="right">{minutesToHours(row.overtimeMinutes)}</TableCell>
-                    <TableCell align="right">{row.lateCount}회</TableCell>
-                    <TableCell align="right">{row.earlyLeaveCount}회</TableCell>
-                    <TableCell align="right">{row.absentCount}일</TableCell>
-                    <TableCell align="right">{row.missingClockOutCount}회</TableCell>
-                    <TableCell align="right">{row.noScheduleCount}회</TableCell>
-                    <TableCell align="right">{row.usedLeaveDays}일</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              <TableFooter>
-                <TableRow>
-                  <TablePagination
-                    count={rows.length}
-                    page={page}
-                    onPageChange={(_, p) => setPage(p)}
-                    rowsPerPage={rowsPerPage}
-                    onRowsPerPageChange={(e) => {
-                      setRowsPerPage(Number(e.target.value))
-                      setPage(0)
-                    }}
-                    rowsPerPageOptions={[25, 50, 100]}
-                    labelRowsPerPage="페이지당 행수:"
-                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
-                  />
-                </TableRow>
-              </TableFooter>
-            </Table>
-          </TableContainer>
+          <div className="tbl-wide-wrap">
+            <table className="tbl-wide">
+              <thead>
+                <tr>
+                  <th className="emp-col lft">직원</th>
+                  {REP_COLS.map((c, i) => (
+                    <th key={i}>
+                      {c.label.split('\n').map((l, j) => (
+                        <div key={j}>{l}</div>
+                      ))}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedRows.map((r) => {
+                  const isAlert = r.lateCount > 2
+                  return (
+                    <tr key={r.employeeId}>
+                      <td className="emp-col">
+                        <span className="emp">
+                          {isAlert && (
+                            <span style={{ color: 'var(--err)' }}>
+                              {HRI.pin({ width: 12, height: 12 })}
+                            </span>
+                          )}
+                          <Avatar name={r.employeeName} />
+                          <span className="nm" style={{ fontSize: 12 }}>
+                            {r.employeeName}
+                          </span>
+                        </span>
+                      </td>
+                      {REP_COLS.map((c, i) => {
+                        const { value, className } = c.cell(r)
+                        return (
+                          <td key={i} className={className || undefined}>
+                            {value}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pager page={page} totalPages={totalPages} onChange={setPage} />
         </>
       )}
-
-      <Snackbar
-        open={snack.open}
-        autoHideDuration={3000}
-        onClose={() => setSnack((s) => ({ ...s, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          severity={snack.severity}
-          variant="filled"
-          onClose={() => setSnack((s) => ({ ...s, open: false }))}
-        >
-          {snack.message}
-        </Alert>
-      </Snackbar>
     </>
   )
 }

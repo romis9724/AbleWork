@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { Prisma } from '@prisma/client'
+import * as bcrypt from 'bcryptjs'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { CompanySettingsService } from '../companies/company-settings.service'
@@ -107,21 +108,26 @@ export class EmployeesService {
   // ── 직원 등록 ───────────────────────────────────────────────────────────────
 
   async create(companyId: string, dto: CreateEmployeeDto) {
-    const { email, organizationIds, primaryOrganizationId, positionIds, joinedAt, ...rest } = dto
+    const { email, initialPassword, organizationIds, primaryOrganizationId, positionIds, joinedAt, ...rest } =
+      dto
 
     // 조직이 같은 회사 소속인지 확인
     await this.validateOrganizationsBelongToCompany(companyId, organizationIds)
 
+    // 초기 비밀번호가 있으면 즉시 로그인 가능한 활성 계정을 만든다.
+    // 없으면 비활성 계정으로 생성하고, 추후 비밀번호 재설정으로 활성화한다.
+    const passwordHash = initialPassword ? await bcrypt.hash(initialPassword, 10) : ''
+
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // User 조회 또는 임시 생성
+      // User 조회 또는 신규 생성
       let user = await tx.user.findUnique({ where: { email } })
       if (!user) {
         user = await tx.user.create({
           data: {
             email,
-            passwordHash: '',   // 임시 계정 — 합류코드로 비밀번호 설정
+            passwordHash,
             name: rest.name,
-            isActive: false,    // 비밀번호 설정 전까지 비활성
+            isActive: Boolean(initialPassword), // 비밀번호 설정 시에만 활성
           },
         })
       }
@@ -155,7 +161,7 @@ export class EmployeesService {
         })
       }
 
-      // 합류코드 이메일 이벤트 emit
+      // 직원 등록 도메인 이벤트 (감사/알림 확장용)
       this.events.emit(EVENTS.EMPLOYEE_CREATED, {
         employeeId: employee.id,
         email,
@@ -311,6 +317,34 @@ export class EmployeesService {
       where: { id },
       data: { deviceId: null, deviceBoundAt: null },
     })
+  }
+
+  // ── 비밀번호 재설정 (관리자가 직원 로그인 자격 발급/초기화) ──────────────────
+
+  /**
+   * 관리자가 직원의 로그인 비밀번호를 설정/재설정한다.
+   * 연결된 User 계정을 활성화하여 즉시 로그인 가능하게 한다.
+   * 권한: GENERAL_ADMIN 이상은 무조건, ORG_ADMIN은 조직 스코프 + 관리 권한 설정이 켜진 경우.
+   */
+  async resetPassword(companyId: string, id: string, newPassword: string, requester: JwtPayload) {
+    const existing = await this.assertEmployee(companyId, id)
+    await this.guardOrgScope(requester, existing)
+    await this.guardOrgAdminManagePermission(requester)
+
+    if (!existing.userId) {
+      throw new BadRequestException({
+        code: 'EMPLOYEE_USER_NOT_FOUND',
+        message: '로그인 계정이 연결되지 않은 직원입니다.',
+      })
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10)
+    await this.prisma.user.update({
+      where: { id: existing.userId },
+      data: { passwordHash, isActive: true },
+    })
+
+    return { success: true }
   }
 
   // ── 근로정보 이력 ───────────────────────────────────────────────────────────

@@ -60,8 +60,9 @@ export class AttendancesController {
   findAll(
     @CompanyId() companyId: string,
     @Query(new ZodValidationPipe(AttendanceFilterSchema)) filter: AttendanceFilterDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.findAll(companyId, filter)
+    return this.service.findAll(companyId, filter, user)
   }
 
   // HR-05-16 내 오늘 출근 상태 (me/home 상태 복원)
@@ -82,9 +83,10 @@ export class AttendancesController {
     return this.service.createManual(companyId, dto)
   }
 
-  // HR-05-03 현재 근무 현황
+  // HR-05-03 현재 근무 현황 (회사 전체 명단 — 관리자 전용)
   @Get('now-at-work')
-  @ApiOperation({ summary: '현재 근무 현황 조회 (companyId 기준)' })
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '현재 근무 현황 조회 (ORG_ADMIN 이상, companyId 기준)' })
   getNowAtWork(@CompanyId() companyId: string) {
     return this.service.getNowAtWork(companyId)
   }
@@ -184,8 +186,9 @@ export class AttendancesController {
     @CompanyId() companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(UpdateAttendanceSchema)) dto: UpdateAttendanceDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.update(companyId, id, dto)
+    return this.service.update(companyId, id, dto, user.employeeId)
   }
 
   // HR-05-13 출퇴근 삭제 (관리자)

@@ -25,6 +25,7 @@ import { StandardizationRulesModule } from './modules/standardization-rules/stan
 import { MessagesModule } from './modules/messages/messages.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
 import { MailModule } from './modules/mail/mail.module'
+import { AuditModule } from './modules/audit/audit.module'
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { MailModule } from './modules/mail/mail.module'
     MessagesModule,
     NotificationsModule,
     MailModule,
+    AuditModule,
   ],
 })
 export class AppModule {}

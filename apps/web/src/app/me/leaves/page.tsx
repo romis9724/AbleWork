@@ -1,46 +1,33 @@
 'use client'
 import { useState } from 'react'
-import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Typography from '@mui/material/Typography'
-import Chip from '@mui/material/Chip'
-import Fab from '@mui/material/Fab'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
-import Button from '@mui/material/Button'
-import TextField from '@mui/material/TextField'
-import MenuItem from '@mui/material/MenuItem'
-import CircularProgress from '@mui/material/CircularProgress'
-import Snackbar from '@mui/material/Snackbar'
-import Alert from '@mui/material/Alert'
-import AddIcon from '@mui/icons-material/Add'
-import EmptyState from '@/components/common/EmptyState'
 import { useLeaveBalance, useLeaveTypes } from '@/lib/query/leaves'
 import { useCreateRequest } from '@/lib/query/requests'
 import { useAuthStore } from '@/stores/auth.store'
+import { PageHead } from '@/components/ab/Page'
+import { Modal } from '@/components/ab/Modal'
+import { I } from '@/components/ab/icons'
+import { useToast } from '@/components/ab/Toast'
 
-export default function LeavesPage() {
+function gaugePercent(used: number, accrued: number): number {
+  if (accrued <= 0) return 0
+  return Math.min(100, Math.round((used / accrued) * 100))
+}
+
+export default function MyLeavesPage() {
   const user = useAuthStore((s) => s.user)
+  const toast = useToast()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [leaveTypeId, setLeaveTypeId] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
-  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
-    open: false, message: '', severity: 'success',
-  })
 
   const { data: balances = [], isLoading } = useLeaveBalance(user?.employeeId ?? '')
   const { data: leaveTypes = [] } = useLeaveTypes()
   const createRequest = useCreateRequest()
 
   const selectedBalance = balances.find((b) => b.leaveTypeId === leaveTypeId)
-
-  const showSnack = (message: string, severity: 'success' | 'error') =>
-    setSnack({ open: true, message, severity })
+  const canSubmit = !!leaveTypeId && !!startDate && !!endDate && !createRequest.isPending
 
   const resetDialog = () => {
     setDialogOpen(false)
@@ -52,7 +39,7 @@ export default function LeavesPage() {
 
   const handleSubmit = async () => {
     if (!leaveTypeId || !startDate || !endDate) {
-      showSnack('필수 항목을 모두 입력해 주세요.', 'error')
+      toast('필수 항목을 모두 입력해 주세요')
       return
     }
     try {
@@ -60,141 +47,107 @@ export default function LeavesPage() {
         type: 'LEAVE_CREATE',
         payload: { leaveTypeId, startDate, endDate, reason },
       })
-      showSnack('휴가 신청이 완료됐습니다.', 'success')
+      toast('휴가 신청이 완료됐습니다')
       resetDialog()
-    } catch {
-      showSnack('신청 중 오류가 발생했습니다.', 'error')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '신청 중 오류가 발생했습니다')
     }
   }
 
   return (
-    <Box sx={{ position: 'relative', pb: 4 }}>
-      <Typography variant="h6" fontWeight={700} mb={2}>내 휴가</Typography>
+    <>
+      <PageHead
+        eyebrow="Leave"
+        title="내 휴가"
+        right={
+          <button className="btn btn-primary btn-sm" onClick={() => setDialogOpen(true)}>
+            {I.plus()} 휴가 신청
+          </button>
+        }
+      />
 
       {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-          <CircularProgress />
-        </Box>
+        <div className="ab-loading"><span className="ab-spin" />불러오는 중…</div>
       ) : balances.length === 0 ? (
-        <EmptyState message="휴가 잔여 정보가 없습니다." />
+        <div className="note"><div className="note-t">휴가 정보 없음</div>휴가 잔여 정보가 없습니다.</div>
       ) : (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {balances.map((b) => (
-            <Card key={b.id}>
-              <CardContent
-                sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-              >
-                <Box>
-                  <Typography fontWeight={600}>{b.leaveType?.displayName ?? b.leaveType?.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {b.year}년 &middot; 발생 {b.accruedDays}일 &middot; 사용 {b.usedDays}일
-                  </Typography>
-                </Box>
-                <Chip
-                  label={`${b.remainingDays}일 남음`}
-                  color={b.remainingDays > 0 ? 'primary' : 'default'}
-                  variant="outlined"
-                />
-              </CardContent>
-            </Card>
-          ))}
-        </Box>
+        <div className="me-leave-list">
+          {balances.map((b) => {
+            const pct = gaugePercent(b.usedDays, b.accruedDays)
+            return (
+              <div className="me-leave-card" key={b.id}>
+                <div className="me-leave-top">
+                  <span className="me-leave-name">{b.leaveType?.displayName ?? b.leaveType?.name ?? '휴가'}</span>
+                  <span className="me-leave-year tek">{b.year}</span>
+                </div>
+                <div className="bal">
+                  <div className="bal-track">
+                    <div className="bal-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="bal-num">
+                    <b>{b.remainingDays}</b>/{b.accruedDays}일
+                  </span>
+                </div>
+                <div className="me-leave-sub">
+                  발생 <b className="tek">{b.accruedDays}</b>일 · 사용 <b className="tek">{b.usedDays}</b>일
+                  {b.expiresAt && <> · 만료 {new Date(b.expiresAt).toLocaleDateString('ko-KR')}</>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
 
-      {/* FAB */}
-      <Fab
-        color="primary"
-        aria-label="휴가 신청"
-        sx={{ position: 'fixed', bottom: 72, right: 16 }}
-        onClick={() => setDialogOpen(true)}
+      <Modal
+        open={dialogOpen}
+        onClose={resetDialog}
+        eyebrow="Leave Request"
+        title="휴가 신청"
+        maxWidth={460}
+        footer={
+          <>
+            <button className="btn btn-ghost" onClick={resetDialog}>취소</button>
+            <button className="btn btn-primary" disabled={!canSubmit} onClick={handleSubmit}>
+              {createRequest.isPending ? '신청 중…' : '신청'}
+            </button>
+          </>
+        }
       >
-        <AddIcon />
-      </Fab>
-
-      {/* Leave request dialog */}
-      <Dialog open={dialogOpen} onClose={resetDialog} fullWidth maxWidth="xs">
-        <DialogTitle>휴가 신청</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-          <TextField
-            select
-            label="휴가 유형"
-            value={leaveTypeId}
-            onChange={(e) => setLeaveTypeId(e.target.value)}
-            fullWidth
-            required
-          >
+        <div className="fld">
+          <label>휴가 유형</label>
+          <select className="sel" value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)}>
+            <option value="">선택</option>
             {leaveTypes.filter((lt) => lt.isActive).map((lt) => (
-              <MenuItem key={lt.id} value={lt.id}>
-                {lt.displayName ?? lt.name}
-              </MenuItem>
+              <option key={lt.id} value={lt.id}>{lt.displayName ?? lt.name}</option>
             ))}
-          </TextField>
+          </select>
+        </div>
 
-          {selectedBalance && (
-            <Box
-              sx={{
-                px: 1.5,
-                py: 1,
-                bgcolor: 'primary.50',
-                borderRadius: 1,
-                border: '1px solid',
-                borderColor: 'primary.200',
-              }}
-            >
-              <Typography variant="caption" color="primary.main">
-                잔여 일수: <strong>{selectedBalance.remainingDays}일</strong>
-              </Typography>
-            </Box>
-          )}
+        {selectedBalance && (
+          <div className="note" style={{ marginBottom: 18 }}>
+            잔여 일수: <b className="tek" style={{ color: 'var(--ab-orange)' }}>{selectedBalance.remainingDays}일</b>
+          </div>
+        )}
 
-          <TextField
-            label="시작일"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            fullWidth
-            required
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="종료일"
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            fullWidth
-            required
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="사유"
+        <div className="fld">
+          <label>시작일</label>
+          <input className="inp-block" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        </div>
+        <div className="fld">
+          <label>종료일</label>
+          <input className="inp-block" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        </div>
+        <div className="fld" style={{ alignItems: 'start' }}>
+          <label>사유</label>
+          <textarea
+            className="ta"
+            style={{ minHeight: 90 }}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            fullWidth
-            multiline
-            rows={3}
+            placeholder="사유를 입력하세요 (선택)"
           />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={resetDialog}>취소</Button>
-          <Button
-            variant="contained"
-            onClick={handleSubmit}
-            disabled={createRequest.isPending}
-          >
-            {createRequest.isPending ? <CircularProgress size={20} color="inherit" /> : '신청'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar
-        open={snack.open}
-        autoHideDuration={4000}
-        onClose={() => setSnack((s) => ({ ...s, open: false }))}
-      >
-        <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))}>
-          {snack.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+        </div>
+      </Modal>
+    </>
   )
 }

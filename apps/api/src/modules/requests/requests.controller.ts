@@ -66,7 +66,8 @@ export class RequestsController {
     return this.requestsService.createRequest(companyId, dto, requester)
   }
 
-  // HR-07-03 승인 규칙 목록
+  // HR-07-03 승인 규칙 목록 (관리자 전용 — 직원 비노출)
+  @Roles(AccessLevel.ORG_ADMIN)
   @Get('approval-rules')
   @ApiOperation({ summary: '승인 규칙 목록 조회' })
   findApprovalRules(@CompanyId() companyId: string) {

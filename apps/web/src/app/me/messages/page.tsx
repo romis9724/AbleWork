@@ -1,23 +1,11 @@
 'use client'
 import { useState } from 'react'
-import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
-import CardActionArea from '@mui/material/CardActionArea'
-import CardContent from '@mui/material/CardContent'
-import Typography from '@mui/material/Typography'
-import Chip from '@mui/material/Chip'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
-import Button from '@mui/material/Button'
-import TextField from '@mui/material/TextField'
-import CircularProgress from '@mui/material/CircularProgress'
-import Snackbar from '@mui/material/Snackbar'
-import Alert from '@mui/material/Alert'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/lib/api-client'
-import EmptyState from '@/components/common/EmptyState'
+import { PageHead, TableBar } from '@/components/ab/Page'
+import { Badge } from '@/components/ab/atoms'
+import { Modal } from '@/components/ab/Modal'
+import { useToast } from '@/components/ab/Toast'
 
 interface Message {
   id: string
@@ -47,20 +35,19 @@ function useReadMessage() {
 }
 
 export default function MessagesPage() {
+  const toast = useToast()
   const [selected, setSelected] = useState<Message | null>(null)
   const [memo, setMemo] = useState('')
-  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
-    open: false, message: '', severity: 'success',
-  })
 
   const { data: rawMessages, isLoading } = useMessages()
   const messages: Message[] = Array.isArray(rawMessages)
     ? rawMessages
-    : ((rawMessages as { items?: Message[]; data?: Message[] })?.items ?? (rawMessages as { items?: Message[]; data?: Message[] })?.data ?? [])
+    : (rawMessages as { items?: Message[]; data?: Message[] })?.items ??
+      (rawMessages as { items?: Message[]; data?: Message[] })?.data ??
+      []
   const readMessage = useReadMessage()
 
-  const showSnack = (message: string, severity: 'success' | 'error') =>
-    setSnack({ open: true, message, severity })
+  const unreadCount = messages.filter((m) => !m.readAt).length
 
   const handleOpen = (msg: Message) => {
     setSelected(msg)
@@ -76,107 +63,89 @@ export default function MessagesPage() {
     if (!selected) return
     try {
       await readMessage.mutateAsync({ id: selected.id, note: memo.trim() || undefined })
-      showSnack('메시지를 확인했습니다.', 'success')
+      toast('메시지를 확인했습니다')
       handleClose()
-    } catch {
-      showSnack('처리 중 오류가 발생했습니다.', 'error')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다')
     }
   }
 
   return (
-    <Box>
-      <Typography variant="h6" fontWeight={700} mb={2}>내 메시지</Typography>
+    <>
+      <PageHead
+        eyebrow="Messages"
+        title="내 메시지"
+        right={unreadCount > 0 ? <span className="page-stamp">미읽음 {unreadCount}</span> : undefined}
+      />
+
+      <TableBar count={<>총 <b>{messages.length}</b>건</>} />
 
       {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-          <CircularProgress />
-        </Box>
+        <div className="ab-loading"><span className="ab-spin" />불러오는 중…</div>
       ) : messages.length === 0 ? (
-        <EmptyState message="받은 메시지가 없습니다." />
+        <div className="note"><div className="note-t">메시지 없음</div>받은 메시지가 없습니다.</div>
       ) : (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <div className="me-msg-list">
           {messages.map((msg) => {
-            const isRead = msg.readAt !== null && msg.readAt !== undefined
+            const isRead = !!msg.readAt
             const displayTitle = msg.title ?? msg.content.slice(0, 30) + (msg.content.length > 30 ? '…' : '')
             return (
-              <Card
+              <button
                 key={msg.id}
-                variant="outlined"
-                sx={{ opacity: isRead ? 0.7 : 1 }}
+                className={'me-msg-row' + (isRead ? ' read' : '')}
+                onClick={() => handleOpen(msg)}
               >
-                <CardActionArea onClick={() => handleOpen(msg)}>
-                  <CardContent
-                    sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: '12px !important' }}
-                  >
-                    <Box sx={{ flex: 1, minWidth: 0, mr: 1.5 }}>
-                      <Typography
-                        variant="body2"
-                        fontWeight={isRead ? 400 : 600}
-                        noWrap
-                      >
-                        {displayTitle}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {new Date(msg.sentAt).toLocaleString('ko-KR', {
-                          month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                        })}
-                      </Typography>
-                    </Box>
-                    <Chip
-                      label={isRead ? '읽음' : '미읽음'}
-                      size="small"
-                      color={isRead ? 'default' : 'primary'}
-                      variant={isRead ? 'outlined' : 'filled'}
-                    />
-                  </CardContent>
-                </CardActionArea>
-              </Card>
+                {!isRead && <span className="me-msg-dot" />}
+                <div className="grow">
+                  <div className="me-msg-title">{displayTitle}</div>
+                  <div className="me-msg-time tek">
+                    {new Date(msg.sentAt).toLocaleString('ko-KR', {
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </div>
+                </div>
+                <Badge kind={isRead ? 'b-submit' : 'b-prog'}>{isRead ? '읽음' : '미읽음'}</Badge>
+              </button>
             )
           })}
-        </Box>
+        </div>
       )}
 
-      {/* Detail dialog */}
-      <Dialog open={!!selected} onClose={handleClose} fullWidth maxWidth="xs">
-        <DialogTitle>{selected?.title ?? '메시지'}</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
-          <Typography variant="caption" color="text.secondary">
-            {selected && new Date(selected.sentAt).toLocaleString('ko-KR')}
-          </Typography>
-          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-            {selected?.content}
-          </Typography>
-          <TextField
-            label="메모"
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            fullWidth
-            multiline
-            rows={3}
-            placeholder="메모를 입력하세요 (선택사항)"
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose}>닫기</Button>
-          <Button
-            variant="contained"
-            onClick={handleConfirm}
-            disabled={readMessage.isPending}
-          >
-            {readMessage.isPending ? <CircularProgress size={20} color="inherit" /> : '확인'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar
-        open={snack.open}
-        autoHideDuration={4000}
-        onClose={() => setSnack((s) => ({ ...s, open: false }))}
+      <Modal
+        open={!!selected}
+        onClose={handleClose}
+        eyebrow="Message"
+        title={selected?.title ?? '메시지'}
+        maxWidth={480}
+        footer={
+          <>
+            <button className="btn btn-ghost" onClick={handleClose}>닫기</button>
+            <button className="btn btn-primary" disabled={readMessage.isPending} onClick={handleConfirm}>
+              {readMessage.isPending ? '처리 중…' : '확인'}
+            </button>
+          </>
+        }
       >
-        <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))}>
-          {snack.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+        {selected && (
+          <>
+            <div className="me-msg-meta tek">{new Date(selected.sentAt).toLocaleString('ko-KR')}</div>
+            <div className="me-msg-content">{selected.content}</div>
+            <div className="fld" style={{ alignItems: 'start' }}>
+              <label>메모</label>
+              <textarea
+                className="ta"
+                style={{ minHeight: 90 }}
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder="메모를 입력하세요 (선택)"
+              />
+            </div>
+          </>
+        )}
+      </Modal>
+    </>
   )
 }

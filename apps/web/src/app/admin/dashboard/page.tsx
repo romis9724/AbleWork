@@ -1,40 +1,11 @@
 'use client'
-import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Chip from '@mui/material/Chip'
-import CircularProgress from '@mui/material/CircularProgress'
-import Grid from '@mui/material/Grid'
-import Paper from '@mui/material/Paper'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import Typography from '@mui/material/Typography'
-import { useNowAtWork, useAttendances } from '@/lib/query/attendances'
-import { useRequests } from '@/lib/query/requests'
-import type { Attendance } from '@/lib/query/attendances'
-import type { Request } from '@/lib/query/requests'
-
-const REQUEST_STATUS_COLOR: Record<string, 'warning' | 'success' | 'error' | 'default'> = {
-  PENDING: 'warning',
-  APPROVED: 'success',
-  REJECTED: 'error',
-  FORCE_APPROVED: 'success',
-  FORCE_REJECTED: 'error',
-  CANCELLED: 'default',
-}
-
-const REQUEST_STATUS_LABEL: Record<string, string> = {
-  PENDING: '검토 중',
-  APPROVED: '승인',
-  REJECTED: '거절',
-  FORCE_APPROVED: '강제 승인',
-  FORCE_REJECTED: '강제 거절',
-  CANCELLED: '취소',
-}
+import { useRouter } from 'next/navigation'
+import { useNowAtWork, useAttendances, type Attendance, type NowAtWork } from '@/lib/query/attendances'
+import { useRequests, useApproveRequest, useRejectRequest, type Request } from '@/lib/query/requests'
+import { PageHead, KpiGrid, Kpi, CardBox } from '@/components/ab/Page'
+import { Avatar } from '@/components/ab/atoms'
+import { I } from '@/components/ab/icons'
+import { useToast } from '@/components/ab/Toast'
 
 const REQUEST_TYPE_LABEL: Record<string, string> = {
   LEAVE_CREATE: '휴가 신청',
@@ -43,162 +14,125 @@ const REQUEST_TYPE_LABEL: Record<string, string> = {
   DEVICE_CHANGE: '기기 변경',
 }
 
-function today() {
+function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-interface StatCardProps {
-  label: string
-  value: number | string
-  color?: string
-  loading?: boolean
+function timeLabel(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-function StatCard({ label, value, color = 'primary.main', loading = false }: StatCardProps) {
-  return (
-    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%' }}>
-      <CardContent>
-        <Typography variant="body2" color="text.secondary" mb={1}>
-          {label}
-        </Typography>
-        {loading ? (
-          <CircularProgress size={28} />
-        ) : (
-          <Typography variant="h4" fontWeight={700} color={color}>
-            {value}
-          </Typography>
-        )}
-      </CardContent>
-    </Card>
-  )
+function unwrap<T>(raw: unknown): T[] {
+  if (Array.isArray(raw)) return raw as T[]
+  return ((raw as { items?: T[] })?.items ?? []) as T[]
 }
 
 export default function DashboardPage() {
+  const toast = useToast()
+  const router = useRouter()
   const todayStr = today()
 
-  const { data: nowAtWork, isLoading: nowLoading } = useNowAtWork()
-  const nowAtWorkCount = nowAtWork?.total ?? nowAtWork?.items?.length ?? 0
+  const { data: nowRaw } = useNowAtWork()
+  const nowItems: NowAtWork[] = nowRaw?.items ?? []
+  const nowCount = nowRaw?.total ?? nowItems.length
 
-  const { data: rawAttendances, isLoading: attLoading } = useAttendances({
-    startDate: todayStr,
-    endDate: todayStr,
-  })
+  const { data: attRaw } = useAttendances({ startDate: todayStr, endDate: todayStr })
+  const attItems = unwrap<Attendance>(attRaw)
+  const clockInCount = attItems.length
+  const lateCount = attItems.filter((a) => a.status === 'late').length
+  const absentCount = attItems.filter((a) => a.status === 'absent').length
 
-  const { data: rawRequests, isLoading: reqLoading } = useRequests({
-    status: 'PENDING',
-  })
+  const { data: reqRaw } = useRequests({ status: 'PENDING' })
+  const reqItems = unwrap<Request>(reqRaw)
+  const pendingCount = reqItems.length
 
-  const attendanceItems: Attendance[] = Array.isArray(rawAttendances)
-    ? (rawAttendances as Attendance[])
-    : ((rawAttendances as { items?: Attendance[] })?.items ?? [])
+  const approve = useApproveRequest()
+  const reject = useRejectRequest()
 
-  const requestItems: Request[] = Array.isArray(rawRequests)
-    ? (rawRequests as Request[])
-    : ((rawRequests as { items?: Request[] })?.items ?? [])
-
-  const todayClockInCount = attendanceItems.length
-  const todayLateCount = attendanceItems.filter((a) => a.status === 'late').length
-  const pendingRequestCount = requestItems.length
-
-  const recentRequests = requestItems.slice(0, 5)
+  const handleApprove = (id: string) => {
+    approve.mutate({ id }, { onSuccess: () => toast('요청을 승인했습니다') })
+  }
+  const handleReject = (id: string) => {
+    reject.mutate({ id }, { onSuccess: () => toast('요청을 거절했습니다') })
+  }
 
   return (
     <>
-      <Typography variant="h5" fontWeight={700} mb={3}>
-        대시보드
-      </Typography>
+      <PageHead
+        eyebrow="Dashboard"
+        title="홈"
+        right={
+          <span className="page-stamp">
+            {new Date().toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })} 기준
+            <span className="rf" onClick={() => toast('현황을 새로고침했습니다')}>{I.refresh()}</span>
+          </span>
+        }
+      />
 
-      <Grid container spacing={3} mb={4}>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            label="현재 근무 중"
-            value={nowAtWorkCount}
-            color="success.main"
-            loading={nowLoading}
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            label="오늘 출근"
-            value={todayClockInCount}
-            color="primary.main"
-            loading={attLoading}
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            label="오늘 지각"
-            value={todayLateCount}
-            color="warning.main"
-            loading={attLoading}
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            label="진행 중 요청"
-            value={pendingRequestCount}
-            color="text.primary"
-            loading={reqLoading}
-          />
-        </Grid>
-      </Grid>
+      <KpiGrid>
+        <Kpi label="금일 출근" value={clockInCount} unit="명" accent desc={`근무중 ${nowCount}명 포함`} />
+        <Kpi label="지각" value={lateCount} unit="명" desc="금일 기준" />
+        <Kpi label="결근" value={absentCount} unit="명" desc="금일 기준" />
+        <Kpi
+          label="미처리 요청"
+          value={pendingCount}
+          unit="건"
+          desc={pendingCount > 0 ? <span className="tag up">처리 필요</span> : '없음'}
+        />
+      </KpiGrid>
 
-      <Typography variant="subtitle1" fontWeight={700} mb={2}>
-        최근 요청 (진행 중)
-      </Typography>
+      <div className="dash-grid">
+        <CardBox title="실시간 근무 현황" more="출퇴근기록 →" onMore={() => router.push('/admin/attendances')}>
+          <div className="mini">
+            {nowItems.length === 0 ? (
+              <div className="mini-row" style={{ justifyContent: 'center', color: 'var(--fg-4)', fontSize: 12 }}>
+                현재 근무 중인 직원이 없습니다
+              </div>
+            ) : (
+              nowItems.slice(0, 8).map((r) => (
+                <div className="mini-row" key={r.attendanceId}>
+                  <Avatar name={r.employeeName} on={r.workingStatus === 'working'} />
+                  <div className="grow">
+                    <div className="l1">{r.employeeName}</div>
+                    <div className="l2">{r.organization?.name ?? '—'}</div>
+                  </div>
+                  <span className="rt" style={r.status === 'late' ? { color: 'var(--warn)' } : undefined}>
+                    {timeLabel(r.clockInAt)} 출근{r.status === 'late' ? ' · 지각' : ''}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </CardBox>
 
-      {reqLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer
-          component={Paper}
-          elevation={0}
-          sx={{ border: '1px solid', borderColor: 'divider' }}
-        >
-          <Table size="small">
-            <TableHead>
-              <TableRow sx={{ bgcolor: 'background.default' }}>
-                <TableCell>직원명</TableCell>
-                <TableCell>요청 유형</TableCell>
-                <TableCell>상태</TableCell>
-                <TableCell>신청일</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {recentRequests.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                    진행 중인 요청이 없습니다.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                recentRequests.map((req) => (
-                  <TableRow key={req.id} hover>
-                    <TableCell sx={{ fontWeight: 600 }}>
-                      {req.requester?.name ?? '—'}
-                    </TableCell>
-                    <TableCell>
-                      {REQUEST_TYPE_LABEL[req.type] ?? req.type}
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={REQUEST_STATUS_LABEL[req.status] ?? req.status}
-                        color={REQUEST_STATUS_COLOR[req.status] ?? 'default'}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {new Date(req.createdAt).toLocaleDateString('ko-KR')}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+        <CardBox title="처리 대기 요청" more="요청 내역 →" onMore={() => router.push('/admin/requests')}>
+          <div className="mini">
+            {reqItems.length === 0 ? (
+              <div className="mini-row" style={{ justifyContent: 'center', color: 'var(--fg-4)', fontSize: 12 }}>
+                대기 중인 요청이 없습니다
+              </div>
+            ) : (
+              reqItems.slice(0, 5).map((req) => (
+                <div className="mini-row" key={req.id}>
+                  <div className="grow">
+                    <div className="l1">{REQUEST_TYPE_LABEL[req.type] ?? req.type}</div>
+                    <div className="l2">{req.requester?.name ?? '—'}</div>
+                  </div>
+                  <span className="req-act">
+                    <button className="btn-approve" disabled={approve.isPending} onClick={() => handleApprove(req.id)}>
+                      승인
+                    </button>
+                    <button className="btn-reject" disabled={reject.isPending} onClick={() => handleReject(req.id)}>
+                      거절
+                    </button>
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </CardBox>
+      </div>
     </>
   )
 }

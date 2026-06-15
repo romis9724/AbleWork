@@ -7,8 +7,10 @@ import { PermissionSettingsController } from './permission-settings.controller'
 import { PermissionSettingsService } from './permission-settings.service'
 import { CompanyHolidaysController } from './company-holidays.controller'
 import { CompanyHolidaysService } from './company-holidays.service'
+import { AuditModule } from '../audit/audit.module'
 
 @Module({
+  imports: [AuditModule],
   controllers: [
     CompaniesController,
     CompanySettingsController,

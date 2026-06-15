@@ -1,0 +1,35 @@
+# 앱 서버(192.168.10.150) — API + Web
+# 빌드 컨텍스트는 rsync 한 소스(./src). 공개: web 3000(게이트웨이 18000), api 3001(게이트웨이 18001).
+# 사용: /opt/ablework 에서  docker compose -p ablework -f docker-compose.app.yml up -d --build
+name: ablework
+
+services:
+  api:
+    build:
+      context: ./src
+      dockerfile: deploy/Dockerfile
+      target: api
+    image: ablework-api:latest
+    restart: unless-stopped
+    env_file:
+      - .env.app
+    ports:
+      - '3001:3001'
+
+  web:
+    build:
+      context: ./src
+      dockerfile: deploy/Dockerfile
+      target: web
+      args:
+        # 브라우저가 호출하는 공개 API 주소(게이트웨이 18001 → api 3001)
+        NEXT_PUBLIC_API_URL: 'http://59.29.231.14:18001/api/v1'
+    image: ablework-web:latest
+    restart: unless-stopped
+    # 미들웨어(쿠키 JWT 검증)가 런타임에 JWT_SECRET 을 사용한다 — API와 동일 값 주입
+    env_file:
+      - .env.web
+    ports:
+      - '3000:3000'
+    depends_on:
+      - api

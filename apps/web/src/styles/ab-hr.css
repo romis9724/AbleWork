@@ -1,0 +1,192 @@
+/* ============================================================
+   AB Workforce — HR 전용 컴포넌트 스타일
+   ab/admin.css 위에 얹어 쓰는 보강 시트 (셸·테이블·뱃지·모달·버튼은 admin.css 재사용)
+   ============================================================ */
+
+/* ---- 페이지 헤드 우측 액션 묶음 ---- */
+.head-actions { display: flex; align-items: center; gap: 10px; }
+.hd-lang { white-space: nowrap; }
+.hd-wordmark { white-space: nowrap; }
+
+/* ---- 사이드바 아이콘 ---- */
+.sb-item .sbi { display: inline-flex; color: var(--fg-5); transition: color var(--ease) .2s; flex: 0 0 auto; }
+.sb-item { white-space: nowrap; padding: 9px 24px; }
+.sb-item.on .sbi, .sb-item:hover .sbi { color: var(--ab-orange); }
+.sb-section { padding: 16px 24px 7px; font-family: var(--font-display); font-variation-settings: 'wdth' 100; font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--fg-5); }
+.sb-nav > .sb-section:first-child { padding-top: 2px; }
+.sb-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; background: var(--ab-orange); color: #fff; font-size: 10px; font-weight: 700; font-family: var(--font-display); font-variation-settings: 'wdth' 100; }
+
+/* ---- 직원 셀 (아바타 + 이름) ---- */
+.emp { display: inline-flex; align-items: center; gap: 10px; }
+.emp .nm { white-space: nowrap; }
+
+/* ---- 데이터 표 가로 스크롤 래퍼 ---- */
+.tbl-scroll { overflow-x: auto; }
+.tbl-scroll > .tbl { min-width: 880px; }
+.tbl-scroll.wide > .tbl { min-width: 1040px; }
+
+/* ---- 체크박스 + 라벨 라인 ---- */
+.ckline { display: flex; align-items: center; gap: 11px; font-size: 13px; color: var(--fg-2); cursor: pointer; padding: 9px 0; }
+.ckline .help { font-size: 11px; color: var(--fg-5); margin-left: 4px; }
+.ckline:hover { color: #fff; }
+
+/* ---- 파일/감사 아이콘 셀 ---- */
+.icell { display: inline-flex; align-items: center; justify-content: center; color: var(--fg-4); cursor: pointer; transition: color var(--ease) .18s; }
+.icell:hover { color: var(--ab-orange); }
+
+/* ---- 금액 (Tektur, 우측정렬) ---- */
+.won { font-family: var(--font-display); font-variation-settings: 'wdth' 100; font-size: 13px; color: var(--fg-2); white-space: nowrap; }
+.won.net { color: #fff; font-weight: 700; }
+.won.minus { color: var(--err); }
+
+/* ---- 회사설정 좌측 서브내비 ---- */
+.subnav { display: flex; flex-direction: column; }
+.subnav-item { padding: 11px 18px; font-size: 13px; color: var(--fg-3); cursor: pointer; border-bottom: 1px solid var(--line-soft); transition: all var(--ease) .18s; background: none; border-left: none; border-right: none; border-top: none; text-align: left; font-family: var(--font-body); width: 100%; }
+.subnav-item:hover { background: var(--ab-bg-2); color: #fff; }
+.subnav-item.on { background: var(--ab-bg-2); color: #fff; border-left: 3px solid var(--ab-orange); padding-left: 15px; }
+.emp .av {
+  width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center;
+  border: 1px solid var(--line); font-family: var(--font-display); font-variation-settings: 'wdth' 100;
+  font-size: 11px; font-weight: 700; color: var(--fg-2); background: var(--ab-bg-2);
+}
+.emp .av.on { border-color: var(--ab-orange); color: var(--ab-orange); }
+.emp .nm { font-size: 13px; color: #fff; font-weight: 600; }
+.emp .nm .sub { display: block; font-size: 11px; color: var(--fg-5); font-weight: 400; margin-top: 2px; }
+
+/* ============================================================ DASHBOARD (홈) */
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border: 1px solid var(--line); margin-bottom: 30px; }
+.kpi { padding: 24px 26px; border-right: 1px solid var(--line-soft); position: relative; }
+.kpi:last-child { border-right: none; }
+.kpi-k { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-5); font-family: var(--font-display); font-variation-settings: 'wdth' 100; margin-bottom: 16px; }
+.kpi-v { font-family: var(--font-display); font-variation-settings: 'wdth' 100; font-size: 40px; font-weight: 800; color: #fff; line-height: 1; letter-spacing: 0.01em; white-space: nowrap; }
+.kpi-v .u { font-size: 15px; font-weight: 500; color: var(--fg-4); margin-left: 5px; font-family: var(--font-body); }
+.kpi-d { margin-top: 12px; font-size: 12px; color: var(--fg-4); display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.kpi-d .tag { font-weight: 700; font-family: var(--font-display); font-variation-settings: 'wdth' 100; }
+.kpi-d .tag.up { color: var(--ab-orange); }
+.kpi-d .tag.warn { color: var(--warn); }
+.kpi.accent::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--ab-orange); }
+
+.dash-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 28px; align-items: start; }
+.card-box { border: 1px solid var(--line); }
+.card-box-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+.card-box-head .t { font-size: 13px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 9px; }
+.card-box-head .t .dot { width: 6px; height: 6px; background: var(--ab-orange); }
+.card-box-head .more { font-size: 11px; color: var(--fg-4); cursor: pointer; font-family: var(--font-display); font-variation-settings: 'wdth' 100; letter-spacing: 0.08em; text-transform: uppercase; }
+.card-box-head .more:hover { color: var(--ab-orange); }
+
+/* mini list rows (now-at-work / pending requests) */
+.mini { display: flex; flex-direction: column; }
+.mini-row { display: flex; align-items: center; gap: 14px; padding: 14px 22px; border-bottom: 1px solid var(--line-soft); transition: background var(--ease) .15s; }
+.mini-row:last-child { border-bottom: none; }
+.mini-row:hover { background: var(--ab-bg-2); }
+.mini-row .grow { flex: 1; min-width: 0; }
+.mini-row .l1 { font-size: 13px; color: #fff; font-weight: 600; }
+.mini-row .l2 { font-size: 11px; color: var(--fg-4); margin-top: 3px; }
+.mini-row .rt { font-size: 12px; color: var(--fg-3); font-family: var(--font-display); font-variation-settings: 'wdth' 100; white-space: nowrap; }
+
+/* ============================================================ 근무일정 ROSTER */
+.roster-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; gap: 16px; }
+.wk-nav { display: flex; align-items: center; gap: 14px; }
+.wk-nav .wk-label { font-family: var(--font-display); font-variation-settings: 'wdth' 100; font-size: 16px; font-weight: 700; color: #fff; min-width: 220px; text-align: center; }
+.wk-nav .nb { width: 32px; height: 32px; border: 1px solid var(--line); background: transparent; color: var(--fg-3); cursor: pointer; display: grid; place-items: center; transition: all var(--ease) .18s; }
+.wk-nav .nb:hover { color: #fff; border-color: var(--line-strong); }
+
+.roster-wrap { border: 1px solid var(--line); overflow-x: auto; }
+.roster { width: 100%; border-collapse: collapse; min-width: 920px; }
+.roster th, .roster td { border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+.roster th:last-child, .roster td:last-child { border-right: none; }
+.roster thead th { padding: 12px 10px; background: var(--ab-bg-1); font-size: 12px; font-weight: 700; color: var(--fg-3); text-align: center; }
+.roster thead th .dow { font-family: var(--font-display); font-variation-settings: 'wdth' 100; font-size: 11px; color: var(--fg-5); display: block; margin-bottom: 3px; letter-spacing: 0.1em; }
+.roster thead th.sat .dow { color: #8ab4f8; }
+.roster thead th.sun .dow { color: var(--err); }
+.roster thead th.emp-col { text-align: left; padding-left: 18px; width: 200px; position: sticky; left: 0; z-index: 2; }
+.roster tbody td.emp-col { position: sticky; left: 0; background: var(--ab-bg); z-index: 1; padding: 12px 18px; width: 200px; }
+.roster tbody td { padding: 8px; vertical-align: top; height: 64px; }
+.roster tbody tr:hover td { background: var(--ab-bg-2); }
+.roster tbody tr:hover td.emp-col { background: var(--ab-bg-2); }
+
+.shift { display: block; padding: 7px 9px; font-size: 11px; font-weight: 600; line-height: 1.3; border: 1px solid; margin-bottom: 4px; cursor: pointer; transition: all var(--ease) .15s; }
+.shift:last-child { margin-bottom: 0; }
+.shift .tm { display: block; font-family: var(--font-display); font-variation-settings: 'wdth' 100; font-size: 10px; font-weight: 700; opacity: 0.85; margin-top: 2px; letter-spacing: 0.02em; }
+.shift.day { border-color: rgba(243,111,32,0.5); color: var(--ab-orange); background: rgba(243,111,32,0.08); }
+.shift.night { border-color: var(--line); color: var(--fg-1); background: var(--ab-bg-2); }
+.shift.remote { border-color: rgba(138,180,248,0.4); color: #8ab4f8; background: rgba(138,180,248,0.07); }
+.shift.leave { border-style: dashed; border-color: var(--fg-4); color: var(--fg-3); background: transparent; }
+.shift.off { border: 1px dashed var(--line-soft); color: var(--fg-5); background: transparent; text-align: center; cursor: default; }
+.shift:hover { transform: translateY(-1px); }
+.shift.off:hover { transform: none; }
+
+/* legend */
+.legend { display: flex; align-items: center; gap: 20px; margin-top: 16px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-4); }
+.legend-item .sw { width: 14px; height: 14px; border: 1px solid; }
+.legend-item .sw.day { border-color: rgba(243,111,32,0.5); background: rgba(243,111,32,0.12); }
+.legend-item .sw.night { border-color: var(--line); background: var(--ab-bg-2); }
+.legend-item .sw.remote { border-color: rgba(138,180,248,0.4); background: rgba(138,180,248,0.12); }
+.legend-item .sw.leave { border-style: dashed; border-color: var(--fg-4); }
+
+/* ============================================================ 출퇴근 ATTENDANCE */
+.att-time { font-family: var(--font-display); font-variation-settings: 'wdth' 100; font-size: 13px; color: #fff; font-weight: 600; letter-spacing: 0.01em; }
+.att-time.miss { color: var(--err); }
+.att-dur { font-family: var(--font-display); font-variation-settings: 'wdth' 100; font-size: 13px; color: var(--fg-2); }
+
+/* span bar: visual 출근~퇴근 within a day */
+.span { position: relative; height: 8px; background: var(--ab-bg-2); border: 1px solid var(--line-soft); min-width: 160px; }
+.span .fill { position: absolute; top: -1px; bottom: -1px; background: var(--ab-orange); }
+.span .fill.late { background: var(--warn); }
+.span .brk { position: absolute; top: -1px; bottom: -1px; background: repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(0,0,0,0.4) 2px, rgba(0,0,0,0.4) 4px); }
+.span-scale { display: flex; justify-content: space-between; font-size: 9px; color: var(--fg-5); margin-top: 4px; font-family: var(--font-display); font-variation-settings: 'wdth' 100; }
+
+/* ============================================================ WIDE TABLE (리포트) */
+.tbl-wide-wrap { border: 1px solid var(--line); overflow-x: auto; }
+.tbl-wide { width: 100%; border-collapse: collapse; min-width: 1500px; }
+.tbl-wide thead th { font-size: 14px; font-weight: 700; color: var(--fg-3); padding: 12px 14px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); background: var(--ab-bg-1); }
+.tbl-wide thead th.lft { text-align: left; }
+.tbl-wide thead th.emp-col, .tbl-wide tbody td.emp-col { position: sticky; left: 0; background: var(--ab-bg-1); z-index: 2; text-align: left; min-width: 150px; }
+.tbl-wide tbody td.emp-col { background: var(--ab-bg); }
+.tbl-wide tbody td { font-size: 12px; color: var(--fg-2); padding: 13px 14px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line-soft); font-family: var(--font-display); font-variation-settings: 'wdth' 100; }
+.tbl-wide tbody tr:hover td { background: var(--ab-bg-3); }
+.tbl-wide tbody tr:hover td.emp-col { background: var(--ab-bg-2); }
+.tbl-wide td.zero { color: var(--fg-5); }
+.tbl-wide td.warnv { color: var(--warn); }
+.tbl-wide .alert { color: var(--err); }
+
+/* small filter chips row */
+.fbar { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; flex-wrap: wrap; }
+.fchip {
+  display: inline-flex; align-items: center; gap: 9px; border: 1px solid var(--line);
+  background: transparent; color: var(--fg-2); padding: 9px 14px; font-size: 12px;
+  font-family: var(--font-body); cursor: pointer; transition: all var(--ease) .18s; white-space: nowrap;
+}
+.fchip:hover { border-color: var(--line-strong); color: #fff; }
+.fchip .ic { color: var(--fg-4); display: inline-flex; }
+.fchip .cnt { font-family: var(--font-display); font-variation-settings: 'wdth' 100; font-weight: 700; color: var(--ab-orange); }
+.fchip.range { font-family: var(--font-display); font-variation-settings: 'wdth' 100; letter-spacing: 0.01em; }
+
+/* ============================================================ 휴가 LEAVE balance bars */
+.bal { display: flex; align-items: center; gap: 12px; }
+.bal-track { width: 120px; height: 6px; background: var(--ab-bg-2); border: 1px solid var(--line-soft); position: relative; flex: 0 0 auto; }
+.bal-fill { position: absolute; top: -1px; bottom: -1px; left: -1px; background: var(--ab-orange); }
+.bal-num { font-family: var(--font-display); font-variation-settings: 'wdth' 100; font-size: 12px; color: var(--fg-2); white-space: nowrap; }
+.bal-num b { color: #fff; font-weight: 700; }
+
+/* request 관리 inline buttons */
+.req-act { display: inline-flex; gap: 8px; }
+.btn-approve { background: transparent; color: var(--ab-orange); border: 1px solid rgba(243,111,32,0.5); padding: 7px 16px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--font-body); transition: all var(--ease) .18s; }
+.btn-approve:hover { background: var(--ab-orange); color: #fff; border-color: var(--ab-orange); }
+.btn-reject { background: transparent; color: var(--err); border: 1px solid rgba(255,127,127,0.4); padding: 7px 16px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--font-body); transition: all var(--ease) .18s; }
+.btn-reject:hover { background: var(--err); color: #000; border-color: var(--err); }
+
+/* badge extra variants for HR */
+.badge.b-force { color: #8ab4f8; border-color: rgba(138,180,248,0.45); }
+.badge.b-force .dot { background: #8ab4f8; }
+
+/* request cell sub */
+.cell-sub { font-size: 11px; color: var(--fg-5); margin-top: 4px; font-family: var(--font-display); font-variation-settings: 'wdth' 100; }
+.cell-strike { text-decoration: line-through; color: var(--fg-5); }
+.cell-arrow { color: var(--ab-orange); }
+
+@media (max-width: 1080px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .dash-grid { grid-template-columns: 1fr; }
+}

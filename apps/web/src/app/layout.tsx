@@ -1,6 +1,9 @@
 import type { Metadata } from 'next'
 import { ThemeRegistry } from '@/components/providers/ThemeRegistry'
 import { QueryProvider } from '@/components/providers/QueryProvider'
+import '@/styles/ab-admin.css'
+import '@/styles/ab-hr.css'
+import '@/styles/ab-app.css'
 
 // Claude Code 실행 환경에서 localStorage가 object로 존재하지만 getItem이 없는 경우 패치
 if (typeof localStorage !== 'undefined' && typeof localStorage.getItem !== 'function') {

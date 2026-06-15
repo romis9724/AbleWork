@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
+import { isAdminLevel, hasLevel, requiredLevelForPath } from '@ablework/shared-constants'
 import type { JwtPayload } from './lib/types'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? '')
@@ -20,11 +21,15 @@ export async function middleware(request: NextRequest) {
   try {
     const { payload } = await jwtVerify<JwtPayload>(token, secret)
 
-    // ORG_ADMIN 이상만 /admin 접근 가능
+    // /admin 접근 — ORG_ADMIN 이상만, 그리고 경로별 최소 레벨 충족 필요
     if (pathname.startsWith('/admin')) {
-      const adminLevels = ['SUPER_ADMIN', 'GENERAL_ADMIN', 'ORG_ADMIN']
-      if (!adminLevels.includes(payload.accessLevel)) {
+      if (!isAdminLevel(payload.accessLevel)) {
         return NextResponse.redirect(new URL('/me/home', request.url))
+      }
+      // 회사 전역 설정/마스터 경로는 GENERAL_ADMIN 이상만 — 부족하면 관리자 홈으로
+      const required = requiredLevelForPath(pathname)
+      if (!hasLevel(payload.accessLevel, required)) {
+        return NextResponse.redirect(new URL('/admin/dashboard', request.url))
       }
     }
 

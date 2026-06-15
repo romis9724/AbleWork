@@ -235,8 +235,9 @@ export class LeavesController {
   manualAccrual(
     @CompanyId() companyId: string,
     @Body(new ZodValidationPipe(ManualAccrualSchema)) dto: ManualAccrualDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.leavesService.manualAccrual(companyId, dto)
+    return this.leavesService.manualAccrual(companyId, dto, user.employeeId)
   }
 
   // 관리자 휴가 직접 추가 (잔액 검증 + 차감)

@@ -36,12 +36,14 @@ describe('S5. 무결성·권한 (integrity-security.e2e)', () => {
   let hongToken: string
   let salesToken: string
   let adminToken: string
+  let orgAdminToken: string
 
   beforeAll(async () => {
     ctx = await createTestApp()
     hongToken = await login(ctx.app, 'employee')
     salesToken = await login(ctx.app, 'sales')
     adminToken = await login(ctx.app, 'admin')
+    orgAdminToken = await login(ctx.app, 'orgadmin')
   })
   afterAll(async () => {
     await closeTestApp(ctx)
@@ -140,5 +142,25 @@ describe('S5. 무결성·권한 (integrity-security.e2e)', () => {
     const del = await authedRequest(ctx.app, adminToken).delete(`/requests/approval-rules/${ruleId}`)
     expect(del.status).toBe(403)
     expect(del.body.error?.code).toBe('APPROVAL_RULE_IN_USE')
+  })
+
+  // ── 현재 근무현황(now-at-work) 권한 가드 ──────────────────────────────────────
+  // 회사 전체 근무 로스터(타인 출퇴근)는 SYSTEM_DESIGN §6.3 "타인 출퇴근" 매트릭스에 따라
+  // ORG_ADMIN 이상만 조회할 수 있어야 한다(직원 직접 호출 시 회사 명단 유출 방지).
+
+  it('5-8. EMPLOYEE가 현재 근무현황(now-at-work) 호출 → 403', async () => {
+    const res = await authedRequest(ctx.app, salesToken).get('/attendances/now-at-work')
+    expect(res.status).toBe(403)
+  })
+
+  it('5-9. ORG_ADMIN은 현재 근무현황을 조회할 수 있다 → 200', async () => {
+    const res = await authedRequest(ctx.app, orgAdminToken).get('/attendances/now-at-work')
+    expect(res.status).toBe(200)
+    expect(res.body.data).toBeDefined()
+  })
+
+  it('5-10. SUPER_ADMIN은 현재 근무현황을 조회할 수 있다 → 200', async () => {
+    const res = await authedRequest(ctx.app, adminToken).get('/attendances/now-at-work')
+    expect(res.status).toBe(200)
   })
 })

@@ -431,6 +431,110 @@ describe('EmployeesService', () => {
     })
   })
 
+  // ── create — 초기 비밀번호/계정 활성화 ───────────────────────────────────────
+
+  describe('create — 로그인 계정 발급', () => {
+    const createDto = {
+      email: 'newhire@ablework.io',
+      name: '신입',
+      joinedAt: '2024-06-01',
+      employmentType: 'regular' as const,
+      accessLevel: AccessLevel.EMPLOYEE,
+      organizationIds: ['org-1'],
+      primaryOrganizationId: 'org-1',
+      positionIds: [] as string[],
+    }
+
+    const wireCreateTransaction = () => {
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma),
+      )
+      mockPrisma.organization.count.mockResolvedValue(1) // 조직 검증 통과
+      mockPrisma.user.findUnique.mockResolvedValue(null)
+      mockPrisma.user.create.mockImplementation(async ({ data }: { data: { isActive: boolean } }) => ({
+        id: 'user-new',
+        ...data,
+      }))
+      mockPrisma.employee.create.mockResolvedValue({ ...baseEmployee, id: 'emp-new' })
+      mockPrisma.employeeOrganization.createMany.mockResolvedValue({ count: 1 })
+    }
+
+    it('초기 비밀번호가 있으면 활성(isActive=true) 계정 + 해시된 비밀번호로 User를 생성한다', async () => {
+      wireCreateTransaction()
+
+      await service.create(COMPANY_ID, { ...createDto, initialPassword: 'testpass123' })
+
+      const userCreateArg = mockPrisma.user.create.mock.calls[0][0].data
+      expect(userCreateArg.isActive).toBe(true)
+      expect(userCreateArg.passwordHash).toBeTruthy()
+      expect(userCreateArg.passwordHash).not.toBe('testpass123') // 평문 저장 금지
+    })
+
+    it('초기 비밀번호가 없으면 비활성(isActive=false) 계정 + 빈 비밀번호로 생성한다', async () => {
+      wireCreateTransaction()
+
+      await service.create(COMPANY_ID, createDto)
+
+      const userCreateArg = mockPrisma.user.create.mock.calls[0][0].data
+      expect(userCreateArg.isActive).toBe(false)
+      expect(userCreateArg.passwordHash).toBe('')
+    })
+  })
+
+  // ── resetPassword ────────────────────────────────────────────────────────────
+
+  describe('resetPassword', () => {
+    it('비밀번호를 해시해 저장하고 User를 활성화한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.user.update.mockResolvedValue({})
+
+      const result = await service.resetPassword(COMPANY_ID, EMPLOYEE_ID, 'newpass456', requester)
+
+      expect(result).toEqual({ success: true })
+      const updateArg = mockPrisma.user.update.mock.calls[0][0]
+      expect(updateArg.where).toEqual({ id: baseEmployee.userId })
+      expect(updateArg.data.isActive).toBe(true)
+      expect(updateArg.data.passwordHash).toBeTruthy()
+      expect(updateArg.data.passwordHash).not.toBe('newpass456')
+    })
+
+    it('로그인 계정(userId)이 없는 직원이면 EMPLOYEE_USER_NOT_FOUND 에러를 던진다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue({ ...baseEmployee, userId: null })
+
+      await expect(
+        service.resetPassword(COMPANY_ID, EMPLOYEE_ID, 'newpass456', requester),
+      ).rejects.toThrow(BadRequestException)
+      expect(mockPrisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it('ORG_ADMIN이 다른 조직 직원의 비밀번호를 재설정하면 ForbiddenException을 던진다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN, 'req-emp-org-admin')
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        ...baseEmployee,
+        organizations: [{ organizationId: 'org-999' }],
+      })
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+
+      await expect(
+        service.resetPassword(COMPANY_ID, EMPLOYEE_ID, 'newpass456', requester),
+      ).rejects.toThrow(ForbiddenException)
+      expect(mockPrisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it('권한 설정이 꺼져 있으면 ORG_ADMIN의 비밀번호 재설정을 차단한다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN)
+      mockPrisma.employee.findFirst.mockResolvedValue(baseEmployee)
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-1' }])
+      mockSettings.get.mockResolvedValueOnce(false)
+
+      await expect(
+        service.resetPassword(COMPANY_ID, EMPLOYEE_ID, 'newpass456', requester),
+      ).rejects.toThrow(ForbiddenException)
+    })
+  })
+
   // ── findWageInfos ────────────────────────────────────────────────────────────
 
   describe('findWageInfos', () => {

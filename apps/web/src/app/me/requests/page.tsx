@@ -1,35 +1,12 @@
 'use client'
 import { useState } from 'react'
-import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Typography from '@mui/material/Typography'
-import Chip from '@mui/material/Chip'
-import Tabs from '@mui/material/Tabs'
-import Tab from '@mui/material/Tab'
-import Fab from '@mui/material/Fab'
-import Dialog from '@mui/material/Dialog'
-import DialogTitle from '@mui/material/DialogTitle'
-import DialogContent from '@mui/material/DialogContent'
-import DialogContentText from '@mui/material/DialogContentText'
-import DialogActions from '@mui/material/DialogActions'
-import Button from '@mui/material/Button'
-import List from '@mui/material/List'
-import ListItem from '@mui/material/ListItem'
-import ListItemButton from '@mui/material/ListItemButton'
-import ListItemText from '@mui/material/ListItemText'
-import ListSubheader from '@mui/material/ListSubheader'
-import CircularProgress from '@mui/material/CircularProgress'
-import Snackbar from '@mui/material/Snackbar'
-import Alert from '@mui/material/Alert'
-import AddIcon from '@mui/icons-material/Add'
-import BeachAccessIcon from '@mui/icons-material/BeachAccess'
-import ScheduleIcon from '@mui/icons-material/Schedule'
-import EditCalendarIcon from '@mui/icons-material/EditCalendar'
-import PhoneAndroidIcon from '@mui/icons-material/PhoneAndroid'
-import EmptyState from '@/components/common/EmptyState'
 import { useRequests, useCreateRequest, useCancelRequest } from '@/lib/query/requests'
 import { useAuthStore } from '@/stores/auth.store'
+import { PageHead, TableBar } from '@/components/ab/Page'
+import { Badge, type BadgeKind } from '@/components/ab/atoms'
+import { Modal, ConfirmDialog } from '@/components/ab/Modal'
+import { I, HRI } from '@/components/ab/icons'
+import { useToast } from '@/components/ab/Toast'
 import { LeaveCreateDialog, LeaveModifyDialog, LeaveDeleteDialog } from './leave-request-dialogs'
 import { ShiftCreateDialog, ShiftModifyDialog, ShiftDeleteDialog } from './shift-request-dialogs'
 import {
@@ -70,30 +47,29 @@ const TYPE_LABEL: Record<string, string> = {
   CUSTOM: '기타 요청',
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: '대기중',
-  APPROVED: '승인',
-  REJECTED: '거절',
-  CANCELLED: '취소',
+const STATUS: Record<string, { label: string; kind: BadgeKind }> = {
+  PENDING: { label: '대기중', kind: 'b-wait' },
+  APPROVED: { label: '승인', kind: 'b-done' },
+  REJECTED: { label: '거절', kind: 'b-reject' },
+  CANCELLED: { label: '취소', kind: 'b-submit' },
 }
 
-const STATUS_COLOR: Record<string, 'warning' | 'success' | 'error' | 'default'> = {
-  PENDING: 'warning',
-  APPROVED: 'success',
-  REJECTED: 'error',
-  CANCELLED: 'default',
-}
+const TABS: { value: TabValue; label: string }[] = [
+  { value: 'ALL', label: '전체' },
+  { value: 'PENDING', label: '대기중' },
+  { value: 'DONE', label: '완료' },
+]
 
 interface MenuGroup {
   title: string
-  icon: React.ReactNode
+  icon: () => React.ReactElement
   items: { type: RequestDialogType; label: string }[]
 }
 
 const MENU_GROUPS: MenuGroup[] = [
   {
     title: '휴가',
-    icon: <BeachAccessIcon fontSize="small" />,
+    icon: HRI.leave,
     items: [
       { type: 'LEAVE_CREATE', label: '휴가 신청' },
       { type: 'LEAVE_MODIFY', label: '휴가 수정' },
@@ -102,7 +78,7 @@ const MENU_GROUPS: MenuGroup[] = [
   },
   {
     title: '근무일정',
-    icon: <ScheduleIcon fontSize="small" />,
+    icon: HRI.schedule,
     items: [
       { type: 'SHIFT_CREATE', label: '일정 신청' },
       { type: 'SHIFT_MODIFY', label: '일정 수정' },
@@ -111,7 +87,7 @@ const MENU_GROUPS: MenuGroup[] = [
   },
   {
     title: '출퇴근',
-    icon: <EditCalendarIcon fontSize="small" />,
+    icon: HRI.clock,
     items: [
       { type: 'ATTENDANCE_EDIT', label: '출퇴근 정정' },
       { type: 'ATTENDANCE_CREATE', label: '기록 생성' },
@@ -120,45 +96,41 @@ const MENU_GROUPS: MenuGroup[] = [
   },
   {
     title: '기타',
-    icon: <PhoneAndroidIcon fontSize="small" />,
+    icon: HRI.settings,
     items: [{ type: 'DEVICE_CHANGE', label: '기기 변경' }],
   },
 ]
 
 export default function RequestsPage() {
+  const toast = useToast()
   const [tab, setTab] = useState<TabValue>('ALL')
   const [dialogMode, setDialogMode] = useState<DialogMode>(null)
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null)
-  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
-    open: false, message: '', severity: 'success',
-  })
 
   const employeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
 
-  const queryParams = tab === 'ALL'
-    ? undefined
-    : tab === 'PENDING'
-    ? { status: 'PENDING' }
-    : { status: 'APPROVED,REJECTED,CANCELLED' }
+  const queryParams =
+    tab === 'ALL'
+      ? undefined
+      : tab === 'PENDING'
+      ? { status: 'PENDING' }
+      : { status: 'APPROVED,REJECTED,CANCELLED' }
 
   const { data, isLoading } = useRequests(queryParams)
   const createRequest = useCreateRequest()
   const cancelRequest = useCancelRequest()
 
-  const requests = Array.isArray(data) ? data : (data?.items ?? [])
-
-  const showSnack = (message: string, severity: 'success' | 'error') =>
-    setSnack({ open: true, message, severity })
+  const requests = Array.isArray(data) ? data : data?.items ?? []
 
   const closeDialog = () => setDialogMode(null)
 
   const handleSubmit = async (type: string, payload: Record<string, unknown>) => {
     try {
       await createRequest.mutateAsync({ type, payload })
-      showSnack(`${TYPE_LABEL[type] ?? '요청'} 접수가 완료됐습니다.`, 'success')
+      toast(`${TYPE_LABEL[type] ?? '요청'} 접수가 완료됐습니다`)
       closeDialog()
-    } catch {
-      showSnack('신청 중 오류가 발생했습니다.', 'error')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '신청 중 오류가 발생했습니다')
     }
   }
 
@@ -166,9 +138,9 @@ export default function RequestsPage() {
     if (!cancelTargetId) return
     try {
       await cancelRequest.mutateAsync(cancelTargetId)
-      showSnack('요청이 취소됐습니다.', 'success')
-    } catch {
-      showSnack('취소 중 오류가 발생했습니다.', 'error')
+      toast('요청이 취소됐습니다')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '취소 중 오류가 발생했습니다')
     } finally {
       setCancelTargetId(null)
     }
@@ -186,95 +158,88 @@ export default function RequestsPage() {
   }
 
   return (
-    <Box sx={{ position: 'relative', pb: 4 }}>
-      <Typography variant="h6" fontWeight={700} mb={2}>내 요청</Typography>
+    <>
+      <PageHead
+        eyebrow="Requests"
+        title="내 요청"
+        right={
+          <button className="btn btn-primary btn-sm" onClick={() => setDialogMode('menu')}>
+            {I.plus()} 새 요청
+          </button>
+        }
+      />
 
-      <Tabs value={tab} onChange={(_, v) => setTab(v as TabValue)} sx={{ mb: 2 }}>
-        <Tab label="전체" value="ALL" />
-        <Tab label="대기중" value="PENDING" />
-        <Tab label="완료" value="DONE" />
-      </Tabs>
+      <div className="tabs" style={{ marginBottom: 18 }}>
+        {TABS.map((t) => (
+          <button key={t.value} className={'tab' + (tab === t.value ? ' on' : '')} onClick={() => setTab(t.value)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : requests.length === 0 ? (
-        <EmptyState message="요청 내역이 없습니다." />
-      ) : (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {requests.map((r) => (
-            <Card key={r.id}>
-              <CardContent
-                sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: '12px !important' }}
-              >
-                <Box>
-                  <Typography variant="body2" fontWeight={600}>{TYPE_LABEL[r.type] ?? r.type}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {new Date(r.createdAt).toLocaleDateString('ko-KR')}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {isCancellable(r) && (
-                    <Button
-                      size="small"
-                      color="inherit"
-                      sx={{ color: 'text.secondary' }}
-                      onClick={() => setCancelTargetId(r.id)}
-                    >
-                      신청 취소
-                    </Button>
-                  )}
-                  <Chip
-                    label={STATUS_LABEL[r.status] ?? r.status}
-                    color={STATUS_COLOR[r.status] ?? 'default'}
-                    size="small"
-                  />
-                </Box>
-              </CardContent>
-            </Card>
-          ))}
-        </Box>
-      )}
+      <TableBar count={<>총 <b>{requests.length}</b>건</>} />
 
-      {/* FAB */}
-      <Fab
-        color="primary"
-        aria-label="요청 신청"
-        sx={{ position: 'fixed', bottom: 72, right: 16 }}
-        onClick={() => setDialogMode('menu')}
-      >
-        <AddIcon />
-      </Fab>
+      <div className="tbl-scroll">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>요청 유형</th>
+              <th className="c">신청일</th>
+              <th className="c">상태</th>
+              <th className="c">작업</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr><td className="tbl-empty" colSpan={4}>불러오는 중…</td></tr>
+            ) : requests.length === 0 ? (
+              <tr><td className="tbl-empty" colSpan={4}>요청 내역이 없습니다</td></tr>
+            ) : (
+              requests.map((r) => {
+                const st = STATUS[r.status] ?? { label: r.status, kind: 'b-submit' as BadgeKind }
+                return (
+                  <tr key={r.id}>
+                    <td className="lead">{TYPE_LABEL[r.type] ?? r.type}</td>
+                    <td className="c muted">{new Date(r.createdAt).toLocaleDateString('ko-KR')}</td>
+                    <td className="c"><Badge kind={st.kind}>{st.label}</Badge></td>
+                    <td className="c">
+                      {isCancellable(r) ? (
+                        <button className="btn btn-line btn-sm" onClick={() => setCancelTargetId(r.id)}>
+                          신청 취소
+                        </button>
+                      ) : (
+                        <span className="zero">—</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {/* 유형 선택 메뉴 (그룹 구분) */}
-      <Dialog open={dialogMode === 'menu'} onClose={closeDialog} fullWidth maxWidth="xs">
-        <DialogTitle>요청 유형 선택</DialogTitle>
-        <DialogContent sx={{ p: 0 }}>
-          <List disablePadding subheader={<li />}>
-            {MENU_GROUPS.map((group) => (
-              <li key={group.title}>
-                <ul style={{ padding: 0 }}>
-                  <ListSubheader sx={{ display: 'flex', alignItems: 'center', gap: 1, lineHeight: '36px' }}>
-                    <Box sx={{ color: 'primary.main', display: 'flex' }}>{group.icon}</Box>
-                    {group.title}
-                  </ListSubheader>
-                  {group.items.map((item) => (
-                    <ListItem key={item.type} disablePadding divider>
-                      <ListItemButton onClick={() => setDialogMode(item.type)}>
-                        <ListItemText primary={item.label} sx={{ pl: 4 }} />
-                      </ListItemButton>
-                    </ListItem>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </List>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeDialog}>취소</Button>
-        </DialogActions>
-      </Dialog>
+      <Modal open={dialogMode === 'menu'} onClose={closeDialog} eyebrow="New Request" title="요청 유형 선택" maxWidth={460}>
+        <div className="me-req-menu">
+          {MENU_GROUPS.map((group) => (
+            <div className="me-req-group" key={group.title}>
+              <div className="me-req-group-head">
+                <span className="ic">{group.icon()}</span>
+                {group.title}
+              </div>
+              <div className="me-req-group-items">
+                {group.items.map((item) => (
+                  <button key={item.type} className="me-req-item" onClick={() => setDialogMode(item.type)}>
+                    {item.label}
+                    <span className="arr">{I.arrow()}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Modal>
 
       {/* 유형별 신청 다이얼로그 — 열릴 때만 마운트해 내부 조회/입력 상태를 초기화 */}
       {dialogMode === 'LEAVE_CREATE' && <LeaveCreateDialog open {...dialogProps} />}
@@ -289,33 +254,15 @@ export default function RequestsPage() {
       {dialogMode === 'DEVICE_CHANGE' && <DeviceChangeDialog open {...dialogProps} />}
 
       {/* 신청 취소 확인 */}
-      <Dialog open={!!cancelTargetId} onClose={() => setCancelTargetId(null)} fullWidth maxWidth="xs">
-        <DialogTitle>신청 취소</DialogTitle>
-        <DialogContent>
-          <DialogContentText>이 요청을 취소하시겠어요? 취소한 요청은 되돌릴 수 없습니다.</DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCancelTargetId(null)}>닫기</Button>
-          <Button
-            variant="contained"
-            color="error"
-            disabled={cancelRequest.isPending}
-            onClick={handleCancelConfirm}
-          >
-            {cancelRequest.isPending ? <CircularProgress size={20} color="inherit" /> : '신청 취소'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar
-        open={snack.open}
-        autoHideDuration={4000}
-        onClose={() => setSnack((s) => ({ ...s, open: false }))}
-      >
-        <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))}>
-          {snack.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+      <ConfirmDialog
+        open={!!cancelTargetId}
+        title="신청 취소"
+        message="이 요청을 취소하시겠어요? 취소한 요청은 되돌릴 수 없습니다."
+        confirmLabel={cancelRequest.isPending ? '취소 중…' : '신청 취소'}
+        cancelLabel="닫기"
+        onConfirm={handleCancelConfirm}
+        onCancel={() => setCancelTargetId(null)}
+      />
+    </>
   )
 }

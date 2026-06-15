@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/stores/auth.store'
+import { ToastProvider } from '@/components/ab/Toast'
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   // auth 스토어는 skipHydration: true — 마운트 시 localStorage에서 복원해야
@@ -25,7 +26,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {children}
+      <ToastProvider>{children}</ToastProvider>
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   )

@@ -1,18 +1,11 @@
 'use client'
-import { useState, useMemo } from 'react'
-import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Typography from '@mui/material/Typography'
-import IconButton from '@mui/material/IconButton'
-import Chip from '@mui/material/Chip'
-import CircularProgress from '@mui/material/CircularProgress'
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
-import ChevronRightIcon from '@mui/icons-material/ChevronRight'
-import EmptyState from '@/components/common/EmptyState'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { ShiftStatus } from '@ablework/shared-constants'
-import { useShifts } from '@/lib/query/shifts'
+import { useShifts, type Shift } from '@/lib/query/shifts'
 import { useAuthStore } from '@/stores/auth.store'
+import { PageHead } from '@/components/ab/Page'
+import { Badge } from '@/components/ab/atoms'
+import { I } from '@/components/ab/icons'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -23,11 +16,24 @@ function toLocalDateStr(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
-export default function ShiftsPage() {
+function timeRange(shift: Shift): string {
+  const start = new Date(shift.startAt)
+  const end = new Date(shift.endAt)
+  const fmt = (d: Date) => d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${fmt(start)} ~ ${fmt(end)}`
+}
+
+/** GET /shifts가 내려주는 shiftType.color를 칩 배경색으로 직접 사용 (category 미제공) */
+function chipStyle(shift: Shift): CSSProperties | undefined {
+  const color = shift.shiftType?.color
+  if (!color) return undefined
+  return { backgroundColor: color, borderColor: color, color: '#fff' }
+}
+
+export default function MyShiftsPage() {
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth()) // 0-indexed
-  const [selectedDate, setSelectedDate] = useState<string>(toLocalDateStr(today))
   const employeeId = useAuthStore((s) => s.user?.employeeId)
 
   const firstDay = new Date(viewYear, viewMonth, 1)
@@ -40,18 +46,17 @@ export default function ShiftsPage() {
     endAt: toLocalDateStr(lastDay),
   })
 
-  // Map date string → shift list
-  const shiftsByDate = useMemo(() => {
-    const map: Record<string, typeof shifts> = {}
-    for (const shift of shifts) {
-      const dateKey = shift.startAt.slice(0, 10)
-      if (!map[dateKey]) map[dateKey] = []
-      map[dateKey].push(shift)
+  // 날짜별 그룹 + 정렬
+  const groups = useMemo(() => {
+    const map = new Map<string, Shift[]>()
+    for (const s of shifts) {
+      const key = s.startAt.slice(0, 10)
+      const list = map.get(key) ?? []
+      list.push(s)
+      map.set(key, list)
     }
-    return map
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [shifts])
-
-  const selectedShifts = shiftsByDate[selectedDate] ?? []
 
   const handlePrevMonth = () => {
     if (viewMonth === 0) {
@@ -71,165 +76,55 @@ export default function ShiftsPage() {
     }
   }
 
-  // Build calendar grid: pad leading empty cells for first day's weekday
-  const leadingBlanks = firstDay.getDay()
-  const daysInMonth = lastDay.getDate()
-  const calendarCells: (number | null)[] = [
-    ...Array(leadingBlanks).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ]
-  // Pad trailing to complete the last row
-  const remainder = calendarCells.length % 7
-  if (remainder !== 0) {
-    calendarCells.push(...Array(7 - remainder).fill(null))
-  }
+  const todayStr = toLocalDateStr(today)
 
   return (
-    <Box>
-      <Typography variant="h6" fontWeight={700} mb={2}>내 근무일정</Typography>
+    <>
+      <PageHead eyebrow="Schedule" title="내 근무일정" />
 
-      <Card sx={{ mb: 2 }}>
-        <CardContent sx={{ pb: '16px !important' }}>
-          {/* Month navigation */}
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-            <IconButton size="small" onClick={handlePrevMonth}>
-              <ChevronLeftIcon />
-            </IconButton>
-            <Typography fontWeight={600}>
-              {viewYear}년 {viewMonth + 1}월
-            </Typography>
-            <IconButton size="small" onClick={handleNextMonth}>
-              <ChevronRightIcon />
-            </IconButton>
-          </Box>
+      <div className="roster-toolbar">
+        <div className="wk-nav">
+          <button className="nb" onClick={handlePrevMonth} aria-label="이전 달">{I.chevL()}</button>
+          <span className="wk-label tek">{viewYear}.{String(viewMonth + 1).padStart(2, '0')}</span>
+          <button className="nb" onClick={handleNextMonth} aria-label="다음 달">{I.chevR()}</button>
+        </div>
+        <span className="page-stamp">총 {shifts.length}건</span>
+      </div>
 
-          {/* Weekday headers */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', mb: 0.5 }}>
-            {WEEKDAYS.map((d, i) => (
-              <Typography
-                key={d}
-                variant="caption"
-                align="center"
-                fontWeight={600}
-                sx={{ color: i === 0 ? 'error.main' : i === 6 ? 'primary.main' : 'text.secondary' }}
-              >
-                {d}
-              </Typography>
-            ))}
-          </Box>
-
-          {/* Calendar cells */}
-          {isLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress size={32} />
-            </Box>
-          ) : (
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.25 }}>
-              {calendarCells.map((day, idx) => {
-                if (day === null) return <Box key={`blank-${idx}`} />
-                const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                const hasShift = !!shiftsByDate[dateStr]?.length
-                const isSelected = selectedDate === dateStr
-                const isToday = toLocalDateStr(today) === dateStr
-                const colIdx = (leadingBlanks + day - 1) % 7
-
-                return (
-                  <Box
-                    key={dateStr}
-                    onClick={() => setSelectedDate(dateStr)}
-                    sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      py: 0.75,
-                      borderRadius: 1,
-                      cursor: 'pointer',
-                      bgcolor: isSelected ? 'primary.main' : 'transparent',
-                      '&:hover': { bgcolor: isSelected ? 'primary.main' : 'action.hover' },
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      fontWeight={isToday ? 700 : 400}
-                      sx={{
-                        color: isSelected
-                          ? 'primary.contrastText'
-                          : colIdx === 0
-                          ? 'error.main'
-                          : colIdx === 6
-                          ? 'primary.main'
-                          : 'text.primary',
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {day}
-                    </Typography>
-                    {hasShift && (
-                      <Box
-                        sx={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: '50%',
-                          bgcolor: isSelected ? 'primary.contrastText' : 'primary.main',
-                          mt: 0.25,
-                        }}
-                      />
-                    )}
-                  </Box>
-                )
-              })}
-            </Box>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Selected date detail */}
-      <Typography variant="subtitle2" fontWeight={600} mb={1} color="text.secondary">
-        {selectedDate.replace(/-/g, '.')} 근무일정
-      </Typography>
-
-      {selectedShifts.length === 0 ? (
-        <EmptyState message="이 날의 근무일정이 없습니다." />
+      {isLoading ? (
+        <div className="ab-loading"><span className="ab-spin" />불러오는 중…</div>
+      ) : groups.length === 0 ? (
+        <div className="note"><div className="note-t">근무일정 없음</div>이 달의 근무일정이 없습니다.</div>
       ) : (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {selectedShifts.map((shift) => {
-            const start = new Date(shift.startAt)
-            const end = new Date(shift.endAt)
-            const timeRange = `${start.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} ~ ${end.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
+        <div className="me-shift-list">
+          {groups.map(([date, list]) => {
+            const d = new Date(date)
+            const dow = WEEKDAYS[d.getDay()]
+            const isToday = date === todayStr
             return (
-              <Card key={shift.id} variant="outlined">
-                <CardContent sx={{ py: '12px !important', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>
-                      {shift.shiftType?.name ?? shift.template?.name ?? '근무'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">{timeRange}</Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
-                    {shift.shiftType && (
-                      <Chip
-                        label={shift.shiftType.category}
-                        size="small"
-                        sx={{
-                          bgcolor: shift.shiftType.color ?? 'primary.main',
-                          color: 'white',
-                          fontSize: 11,
-                        }}
-                      />
-                    )}
-                    <Chip
-                      label={shift.status === ShiftStatus.CONFIRMED ? '확정' : '미확정'}
-                      size="small"
-                      color={shift.status === ShiftStatus.CONFIRMED ? 'success' : 'default'}
-                      variant="outlined"
-                    />
-                  </Box>
-                </CardContent>
-              </Card>
+              <div className={'me-shift-day' + (isToday ? ' today' : '')} key={date}>
+                <div className="me-shift-date">
+                  <span className="dnum tek">{d.getDate()}</span>
+                  <span className={'dow' + (d.getDay() === 0 ? ' sun' : d.getDay() === 6 ? ' sat' : '')}>{dow}</span>
+                </div>
+                <div className="me-shift-items">
+                  {list.map((shift) => (
+                    <div className="me-shift-row" key={shift.id}>
+                      <span className="shift" style={chipStyle(shift)}>
+                        {shift.shiftType?.name ?? shift.template?.name ?? '근무'}
+                        <span className="tm">{timeRange(shift)}</span>
+                      </span>
+                      <Badge kind={shift.status === ShiftStatus.CONFIRMED ? 'b-done' : 'b-wait'}>
+                        {shift.status === ShiftStatus.CONFIRMED ? '확정' : '미확정'}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )
           })}
-        </Box>
+        </div>
       )}
-    </Box>
+    </>
   )
 }
