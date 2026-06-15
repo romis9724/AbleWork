@@ -19,7 +19,7 @@
   gap: 12px;
   padding: 0 18px;
   border-bottom: 1px solid var(--line);
-  background: #000;
+  background: var(--ab-bg);
   position: sticky;
   top: 0;
   z-index: 50;
@@ -30,7 +30,7 @@
   font-size: 11px; color: var(--fg-3); border: 1px solid var(--line);
   padding: 5px 10px; cursor: pointer; transition: border-color var(--ease) .2s; white-space: nowrap;
 }
-.me-head-switch:hover { border-color: var(--line-strong); color: #fff; }
+.me-head-switch:hover { border-color: var(--line-strong); color: var(--fg-1); }
 .me-head-avatar { width: 28px; height: 28px; border: 1px solid var(--line); display: grid; place-items: center; color: var(--fg-3); }
 
 .me-main {
@@ -70,7 +70,7 @@
 }
 .auth-card {
   width: 100%; max-width: 380px; border: 1px solid var(--line-strong);
-  background: #050505; padding: 44px 38px 40px;
+  background: var(--dialog-bg); padding: 44px 38px 40px;
   animation: rise .4s var(--ease);
 }
 .auth-brand { display: flex; align-items: center; gap: 11px; margin-bottom: 30px; }
@@ -80,7 +80,7 @@
   font-size: 11px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
   color: var(--ab-orange); margin-bottom: 8px;
 }
-.auth-title { font-size: 22px; font-weight: 700; color: #fff; margin: 0 0 28px; }
+.auth-title { font-size: 22px; font-weight: 700; color: var(--fg-1); margin: 0 0 28px; }
 .auth-field { margin-bottom: 20px; }
 .auth-field > label {
   display: block; font-size: 12px; color: var(--fg-3); margin-bottom: 8px; font-weight: 600;
@@ -91,7 +91,7 @@
 .auth-foot a { color: var(--ab-orange); cursor: pointer; }
 .auth-foot a:hover { text-decoration: underline; }
 .auth-error {
-  border: 1px solid rgba(255,127,127,0.4); border-left: 3px solid var(--err);
+  border: 1px solid color-mix(in srgb, var(--err) 40%, transparent); border-left: 3px solid var(--err);
   color: var(--err); padding: 11px 14px; font-size: 12px; margin-bottom: 20px;
 }
 
@@ -129,7 +129,7 @@
   opacity: 0; cursor: pointer;
 }
 /* 다크 테마에서 네이티브 날짜 텍스트 가독성 */
-.inp-wrap > input[type="date"] { color-scheme: dark; }
+.inp-wrap > input[type="date"] { color-scheme: var(--color-scheme); }
 
 /* 페이저 생략 표시(…) — 윈도잉 Pager */
 .pager .ellipsis {
@@ -141,7 +141,7 @@
 /* ---------- 직원(me) 홈 — 출퇴근 상태 카드 ---------- */
 .me-clock {
   border: 1px solid var(--line-strong);
-  background: #050505;
+  background: var(--dialog-bg);
   padding: 22px 22px 20px;
   margin-bottom: 22px;
 }
@@ -150,9 +150,9 @@
   width: 48px; height: 48px; flex: 0 0 48px; display: grid; place-items: center;
   border: 1px solid var(--ab-orange); color: var(--ab-orange);
 }
-.me-clock-state { font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+.me-clock-state { font-size: 17px; font-weight: 700; color: var(--fg-1); margin-bottom: 4px; }
 .me-clock-times { font-size: 12px; color: var(--fg-3); }
-.me-clock-times b { color: #fff; font-weight: 600; }
+.me-clock-times b { color: var(--fg-1); font-weight: 600; }
 .me-clock-times .sep { margin: 0 8px; color: var(--fg-5); }
 .me-clock-actions { display: flex; gap: 10px; }
 .me-clock-actions .btn { flex: 1; }
@@ -167,12 +167,12 @@
 /* ---------- 직원(me) 근무일정 리스트 ---------- */
 .me-shift-list { display: flex; flex-direction: column; gap: 1px; background: var(--line-soft); border: 1px solid var(--line); }
 .me-shift-day { display: flex; gap: 16px; padding: 14px 16px; background: var(--ab-bg); }
-.me-shift-day.today { background: rgba(243,111,32,0.05); }
+.me-shift-day.today { background: color-mix(in srgb, var(--ab-orange) 5%, transparent); }
 .me-shift-date { flex: 0 0 44px; display: flex; flex-direction: column; align-items: center; padding-top: 2px; }
-.me-shift-date .dnum { font-size: 18px; font-weight: 700; color: #fff; line-height: 1; }
+.me-shift-date .dnum { font-size: 18px; font-weight: 700; color: var(--fg-1); line-height: 1; }
 .me-shift-date .dow { font-size: 11px; color: var(--fg-3); margin-top: 3px; }
 .me-shift-date .dow.sun { color: var(--err); }
-.me-shift-date .dow.sat { color: #8ab4f8; }
+.me-shift-date .dow.sat { color: var(--info); }
 .me-shift-items { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .me-shift-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .me-shift-row .shift { flex: 1; cursor: default; }
@@ -182,7 +182,7 @@
 .me-leave-list { display: flex; flex-direction: column; gap: 12px; }
 .me-leave-card { border: 1px solid var(--line); padding: 16px 18px; background: var(--ab-bg-1); }
 .me-leave-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.me-leave-name { font-size: 14px; font-weight: 700; color: #fff; }
+.me-leave-name { font-size: 14px; font-weight: 700; color: var(--fg-1); }
 .me-leave-year { font-size: 12px; color: var(--fg-4); }
 .me-leave-card .bal { margin-bottom: 12px; }
 .me-leave-card .bal-track { width: 100%; flex: 1; }
@@ -204,7 +204,7 @@
   transition: background var(--ease) .15s, color var(--ease) .15s;
 }
 .me-req-item:last-child { border-bottom: none; }
-.me-req-item:hover { background: var(--ab-bg-2); color: #fff; }
+.me-req-item:hover { background: var(--ab-bg-2); color: var(--fg-1); }
 .me-req-item .arr { color: var(--fg-5); display: inline-flex; transition: color var(--ease) .15s; }
 .me-req-item:hover .arr { color: var(--ab-orange); }
 
@@ -221,7 +221,7 @@
 .me-msg-row.read { opacity: 0.62; }
 .me-msg-dot { width: 6px; height: 6px; flex: 0 0 6px; background: var(--ab-orange); border-radius: 50%; }
 .me-msg-row.read .me-msg-dot { display: none; }
-.me-msg-title { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.me-msg-title { font-size: 13px; font-weight: 600; color: var(--fg-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .me-msg-row.read .me-msg-title { font-weight: 400; color: var(--fg-2); }
 .me-msg-time { font-size: 11px; color: var(--fg-4); margin-top: 3px; }
 .me-msg-meta { font-size: 11px; color: var(--fg-4); margin-bottom: 12px; }
@@ -230,15 +230,15 @@
 /* ---------- 직원(me) 프로필 ---------- */
 .me-profile-hero {
   display: flex; align-items: center; gap: 16px; padding: 20px;
-  border: 1px solid var(--line-strong); background: #050505; margin-bottom: 22px;
+  border: 1px solid var(--line-strong); background: var(--dialog-bg); margin-bottom: 22px;
 }
 .me-profile-hero .av { width: 52px; height: 52px; font-size: 18px; }
-.me-profile-name { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+.me-profile-name { font-size: 18px; font-weight: 700; color: var(--fg-1); margin-bottom: 4px; }
 .me-profile-sub { font-size: 12px; color: var(--fg-3); }
 .me-field-hint { font-size: 11px; color: var(--fg-4); margin-top: 6px; }
 .me-field-hint.err { color: var(--err); }
-.me-logout { width: 100%; justify-content: center; margin-top: 4px; color: var(--err); border-color: rgba(255,127,127,0.35); }
-.me-logout:hover { background: var(--err); color: #000; border-color: var(--err); }
+.me-logout { width: 100%; justify-content: center; margin-top: 4px; color: var(--err); border-color: color-mix(in srgb, var(--err) 35%, transparent); }
+.me-logout:hover { background: var(--err); color: var(--on-err); border-color: var(--err); }
 
 /* me 화면 set-block 입력 폭 보정 (모바일) */
 .me-main .set-row { grid-template-columns: 120px 1fr; padding: 16px 20px; }

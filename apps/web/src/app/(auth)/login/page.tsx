@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import apiClient from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth.store'
 import { Sigil } from '@/components/ab/icons'
+import { ThemeSwitcher } from '@/components/ab/ThemeSwitcher'
 import type { AccessLevel } from '@ablework/shared-constants'
 
 interface LoginResponse {
@@ -62,6 +63,9 @@ export default function LoginPage() {
 
   return (
     <div className="auth-wrap">
+      <div style={{ position: 'fixed', top: 18, right: 18, zIndex: 10 }}>
+        <ThemeSwitcher showLabel />
+      </div>
       <div className="auth-card">
         <div className="auth-brand">
           <Sigil size={26} />

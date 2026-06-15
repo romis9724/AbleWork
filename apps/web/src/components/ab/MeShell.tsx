@@ -7,6 +7,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { Sigil, I, HRI } from './icons'
 import { useAuthStore } from '@/stores/auth.store'
+import { ThemeSwitcher } from './ThemeSwitcher'
 
 const ME_NAV = [
   { label: '홈', icon: HRI.home, path: '/me/home' },
@@ -47,6 +48,7 @@ export function MeShell({ children }: { children: ReactNode }) {
               관리자 모드
             </span>
           )}
+          <ThemeSwitcher className="me-head-switch" />
           <span className="me-head-avatar">{I.user()}</span>
         </div>
       </header>

@@ -1,159 +1,129 @@
 'use client'
-import { createTheme } from '@mui/material/styles'
+import { createTheme, type Theme } from '@mui/material/styles'
 import type {} from '@mui/x-data-grid/themeAugmentation'
+import { type ThemeId, type ThemeTokens, getThemeMeta } from './tokens'
 
 /**
- * AB Workforce 다크 테마.
- * 디자인 핸드오프(refs/design_handoff_ab_workforce) 토큰과 정합:
- * 순수 블랙 캔버스 · 오렌지(#f36f20) 단일 액센트 · radius 0 · 그림자 없음 · 헤어라인.
- * 전역 CSS(styles/ab-admin.css, ab-hr.css)와 함께 동작하며, 아직 마이그레이션되지 않은
- * MUI 컴포넌트도 이 테마로 동일한 다크 룩을 유지한다.
+ * AB Workforce MUI 테마 팩토리.
+ *
+ * 화면 룩은 CSS 변수(styles/ab-*.css)가 지배하지만, 아직 CSS 클래스로 마이그레이션되지
+ * 않은 MUI 컴포넌트(DataGrid·Dialog·Tooltip 등)도 동일한 테마로 칠해지도록
+ * theme/tokens.ts 의 동일 토큰에서 MUI 테마를 생성한다.
+ *
+ * ThemeRegistry 가 활성 테마 id 로 buildMuiTheme(id) 를 호출한다.
  */
 
-// 디자인 토큰 (CSS :root 와 동일 값)
-const AB = {
-  orange: '#f36f20',
-  orangeDk: '#d24b13',
-  orangeLt: '#ff9d50',
-  bg: '#000000',
-  bg1: '#070707',
-  bg2: '#0d0d0d',
-  bg3: '#131313',
-  fg1: '#ffffff',
-  fg2: 'rgba(255,255,255,0.80)',
-  fg3: 'rgba(255,255,255,0.62)',
-  fg4: 'rgba(255,255,255,0.42)',
-  line: 'rgba(255,255,255,0.12)',
-  lineSoft: 'rgba(255,255,255,0.07)',
-  lineStrong: 'rgba(255,255,255,0.55)',
-  ok: '#7fdc8e',
-  warn: '#f3b720',
-  err: '#ff7f7f',
-  info: '#8ab4f8',
-} as const
+function buildFromTokens(t: ThemeTokens): Theme {
+  const isDark = t.colorScheme === 'dark'
+  // 상태색 면 위 텍스트: 다크 테마는 밝은 상태색 → 어두운 글씨, 라이트 테마는 그 반대
+  const onState = isDark ? '#000000' : '#ffffff'
 
-export const theme = createTheme({
-  palette: {
-    mode: 'dark',
-    primary: {
-      main: AB.orange,
-      light: AB.orangeLt,
-      dark: AB.orangeDk,
-      contrastText: '#ffffff',
+  return createTheme({
+    palette: {
+      mode: t.colorScheme,
+      primary: {
+        main: t.accent,
+        dark: t.accentDk,
+        contrastText: t.onAccent,
+      },
+      secondary: { main: t.info, contrastText: onState },
+      success: { main: t.ok, contrastText: onState },
+      warning: { main: t.warn, contrastText: onState },
+      error: { main: t.err, contrastText: t.onErr },
+      info: { main: t.info, contrastText: onState },
+      background: { default: t.bg, paper: t.bg1 },
+      text: { primary: t.fg1, secondary: t.fg3, disabled: t.fg4 },
+      divider: t.line,
+      action: { hover: t.bg3, selected: t.bg2 },
     },
-    secondary: {
-      main: AB.info,
-      contrastText: '#000000',
+    // 디자인 시스템 토큰과 통일: 본문은 --font-body, 숫자/날짜는 화면에서 .tek(Tektur)로 별도 처리.
+    typography: {
+      fontFamily: 'var(--font-body)',
+      fontWeightRegular: 500,
+      button: { fontWeight: 600, textTransform: 'none' },
     },
-    success: { main: AB.ok, contrastText: '#000000' },
-    warning: { main: AB.warn, contrastText: '#000000' },
-    error: { main: AB.err, contrastText: '#000000' },
-    info: { main: AB.info, contrastText: '#000000' },
-    background: {
-      default: AB.bg,
-      paper: AB.bg2,
-    },
-    text: {
-      primary: AB.fg1,
-      secondary: AB.fg3,
-      disabled: AB.fg4,
-    },
-    divider: AB.line,
-    action: {
-      hover: AB.bg3,
-      selected: AB.bg2,
-    },
-  },
-    // 디자인 시스템 토큰과 통일: 별도 스택(Noto/Roboto) 하드코딩 대신 ab-admin.css의 --font-body 사용.
-    // (숫자/문서번호/날짜 등은 화면에서 .tek / var(--font-display) = Tektur 로 별도 처리 — 다른 메뉴와 동일)
-  typography: {
-    fontFamily: 'var(--font-body)',
-    fontWeightRegular: 500,
-    button: { fontWeight: 600, textTransform: 'none' },
-  },
-  shape: {
-    borderRadius: 0,
-  },
-  components: {
-    MuiCssBaseline: {
-      styleOverrides: {
-        body: {
-          backgroundColor: AB.bg,
-          color: AB.fg1,
+    shape: { borderRadius: 0 },
+    components: {
+      MuiCssBaseline: {
+        styleOverrides: { body: { backgroundColor: t.bg, color: t.fg1 } },
+      },
+      MuiPaper: {
+        styleOverrides: {
+          root: { backgroundImage: 'none', backgroundColor: t.bg1, border: `1px solid ${t.line}` },
+          elevation0: { border: 'none' },
+        },
+        defaultProps: { elevation: 0 },
+      },
+      MuiCard: {
+        styleOverrides: {
+          root: { boxShadow: 'none', backgroundColor: t.bg1, border: `1px solid ${t.line}` },
         },
       },
-    },
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundImage: 'none',
-          backgroundColor: AB.bg1,
-          border: `1px solid ${AB.line}`,
+      MuiAppBar: {
+        styleOverrides: { root: { boxShadow: 'none', backgroundColor: t.bg, backgroundImage: 'none' } },
+      },
+      MuiDrawer: {
+        styleOverrides: { paper: { backgroundColor: t.bg1, backgroundImage: 'none', borderColor: t.line } },
+      },
+      MuiButton: {
+        styleOverrides: {
+          root: { textTransform: 'none', fontWeight: 600, boxShadow: 'none' },
+          containedPrimary: { '&:hover': { backgroundColor: t.accentDk } },
         },
-        elevation0: { border: 'none' },
+        defaultProps: { disableElevation: true },
       },
-      defaultProps: { elevation: 0 },
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: { boxShadow: 'none', backgroundColor: AB.bg1, border: `1px solid ${AB.line}` },
-      },
-    },
-    MuiAppBar: {
-      styleOverrides: { root: { boxShadow: 'none', backgroundColor: AB.bg, backgroundImage: 'none' } },
-    },
-    MuiDrawer: {
-      styleOverrides: { paper: { backgroundColor: AB.bg1, backgroundImage: 'none', borderColor: AB.line } },
-    },
-    MuiButton: {
-      styleOverrides: {
-        root: { textTransform: 'none', fontWeight: 600, boxShadow: 'none' },
-        containedPrimary: { '&:hover': { backgroundColor: AB.orangeDk } },
-      },
-      defaultProps: { disableElevation: true },
-    },
-    MuiDialog: {
-      styleOverrides: {
-        paper: { backgroundColor: '#050505', border: `1px solid ${AB.lineStrong}`, backgroundImage: 'none' },
-      },
-    },
-    MuiTooltip: {
-      styleOverrides: {
-        tooltip: { backgroundColor: '#1b1b1b', border: `1px solid ${AB.line}`, fontSize: 12 },
-      },
-    },
-    MuiDataGrid: {
-      styleOverrides: {
-        root: {
-          border: 'none',
-          color: AB.fg2,
-          '& .MuiDataGrid-cell:focus': { outline: 'none' },
-          '& .MuiDataGrid-columnHeaders': { backgroundColor: AB.bg1, borderColor: AB.line },
-          '& .MuiDataGrid-cell': { borderColor: AB.lineSoft },
-          '& .MuiDataGrid-row:hover': { backgroundColor: AB.bg3 },
+      MuiDialog: {
+        styleOverrides: {
+          paper: { backgroundColor: t.dialogBg, border: `1px solid ${t.lineStrong}`, backgroundImage: 'none' },
         },
       },
-    },
-    MuiTableCell: {
-      styleOverrides: {
-        root: { borderColor: AB.lineSoft },
-        head: { backgroundColor: AB.bg1, color: AB.fg4, fontWeight: 700 },
+      MuiMenu: {
+        styleOverrides: { paper: { backgroundColor: t.dialogBg, border: `1px solid ${t.line}` } },
       },
-    },
-    MuiTable: { defaultProps: { size: 'small' } },
-    MuiOutlinedInput: {
-      styleOverrides: {
-        notchedOutline: { borderColor: AB.line },
-        root: {
-          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: AB.lineStrong },
+      MuiTooltip: {
+        styleOverrides: {
+          tooltip: { backgroundColor: t.tooltipBg, color: '#ffffff', border: `1px solid ${t.line}`, fontSize: 12 },
         },
       },
+      MuiDataGrid: {
+        styleOverrides: {
+          root: {
+            border: 'none',
+            color: t.fg2,
+            '& .MuiDataGrid-cell:focus': { outline: 'none' },
+            '& .MuiDataGrid-columnHeaders': { backgroundColor: t.bg1, borderColor: t.line },
+            '& .MuiDataGrid-cell': { borderColor: t.lineSoft },
+            '& .MuiDataGrid-row:hover': { backgroundColor: t.bg3 },
+          },
+        },
+      },
+      MuiTableCell: {
+        styleOverrides: {
+          root: { borderColor: t.lineSoft },
+          head: { backgroundColor: t.bg1, color: t.fg4, fontWeight: 700 },
+        },
+      },
+      MuiTable: { defaultProps: { size: 'small' } },
+      MuiOutlinedInput: {
+        styleOverrides: {
+          notchedOutline: { borderColor: t.line },
+          root: { '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: t.lineStrong } },
+        },
+      },
+      MuiChip: { styleOverrides: { root: { borderRadius: 0 } } },
+      MuiDivider: { styleOverrides: { root: { borderColor: t.line } } },
     },
-    MuiChip: {
-      styleOverrides: { root: { borderRadius: 0 } },
-    },
-    MuiDivider: {
-      styleOverrides: { root: { borderColor: AB.line } },
-    },
-  },
-})
+  })
+}
+
+const themeCache = new Map<ThemeId, Theme>()
+
+/** 활성 테마 id 로 MUI 테마를 생성(캐시)한다. */
+export function buildMuiTheme(id: ThemeId): Theme {
+  const cached = themeCache.get(id)
+  if (cached) return cached
+  const meta = getThemeMeta(id)
+  const built = buildFromTokens(meta.tokens)
+  themeCache.set(meta.id, built)
+  return built
+}
