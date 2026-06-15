@@ -10,6 +10,7 @@ import { ADMIN_NAV, ADMIN_FOOT, activeNavId, ROLE_LABELS } from './nav'
 import { useAuthStore } from '@/stores/auth.store'
 import { canViewNav } from '@ablework/shared-constants'
 import { useToast } from './Toast'
+import { ThemeSwitcher } from './ThemeSwitcher'
 
 function logout(push: (p: string) => void, clearUser: () => void) {
   document.cookie = 'accessToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT'
@@ -55,6 +56,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             {roleLabel && <span className="hd-user-name">{roleLabel}</span>}
             <span className="hd-avatar">{I.user()}</span>
           </div>
+          <ThemeSwitcher />
           <div
             className="hd-lang"
             role="button"

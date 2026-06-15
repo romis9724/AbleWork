@@ -340,3 +340,4 @@ pnpm dev
 | `docs/design/ERD.md` | 52개 테이블 Mermaid ERD + company_settings 키 목록 |
 | `docs/design/FEATURE_LIST.md` | 기능 목록, 우선순위, 화면 경로 목록 |
 | `docs/design/ENGINEERING_DESIGN.md` | 기술 스택, 디렉토리 구조, 설정 코드, 배포 |
+| `docs/design/THEMING.md` | 멀티 테마(6종) SSOT·전환·SSR. 색 토큰 추가/변경은 `apps/web/src/theme/tokens.ts` 한 곳에서 |
