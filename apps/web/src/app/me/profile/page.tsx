@@ -1,23 +1,30 @@
 'use client'
 import { useState, useEffect } from 'react'
-import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Typography from '@mui/material/Typography'
-import Avatar from '@mui/material/Avatar'
-import Button from '@mui/material/Button'
-import TextField from '@mui/material/TextField'
-import Divider from '@mui/material/Divider'
-import CircularProgress from '@mui/material/CircularProgress'
-import Snackbar from '@mui/material/Snackbar'
-import Alert from '@mui/material/Alert'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 import { useEmployee, useUpdateEmployee } from '@/lib/query/employees'
 import apiClient from '@/lib/api-client'
+import { PageHead } from '@/components/ab/Page'
+import { Avatar } from '@/components/ab/atoms'
+import { I } from '@/components/ab/icons'
+import { useToast } from '@/components/ab/Toast'
+
+const EMPLOYMENT_LABEL: Record<string, string> = {
+  REGULAR: '정규직',
+  CONTRACT: '계약직',
+  PART_TIME: '파트타임',
+  INTERN: '인턴',
+  DAILY: '일용직',
+}
+
+function dateLabel(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('ko-KR')
+}
 
 export default function ProfilePage() {
   const router = useRouter()
+  const toast = useToast()
   const { user, clearUser } = useAuthStore()
 
   const [name, setName] = useState('')
@@ -26,10 +33,6 @@ export default function ProfilePage() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [changingPassword, setChangingPassword] = useState(false)
-
-  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
-    open: false, message: '', severity: 'success',
-  })
 
   const { data: employee, isLoading } = useEmployee(user?.employeeId ?? '')
   const updateEmployee = useUpdateEmployee()
@@ -41,30 +44,27 @@ export default function ProfilePage() {
     }
   }, [employee])
 
-  const showSnack = (message: string, severity: 'success' | 'error') =>
-    setSnack({ open: true, message, severity })
-
   const handleSaveProfile = async () => {
     if (!user?.employeeId) return
     try {
       await updateEmployee.mutateAsync({ id: user.employeeId, name, phone })
-      showSnack('프로필이 저장됐습니다.', 'success')
-    } catch {
-      showSnack('저장 중 오류가 발생했습니다.', 'error')
+      toast('프로필이 저장됐습니다')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '저장 중 오류가 발생했습니다')
     }
   }
 
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
-      showSnack('모든 비밀번호 항목을 입력해 주세요.', 'error')
+      toast('모든 비밀번호 항목을 입력해 주세요')
       return
     }
     if (newPassword !== confirmPassword) {
-      showSnack('새 비밀번호가 일치하지 않습니다.', 'error')
+      toast('새 비밀번호가 일치하지 않습니다')
       return
     }
     if (newPassword.length < 8) {
-      showSnack('새 비밀번호는 8자 이상이어야 합니다.', 'error')
+      toast('새 비밀번호는 8자 이상이어야 합니다')
       return
     }
     setChangingPassword(true)
@@ -73,9 +73,9 @@ export default function ProfilePage() {
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-      showSnack('비밀번호가 변경됐습니다.', 'success')
-    } catch {
-      showSnack('비밀번호 변경 중 오류가 발생했습니다.', 'error')
+      toast('비밀번호가 변경됐습니다')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '비밀번호 변경 중 오류가 발생했습니다')
     } finally {
       setChangingPassword(false)
     }
@@ -88,113 +88,142 @@ export default function ProfilePage() {
     router.push('/login')
   }
 
+  const passwordMismatch = confirmPassword.length > 0 && newPassword !== confirmPassword
+
   if (isLoading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-        <CircularProgress />
-      </Box>
+      <>
+        <PageHead eyebrow="Profile" title="내 프로필" />
+        <div className="ab-loading"><span className="ab-spin" />불러오는 중…</div>
+      </>
     )
   }
 
+  const primaryOrg = employee?.organizations?.find((o) => o.isPrimary)?.organization
+    ?? employee?.organizations?.[0]?.organization
+  const positionNames = employee?.positions?.map((p) => p.position.name).join(', ')
+
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <Typography variant="h6" fontWeight={700}>내 프로필</Typography>
+    <>
+      <PageHead eyebrow="Profile" title="내 프로필" />
 
-      {/* Profile card */}
-      <Card>
-        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Avatar sx={{ width: 56, height: 56, bgcolor: 'primary.main', fontSize: 24 }}>
-              {user?.accessLevel?.[0] ?? '?'}
-            </Avatar>
-            <Box>
-              <Typography variant="body2" fontWeight={600}>{user?.accessLevel}</Typography>
-              <Typography variant="caption" color="text.secondary">ID: {user?.employeeId ?? '—'}</Typography>
-            </Box>
-          </Box>
+      {/* 프로필 헤더 */}
+      <div className="me-profile-hero">
+        <Avatar name={employee?.name ?? user?.accessLevel} on />
+        <div className="grow">
+          <div className="me-profile-name">{employee?.name ?? '—'}</div>
+          <div className="me-profile-sub">
+            {primaryOrg?.name ?? '—'}
+            {positionNames && <> · {positionNames}</>}
+          </div>
+        </div>
+      </div>
 
-          <TextField
-            label="이름"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            fullWidth
-          />
-          <TextField
-            label="전화번호"
+      {/* 기본 정보 (수정 가능) */}
+      <div className="set-block">
+        <div className="set-block-head">기본 정보</div>
+        <div className="set-row">
+          <span className="k">이름</span>
+          <input className="inp-block" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="set-row">
+          <span className="k">전화번호</span>
+          <input
+            className="inp-block"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            fullWidth
             placeholder="010-0000-0000"
           />
+        </div>
+        <div className="set-row">
+          <span className="k" />
+          <div>
+            <button className="btn btn-primary" disabled={updateEmployee.isPending} onClick={handleSaveProfile}>
+              {updateEmployee.isPending ? '저장 중…' : '저장'}
+            </button>
+          </div>
+        </div>
+      </div>
 
-          <Button
-            variant="contained"
-            onClick={handleSaveProfile}
-            disabled={updateEmployee.isPending}
-            fullWidth
-          >
-            {updateEmployee.isPending ? <CircularProgress size={20} color="inherit" /> : '저장'}
-          </Button>
-        </CardContent>
-      </Card>
+      {/* 근로 정보 (읽기 전용) */}
+      <div className="set-block">
+        <div className="set-block-head">근로 정보</div>
+        <div style={{ padding: '6px 24px 14px' }}>
+          <div className="doc-field">
+            <span className="fk">사번</span>
+            <span className="fv tek">{employee?.employeeNumber ?? '—'}</span>
+          </div>
+          <div className="doc-field">
+            <span className="fk">이메일</span>
+            <span className="fv">{employee?.user?.email ?? '—'}</span>
+          </div>
+          <div className="doc-field">
+            <span className="fk">고용 형태</span>
+            <span className="fv">{employee ? EMPLOYMENT_LABEL[employee.employmentType] ?? employee.employmentType : '—'}</span>
+          </div>
+          <div className="doc-field">
+            <span className="fk">권한</span>
+            <span className="fv">{employee?.accessLevel ?? user?.accessLevel ?? '—'}</span>
+          </div>
+          <div className="doc-field">
+            <span className="fk">입사일</span>
+            <span className="fv">{dateLabel(employee?.joinedAt)}</span>
+          </div>
+        </div>
+      </div>
 
-      {/* Password change card */}
-      <Card>
-        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Typography variant="subtitle2" fontWeight={600}>비밀번호 변경</Typography>
-          <Divider />
-          <TextField
-            label="현재 비밀번호"
+      {/* 비밀번호 변경 */}
+      <div className="set-block">
+        <div className="set-block-head">비밀번호 변경</div>
+        <div className="set-row">
+          <span className="k">현재 비밀번호</span>
+          <input
+            className="inp-block"
             type="password"
+            autoComplete="current-password"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            fullWidth
-            autoComplete="current-password"
           />
-          <TextField
-            label="새 비밀번호"
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            fullWidth
-            autoComplete="new-password"
-            helperText="8자 이상"
-          />
-          <TextField
-            label="새 비밀번호 확인"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            fullWidth
-            autoComplete="new-password"
-            error={confirmPassword.length > 0 && newPassword !== confirmPassword}
-            helperText={confirmPassword.length > 0 && newPassword !== confirmPassword ? '비밀번호가 일치하지 않습니다.' : undefined}
-          />
-          <Button
-            variant="outlined"
-            onClick={handleChangePassword}
-            disabled={changingPassword}
-            fullWidth
-          >
-            {changingPassword ? <CircularProgress size={20} color="inherit" /> : '비밀번호 변경'}
-          </Button>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="set-row">
+          <span className="k">새 비밀번호</span>
+          <div>
+            <input
+              className="inp-block"
+              type="password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+            <div className="me-field-hint">8자 이상</div>
+          </div>
+        </div>
+        <div className="set-row">
+          <span className="k">새 비밀번호 확인</span>
+          <div>
+            <input
+              className="inp-block"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+            {passwordMismatch && <div className="me-field-hint err">비밀번호가 일치하지 않습니다</div>}
+          </div>
+        </div>
+        <div className="set-row">
+          <span className="k" />
+          <div>
+            <button className="btn btn-line" disabled={changingPassword} onClick={handleChangePassword}>
+              {changingPassword ? '변경 중…' : '비밀번호 변경'}
+            </button>
+          </div>
+        </div>
+      </div>
 
-      {/* Logout */}
-      <Button variant="outlined" color="error" onClick={handleLogout} fullWidth>
-        로그아웃
-      </Button>
-
-      <Snackbar
-        open={snack.open}
-        autoHideDuration={4000}
-        onClose={() => setSnack((s) => ({ ...s, open: false }))}
-      >
-        <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))}>
-          {snack.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+      <button className="btn btn-line me-logout" onClick={handleLogout}>
+        {I.logout()} 로그아웃
+      </button>
+    </>
   )
 }

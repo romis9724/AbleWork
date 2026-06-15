@@ -1,18 +1,9 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import NextLink from 'next/link'
-import Box from '@mui/material/Box'
-import Link from '@mui/material/Link'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import TextField from '@mui/material/TextField'
-import Button from '@mui/material/Button'
-import Typography from '@mui/material/Typography'
-import CircularProgress from '@mui/material/CircularProgress'
-import Alert from '@mui/material/Alert'
 import apiClient from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth.store'
+import { Sigil } from '@/components/ab/icons'
 import type { AccessLevel } from '@ablework/shared-constants'
 
 interface LoginResponse {
@@ -49,7 +40,6 @@ export default function LoginPage() {
       const res = await apiClient.post<LoginResponse>('/auth/login', { email, password })
       const { accessToken, refreshToken } = res as unknown as LoginResponse
 
-      // 쿠키에 토큰 저장
       document.cookie = `accessToken=${accessToken}; path=/; max-age=${15 * 60}`
       document.cookie = `refreshToken=${refreshToken}; path=/; max-age=${7 * 24 * 60 * 60}`
 
@@ -71,72 +61,55 @@ export default function LoginPage() {
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        bgcolor: 'background.default',
-      }}
-    >
-      <Card sx={{ width: 400, p: 2 }}>
-        <CardContent>
-          <Box sx={{ textAlign: 'center', mb: 3 }}>
-            <Typography variant="h5" fontWeight={700} color="primary">
-              AbleWork
-            </Typography>
-            <Typography variant="body2" color="text.secondary" mt={0.5}>
-              로그인하여 시작하세요
-            </Typography>
-          </Box>
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <div className="auth-brand">
+          <Sigil size={26} />
+          <span className="hd-wordmark tek">AbleWork</span>
+        </div>
+        <div className="auth-eyebrow">Sign in</div>
+        <h1 className="auth-title">로그인</h1>
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
+        {error && <div className="auth-error">{error}</div>}
 
-          <form onSubmit={handleLogin}>
-            <TextField
-              label="이메일"
+        <form onSubmit={handleLogin}>
+          <div className="auth-field">
+            <label htmlFor="email">이메일</label>
+            <input
+              id="email"
+              className="inp-block"
               type="email"
-              fullWidth
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              margin="normal"
               required
               autoComplete="email"
+              placeholder="name@company.com"
             />
-            <TextField
-              label="비밀번호"
+          </div>
+          <div className="auth-field">
+            <label htmlFor="password">비밀번호</label>
+            <input
+              id="password"
+              className="inp-block"
               type="password"
-              fullWidth
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              margin="normal"
               required
               autoComplete="current-password"
+              placeholder="••••••••"
             />
-            <Button
-              type="submit"
-              variant="contained"
-              fullWidth
-              size="large"
-              disabled={loading}
-              sx={{ mt: 2 }}
-            >
-              {loading ? <CircularProgress size={24} color="inherit" /> : '로그인'}
-            </Button>
-          </form>
+          </div>
+          <div className="auth-actions">
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? '로그인 중…' : '로그인'}
+            </button>
+          </div>
+        </form>
 
-          <Box sx={{ textAlign: 'center', mt: 2 }}>
-            <Link component={NextLink} href="/forgot-password" variant="body2" underline="hover">
-              비밀번호를 잊으셨나요?
-            </Link>
-          </Box>
-        </CardContent>
-      </Card>
-    </Box>
+        <div className="auth-foot">
+          <a onClick={() => router.push('/forgot-password')}>비밀번호를 잊으셨나요?</a>
+        </div>
+      </div>
+    </div>
   )
 }

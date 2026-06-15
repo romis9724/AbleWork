@@ -1,18 +1,15 @@
+/**
+ * AB 전자결재 — 문서 담당 관리 (핸드오프 screens2.jsx DocOwners 네이티브 재구축).
+ * .split 2-pane: 좌 조직(.pane, useOrganizations 평면) + 우 검색/구성원(.tbl)·담당자 설정 <Toggle>.
+ * 데이터/로직은 기존 org doc-manager 훅(useOrgDocManagers/useSetOrgDocManagers) 보존.
+ * API는 전체 employeeIds[] PATCH 방식이므로, 토글마다 현재 담당자 목록을 재구성해 저장한다.
+ */
 'use client'
 import { useEffect, useMemo, useState } from 'react'
-import Alert from '@mui/material/Alert'
-import Autocomplete from '@mui/material/Autocomplete'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
-import CircularProgress from '@mui/material/CircularProgress'
-import Paper from '@mui/material/Paper'
-import Snackbar from '@mui/material/Snackbar'
-import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
-import PageHeader from '@/components/common/PageHeader'
-import OrgTree from '@/components/approval/OrgTree'
-import { useSnackbar } from '@/hooks/useSnackbar'
+import { PageHead } from '@/components/ab/Page'
+import { Toggle, TextInput, TableEmpty } from '@/components/ab/atoms'
+import { I } from '@/components/ab/icons'
+import { useToast } from '@/components/ab/Toast'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   useOrganizations,
@@ -28,7 +25,7 @@ interface FlatOrg {
   depth: number
 }
 
-/** 조직 트리를 깊이 들여쓰기용 플랫 배열로 변환 */
+/** 조직 트리를 깊이 들여쓰기용 평면 배열로 변환 */
 function flatten(nodes: Organization[], depth = 0, acc: FlatOrg[] = []): FlatOrg[] {
   for (const n of nodes) {
     acc.push({ id: n.id, name: n.name, depth })
@@ -37,19 +34,16 @@ function flatten(nodes: Organization[], depth = 0, acc: FlatOrg[] = []): FlatOrg
   return acc
 }
 
-type EmpOption = { id: string; name: string }
-
 export default function DocManagersPage() {
+  const toast = useToast()
   const { data: orgTree = [], isLoading: orgLoading } = useOrganizations()
   const { data: employeeData } = useEmployees({ limit: 500, isActive: true })
-  const employees: EmpOption[] = useMemo(
-    () => (employeeData?.items ?? []).map((e) => ({ id: e.id, name: e.name })),
-    [employeeData],
-  )
-  const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
+  const setManagers = useSetOrgDocManagers()
 
   const flatOrgs = useMemo(() => flatten(orgTree), [orgTree])
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null)
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
 
   // 최초 로드 시 첫 조직 자동 선택
   useEffect(() => {
@@ -57,117 +51,154 @@ export default function DocManagersPage() {
   }, [flatOrgs, selectedOrgId])
 
   const { data: managers, isLoading: mgrLoading } = useOrgDocManagers(selectedOrgId)
-  const setManagers = useSetOrgDocManagers()
-
-  // 선택 부서의 현재 담당자(순서 유지) → Autocomplete value
-  const [selected, setSelected] = useState<EmpOption[]>([])
-  useEffect(() => {
-    if (managers) {
-      setSelected(managers.map((m) => ({ id: m.employeeId, name: m.employee.name })))
-    }
-  }, [managers])
-
   const selectedOrg = flatOrgs.find((o) => o.id === selectedOrgId)
 
-  function handleSave() {
+  // 선택 부서 소속 구성원 (검색 필터 적용)
+  const members = useMemo(() => {
+    if (!selectedOrgId) return []
+    const all = (employeeData?.items ?? []).filter((e) =>
+      (e.organizations ?? []).some((link) => link.organization.id === selectedOrgId),
+    )
+    const q = search.trim()
+    return q ? all.filter((e) => e.name.includes(q)) : all
+  }, [employeeData, selectedOrgId, search])
+
+  // 현재 담당자 id 집합 (순서 유지)
+  const managerIds = useMemo(() => (managers ?? []).map((m) => m.employeeId), [managers])
+  const managerSet = useMemo(() => new Set(managerIds), [managerIds])
+
+  const handleToggle = (employeeId: string, next: boolean) => {
     if (!selectedOrgId) return
+    // 전체 담당자 목록을 재구성 (순서 유지: 기존 목록 + 신규 추가 / 해제 시 제거)
+    const nextIds = next
+      ? [...managerIds, employeeId]
+      : managerIds.filter((id) => id !== employeeId)
     setManagers.mutate(
-      { orgId: selectedOrgId, employeeIds: selected.map((e) => e.id) },
+      { orgId: selectedOrgId, employeeIds: nextIds },
       {
-        onSuccess: () => showSnackbar('문서담당자를 저장했습니다.'),
-        onError: (err) => showSnackbar(getApiErrorMessage(err, '저장에 실패했습니다.'), 'error'),
+        onSuccess: () => toast(next ? '담당자로 설정했습니다.' : '담당자를 해지했습니다.'),
+        onError: (err) => toast(getApiErrorMessage(err, '저장에 실패했습니다.')),
       },
     )
   }
 
+  const empSubLabel = (orgName: string, position?: string) =>
+    position ? `${orgName} · ${position}` : orgName
+
   return (
     <>
-      <PageHeader
-        title="문서담당 관리"
-        subtitle="부서별 전자결재 문서담당자를 지정합니다. 부서협조/부서수신 결재는 지정된 담당자 누구나 처리할 수 있고, 첫 번째가 대표 담당자입니다."
-      />
+      <PageHead eyebrow="Document Owners" title="문서 담당 관리" />
 
       {orgLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-          <CircularProgress />
-        </Box>
+        <div className="ab-loading">
+          <span className="ab-spin" />
+          불러오는 중…
+        </div>
       ) : (
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          {/* 좌: 조직도 트리 (접기/펼치기) */}
-          <Paper
-            elevation={0}
-            sx={{ border: '1px solid', borderColor: 'divider', width: 280, maxHeight: 560, overflow: 'auto', py: 0.5 }}
-          >
-            <OrgTree nodes={orgTree} selectedId={selectedOrgId} onSelect={setSelectedOrgId} />
-          </Paper>
+        <div className="split">
+          {/* 좌: 조직 목록 */}
+          <div className="pane">
+            <div className="pane-head"><span className="dot" /><span className="t">조직도</span></div>
+            <div className="pane-list">
+              {flatOrgs.map((o) => (
+                <div
+                  key={o.id}
+                  className={'pane-li' + (selectedOrgId === o.id ? ' on' : '')}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selectedOrgId === o.id}
+                  onClick={() => setSelectedOrgId(o.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelectedOrgId(o.id)
+                    }
+                  }}
+                >
+                  <span style={{ paddingLeft: o.depth * 14 }}>{o.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
 
-          {/* 우: 담당자 편집 */}
-          <Paper
-            elevation={0}
-            sx={{ border: '1px solid', borderColor: 'divider', p: 2.5, flexGrow: 1, minWidth: 320 }}
-          >
+          {/* 우: 구성원 담당자 설정 */}
+          <div>
+            <div className="note">
+              <div className="note-t">Notice</div>
+              <ul>
+                <li>부서별 전자결재 문서담당자를 지정합니다.</li>
+                <li>부서협조·부서수신 결재는 지정된 담당자 누구나 처리할 수 있습니다.</li>
+                <li>맨 앞 담당자가 대표(상신 시 1차 배정 대상)입니다.</li>
+              </ul>
+            </div>
+
+            <div className="filter" style={{ padding: '20px 24px', marginBottom: 22 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <label style={{ fontSize: 13, color: 'var(--fg-3)', flex: '0 0 auto' }}>검색</label>
+                <TextInput placeholder="ID 또는 이름 입력" icon={I.search()} value={searchInput} onChange={setSearchInput} />
+                <button
+                  className="btn btn-primary btn-sm"
+                  style={{ flex: '0 0 auto', padding: '10px 28px' }}
+                  onClick={() => setSearch(searchInput)}
+                >
+                  조회
+                </button>
+              </div>
+            </div>
+
             {!selectedOrg ? (
-              <Typography variant="body2" color="text.secondary">조직을 선택하세요.</Typography>
+              <div className="tbl-empty">조직을 선택하세요.</div>
             ) : mgrLoading ? (
-              <CircularProgress size={22} />
+              <div className="ab-loading">
+                <span className="ab-spin" />
+                불러오는 중…
+              </div>
             ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Typography variant="subtitle1" fontWeight={700}>{selectedOrg.name}</Typography>
-                <Autocomplete
-                  multiple
-                  options={employees}
-                  value={selected}
-                  onChange={(_, v) => setSelected(v)}
-                  getOptionLabel={(o) => o.name}
-                  isOptionEqualToValue={(a, b) => a.id === b.id}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => {
-                      const { key, ...chipProps } = getTagProps({ index })
-                      return (
-                        <Chip
-                          key={key}
-                          {...chipProps}
-                          label={index === 0 ? `${option.name} (대표)` : option.name}
-                          color={index === 0 ? 'primary' : 'default'}
-                          variant={index === 0 ? 'filled' : 'outlined'}
-                          size="small"
-                        />
-                      )
-                    })
-                  }
-                  renderInput={(params) => (
-                    <TextField {...params} label="문서담당자" placeholder="담당자 검색·추가" />
-                  )}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  맨 앞 담당자가 대표(상신 시 1차 배정 대상)입니다. 칩을 지워 순서를 바꿀 수 있습니다.
-                </Typography>
-                <Box>
-                  <Button
-                    variant="contained"
-                    onClick={handleSave}
-                    disabled={setManagers.isPending}
-                  >
-                    {setManagers.isPending ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
-                    저장
-                  </Button>
-                </Box>
-              </Box>
+              <>
+                <div className="tbl-bar">
+                  <span className="tbl-count">구성원 <b>{members.length}</b>명</span>
+                </div>
+                <div className="tbl-scroll">
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th>구성원</th>
+                        <th style={{ width: 200 }} className="c">담당자 설정</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members.length === 0 ? (
+                        <TableEmpty colSpan={2} message="해당 조직의 구성원이 없습니다." />
+                      ) : (
+                        members.map((emp) => {
+                          const position = emp.positions?.[0]?.position?.name
+                          return (
+                            <tr key={emp.id}>
+                              <td className="lead">
+                                {emp.name}
+                                <span className="cell-sub"> · {empSubLabel(selectedOrg.name, position)}</span>
+                              </td>
+                              <td className="c">
+                                <div style={{ display: 'inline-flex', justifyContent: 'flex-end', width: '100%' }}>
+                                  <Toggle
+                                    on={managerSet.has(emp.id)}
+                                    onChange={(v) => handleToggle(emp.id, v)}
+                                    label="담당자 설정"
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
-          </Paper>
-        </Box>
+          </div>
+        </div>
       )}
-
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={3000}
-        onClose={hideSnackbar}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert onClose={hideSnackbar} severity={snackbar.severity} variant="filled">
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
     </>
   )
 }

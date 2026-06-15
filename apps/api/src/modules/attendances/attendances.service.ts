@@ -6,9 +6,15 @@ import {
   ForbiddenException,
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
-import { AccessLevel, AttendanceStatus, TimeclockAuthMethod } from '@ablework/shared-constants'
+import {
+  AccessLevel,
+  ACCESS_LEVEL_HIERARCHY,
+  AttendanceStatus,
+  TimeclockAuthMethod,
+} from '@ablework/shared-constants'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
+import { AuditService } from '../audit/audit.service'
 import { EVENTS } from '../../events/domain-events'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { ClockInDto } from './dto/clock-in.dto'
@@ -68,18 +74,25 @@ export class AttendancesService {
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
     private readonly settingsService: CompanySettingsService,
+    private readonly audit: AuditService,
   ) {}
 
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
 
-  async findAll(companyId: string, filter: AttendanceFilterDto) {
+  async findAll(companyId: string, filter: AttendanceFilterDto, user: JwtPayload) {
     const { startDate, endDate, organizationId, employeeId, status, missingClockOut, page, limit } =
       filter
     const skip = (page - 1) * limit
 
+    // 보안: ORG_ADMIN 미만(EMPLOYEE)은 본인 출퇴근만 조회하도록 employeeId를 서버측에서 강제한다.
+    // 관리자(ORG_ADMIN+)는 필터의 employeeId/조직 범위 조회 허용. (shifts.findAll 과 동일 정책)
+    const isManager =
+      ACCESS_LEVEL_HIERARCHY[user.accessLevel] >= ACCESS_LEVEL_HIERARCHY[AccessLevel.ORG_ADMIN]
+    const scopedEmployeeId = isManager ? employeeId : user.employeeId
+
     const where: Record<string, unknown> = {
       employee: { companyId },
-      ...(employeeId && { employeeId }),
+      ...(scopedEmployeeId && { employeeId: scopedEmployeeId }),
       ...(status && { status }),
       ...(missingClockOut && { clockOutAt: null }),
       ...(organizationId && {
@@ -349,11 +362,16 @@ export class AttendancesService {
 
   // ── 출퇴근 수정 (관리자) ─────────────────────────────────────────────────────
 
-  async update(companyId: string, id: string, dto: UpdateAttendanceDto) {
+  async update(
+    companyId: string,
+    id: string,
+    dto: UpdateAttendanceDto,
+    actorId?: string,
+  ) {
     const attendance = await this.assertAttendance(companyId, id)
     this.assertNotConfirmed(attendance)
 
-    return this.prisma.attendance.update({
+    const updated = await this.prisma.attendance.update({
       where: { id },
       data: {
         ...(dto.clockInAt && { clockInAt: new Date(dto.clockInAt) }),
@@ -362,6 +380,34 @@ export class AttendancesService {
         ...(dto.note !== undefined && { note: dto.note }),
       },
     })
+
+    // 감사 로그 (fire-and-forget — record 자체가 안전하나 본 동작 보호 위해 try/catch)
+    try {
+      await this.audit.record({
+        companyId,
+        actorId,
+        action: 'ATTENDANCE_UPDATE',
+        targetType: 'ATTENDANCE',
+        targetId: id,
+        result: 'SUCCESS',
+        detail: {
+          before: {
+            clockInAt: attendance.clockInAt?.toISOString() ?? null,
+            clockOutAt: attendance.clockOutAt?.toISOString() ?? null,
+            status: attendance.status,
+          },
+          after: {
+            clockInAt: updated.clockInAt?.toISOString() ?? null,
+            clockOutAt: updated.clockOutAt?.toISOString() ?? null,
+            status: updated.status,
+          },
+        },
+      })
+    } catch {
+      // 감사 로그 실패가 본 동작을 막지 않도록 무시
+    }
+
+    return updated
   }
 
   // ── 휴게 전체 교체 (관리자) ──────────────────────────────────────────────────

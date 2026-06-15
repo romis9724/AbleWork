@@ -33,7 +33,8 @@ import {
 export class ShiftTemplatesController {
   constructor(private readonly shiftTemplatesService: ShiftTemplatesService) {}
 
-  // HR-04-03 템플릿 목록
+  // HR-04-03 템플릿 목록 (관리자 전용 — 직원 비노출)
+  @Roles(AccessLevel.ORG_ADMIN)
   @Get()
   @ApiOperation({ summary: '근무 템플릿 목록 조회' })
   findAll(@CompanyId() companyId: string) {

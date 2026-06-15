@@ -1,15 +1,5 @@
 'use client'
-import { useState } from 'react'
-import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Button from '@mui/material/Button'
-import Typography from '@mui/material/Typography'
-import CircularProgress from '@mui/material/CircularProgress'
-import Snackbar from '@mui/material/Snackbar'
-import Alert from '@mui/material/Alert'
-import AccessTimeIcon from '@mui/icons-material/AccessTime'
-import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast'
+import { useRouter } from 'next/navigation'
 import {
   useClockIn,
   useClockOut,
@@ -17,20 +7,56 @@ import {
   useBreakEnd,
   useMyTodayAttendance,
 } from '@/lib/query/attendances'
+import { useLeaveBalance } from '@/lib/query/leaves'
+import { useRequests, type Request } from '@/lib/query/requests'
+import { useAuthStore } from '@/stores/auth.store'
+import { PageHead, KpiGrid, Kpi, CardBox } from '@/components/ab/Page'
+import { Badge, type BadgeKind } from '@/components/ab/atoms'
+import { HRI } from '@/components/ab/icons'
+import { useToast } from '@/components/ab/Toast'
+
+const REQUEST_TYPE_LABEL: Record<string, string> = {
+  LEAVE_CREATE: '휴가 신청',
+  LEAVE_MODIFY: '휴가 수정',
+  LEAVE_DELETE: '휴가 취소',
+  SHIFT_CREATE: '근무일정 신청',
+  SHIFT_MODIFY: '근무일정 수정',
+  SHIFT_DELETE: '근무일정 삭제',
+  ATTENDANCE_EDIT: '출퇴근 정정',
+  ATTENDANCE_CREATE: '기록 생성',
+  ATTENDANCE_DELETE: '기록 삭제',
+  DEVICE_CHANGE: '기기 변경',
+  OFFSITE_WORK: '외근/출장',
+  CUSTOM: '기타 요청',
+}
+
+const REQ_STATUS: Record<string, { label: string; kind: BadgeKind }> = {
+  PENDING: { label: '대기중', kind: 'b-wait' },
+  APPROVED: { label: '승인', kind: 'b-done' },
+  REJECTED: { label: '거절', kind: 'b-reject' },
+  CANCELLED: { label: '취소', kind: 'b-submit' },
+}
+
+function timeLabel(iso?: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function unwrap<T>(raw: unknown): T[] {
+  if (Array.isArray(raw)) return raw as T[]
+  return ((raw as { items?: T[] })?.items ?? []) as T[]
+}
 
 export default function HomePage() {
-  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
-    open: false,
-    message: '',
-    severity: 'success',
-  })
-
-  const showSnack = (message: string, severity: 'success' | 'error') =>
-    setSnack({ open: true, message, severity })
+  const toast = useToast()
+  const router = useRouter()
+  const employeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
 
   // 서버 상태 기반 출근/휴게 판정 — 새로고침해도 상태가 유지된다
   const { data: today, isLoading: isTodayLoading } = useMyTodayAttendance()
-  const clockedIn = !!today?.attendance && !today.attendance.clockOutAt
+  const attendance = today?.attendance ?? null
+  const clockedIn = !!attendance && !attendance.clockOutAt
+  const clockedOut = !!attendance?.clockOutAt
   const onBreak = !!today?.openBreak
 
   const clockInMutation = useClockIn()
@@ -38,150 +64,186 @@ export default function HomePage() {
   const breakStartMutation = useBreakStart()
   const breakEndMutation = useBreakEnd()
 
-  const isLoading =
+  const { data: balances = [] } = useLeaveBalance(employeeId)
+  const totalRemain = balances.reduce((sum, b) => sum + (b.remainingDays ?? 0), 0)
+  // ANNUAL 매칭 실패 시 balances[0]로 폴백하므로 KPI 라벨도 실제 유형명으로 동적 표기
+  const annual = balances.find((b) => b.leaveType?.code === 'ANNUAL') ?? balances[0]
+  const annualLabel = annual
+    ? `잔여 ${annual.leaveType?.displayName ?? annual.leaveType?.name ?? '연차'}`
+    : '잔여 연차'
+
+  const { data: reqRaw } = useRequests()
+  const reqItems = unwrap<Request>(reqRaw)
+  const pendingCount = reqItems.filter((r) => r.status === 'PENDING').length
+  const recentReqs = reqItems.slice(0, 5)
+
+  const busy =
     isTodayLoading ||
     clockInMutation.isPending ||
     clockOutMutation.isPending ||
     breakStartMutation.isPending ||
     breakEndMutation.isPending
 
-  const handleClockIn = async () => {
+  const withGeolocation = async (): Promise<{ lat: number; lng: number } | null> => {
     if (!navigator.geolocation) {
-      showSnack('위치 서비스를 사용할 수 없습니다.', 'error')
-      return
+      toast('위치 서비스를 사용할 수 없습니다')
+      return null
     }
     try {
       const position = await new Promise<GeolocationPosition>((resolve, reject) =>
         navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 }),
       )
-      await clockInMutation.mutateAsync({
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        method: 'gps',
-      })
-      showSnack('출근 기록이 완료됐습니다.', 'success')
+      return { lat: position.coords.latitude, lng: position.coords.longitude }
+    } catch {
+      toast('위치 정보를 가져오지 못했습니다')
+      return null
+    }
+  }
+
+  const handleClockIn = async () => {
+    const coords = await withGeolocation()
+    if (!coords) return
+    try {
+      await clockInMutation.mutateAsync({ ...coords, method: 'gps' })
+      toast('출근 기록이 완료됐습니다')
     } catch (err) {
-      showSnack(err instanceof Error ? err.message : '출근 처리 중 오류가 발생했습니다.', 'error')
+      toast(err instanceof Error ? err.message : '출근 처리 중 오류가 발생했습니다')
     }
   }
 
   const handleClockOut = async () => {
-    if (!navigator.geolocation) {
-      showSnack('위치 서비스를 사용할 수 없습니다.', 'error')
-      return
-    }
+    const coords = await withGeolocation()
+    if (!coords) return
     try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) =>
-        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 }),
-      )
-      await clockOutMutation.mutateAsync({
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        method: 'gps',
-      })
-      showSnack('퇴근 기록이 완료됐습니다.', 'success')
+      await clockOutMutation.mutateAsync({ ...coords, method: 'gps' })
+      toast('퇴근 기록이 완료됐습니다')
     } catch (err) {
-      showSnack(err instanceof Error ? err.message : '퇴근 처리 중 오류가 발생했습니다.', 'error')
+      toast(err instanceof Error ? err.message : '퇴근 처리 중 오류가 발생했습니다')
     }
   }
 
   const handleBreakStart = async () => {
     try {
       await breakStartMutation.mutateAsync()
-      showSnack('휴게 시간이 시작됐습니다.', 'success')
+      toast('휴게 시간이 시작됐습니다')
     } catch (err) {
-      showSnack(err instanceof Error ? err.message : '휴게 처리 중 오류가 발생했습니다.', 'error')
+      toast(err instanceof Error ? err.message : '휴게 처리 중 오류가 발생했습니다')
     }
   }
 
   const handleBreakEnd = async () => {
     try {
       await breakEndMutation.mutateAsync()
-      showSnack('휴게 시간이 종료됐습니다.', 'success')
+      toast('휴게 시간이 종료됐습니다')
     } catch (err) {
-      showSnack(err instanceof Error ? err.message : '휴게 종료 처리 중 오류가 발생했습니다.', 'error')
+      toast(err instanceof Error ? err.message : '휴게 종료 처리 중 오류가 발생했습니다')
     }
   }
 
-  return (
-    <Box>
-      <Typography variant="h6" fontWeight={700} mb={2}>홈</Typography>
-      <Card>
-        <CardContent sx={{ textAlign: 'center', py: 4 }}>
-          <AccessTimeIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-          <Typography variant="body1" color="text.secondary" mb={3}>
-            {new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
-          </Typography>
+  const dateLabel = new Date().toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  })
 
-          {!clockedIn && (
-            <Button
-              variant="contained"
-              color="primary"
-              size="large"
-              onClick={handleClockIn}
-              disabled={isLoading}
-              sx={{ minWidth: 120 }}
-            >
-              {clockInMutation.isPending ? <CircularProgress size={24} color="inherit" /> : '출근'}
-            </Button>
+  const workState = clockedOut ? '퇴근 완료' : onBreak ? '휴게 중' : clockedIn ? '근무 중' : '출근 전'
+
+  return (
+    <>
+      <PageHead eyebrow="Home" title="홈" right={<span className="page-stamp">{dateLabel}</span>} />
+
+      {/* 오늘 출퇴근 상태 카드 */}
+      <div className="me-clock">
+        <div className="me-clock-head">
+          <span className="me-clock-ic">{HRI.clock()}</span>
+          <div className="grow">
+            <div className="me-clock-state">{workState}</div>
+            <div className="me-clock-times">
+              출근 <b className="tek">{timeLabel(attendance?.clockInAt)}</b>
+              <span className="sep">·</span>
+              퇴근 <b className="tek">{timeLabel(attendance?.clockOutAt)}</b>
+            </div>
+          </div>
+        </div>
+
+        <div className="me-clock-actions">
+          {!clockedIn && !clockedOut && (
+            <button className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockIn}>
+              {clockInMutation.isPending ? '처리 중…' : '출근하기'}
+            </button>
           )}
 
           {clockedIn && !onBreak && (
-            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
-              <Button
-                variant="outlined"
-                color="warning"
-                size="large"
-                onClick={handleBreakStart}
-                disabled={isLoading}
-                startIcon={<FreeBreakfastIcon />}
-                sx={{ minWidth: 130 }}
-              >
-                {breakStartMutation.isPending ? <CircularProgress size={24} color="inherit" /> : '휴게 시작'}
-              </Button>
-              <Button
-                variant="outlined"
-                size="large"
-                onClick={handleClockOut}
-                disabled={isLoading}
-                sx={{ minWidth: 120 }}
-              >
-                {clockOutMutation.isPending ? <CircularProgress size={24} color="inherit" /> : '퇴근'}
-              </Button>
-            </Box>
+            <>
+              <button className="btn btn-line btn-lg" disabled={busy} onClick={handleBreakStart}>
+                {breakStartMutation.isPending ? '처리 중…' : '휴게 시작'}
+              </button>
+              <button className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockOut}>
+                {clockOutMutation.isPending ? '처리 중…' : '퇴근하기'}
+              </button>
+            </>
           )}
 
           {clockedIn && onBreak && (
-            <Button
-              variant="contained"
-              color="warning"
-              size="large"
-              onClick={handleBreakEnd}
-              disabled={isLoading}
-              startIcon={<FreeBreakfastIcon />}
-              sx={{ minWidth: 130 }}
-            >
-              {breakEndMutation.isPending ? <CircularProgress size={24} color="inherit" /> : '휴게 종료'}
-            </Button>
+            <button className="btn btn-primary btn-lg" disabled={busy} onClick={handleBreakEnd}>
+              {breakEndMutation.isPending ? '처리 중…' : '휴게 종료'}
+            </button>
           )}
 
-          {clockedIn && (
-            <Typography variant="caption" color="text.secondary" display="block" mt={2}>
-              {onBreak ? '휴게 중입니다.' : '근무 중입니다.'}
-            </Typography>
-          )}
-        </CardContent>
-      </Card>
+          {clockedOut && <div className="me-clock-done">오늘 근무가 마감됐습니다</div>}
+        </div>
+      </div>
 
-      <Snackbar
-        open={snack.open}
-        autoHideDuration={4000}
-        onClose={() => setSnack((s) => ({ ...s, open: false }))}
-      >
-        <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))}>
-          {snack.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+      {/* 내 휴가잔액 KPI */}
+      <KpiGrid>
+        <Kpi
+          label={annualLabel}
+          value={annual ? annual.remainingDays : 0}
+          unit="일"
+          accent
+          desc={annual ? `${annual.leaveType?.displayName ?? annual.leaveType?.name ?? '연차'}` : '발생 없음'}
+        />
+        <Kpi label="전체 잔여" value={totalRemain} unit="일" desc={`${balances.length}개 휴가`} />
+      </KpiGrid>
+
+      {/* 최근 내 요청 요약 */}
+      <CardBox title="최근 요청" more="요청 내역 →" onMore={() => router.push('/me/requests')}>
+        <div className="mini">
+          {recentReqs.length === 0 ? (
+            <div className="mini-row" style={{ justifyContent: 'center', color: 'var(--fg-4)', fontSize: 12 }}>
+              요청 내역이 없습니다
+            </div>
+          ) : (
+            recentReqs.map((req) => {
+              const st = REQ_STATUS[req.status] ?? { label: req.status, kind: 'b-submit' as BadgeKind }
+              return (
+                <div className="mini-row" key={req.id}>
+                  <div className="grow">
+                    <div className="l1">{REQUEST_TYPE_LABEL[req.type] ?? req.type}</div>
+                    <div className="l2">{new Date(req.createdAt).toLocaleDateString('ko-KR')}</div>
+                  </div>
+                  <Badge kind={st.kind}>{st.label}</Badge>
+                </div>
+              )
+            })
+          )}
+        </div>
+      </CardBox>
+
+      {pendingCount > 0 && (
+        <CardBox title="결재 대기 문서" more="문서함 →" onMore={() => router.push('/me/documents')}>
+          <div className="mini">
+            <div className="mini-row">
+              <div className="grow">
+                <div className="l1">진행 중인 요청</div>
+                <div className="l2">결재가 진행 중인 내 문서</div>
+              </div>
+              <span className="rt">{pendingCount}건</span>
+            </div>
+          </div>
+        </CardBox>
+      )}
+    </>
   )
 }

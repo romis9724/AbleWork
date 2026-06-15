@@ -10,6 +10,7 @@ import { AccessLevel } from '@ablework/shared-constants'
 import { AttendancesService } from './attendances.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
+import { AuditService } from '../audit/audit.service'
 import { EVENTS } from '../../events/domain-events'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 
@@ -98,6 +99,7 @@ describe('AttendancesService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
         { provide: CompanySettingsService, useValue: mockSettings },
+        { provide: AuditService, useValue: { record: jest.fn() } },
       ],
     }).compile()
 

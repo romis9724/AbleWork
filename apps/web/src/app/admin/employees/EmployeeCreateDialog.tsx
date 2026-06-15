@@ -27,6 +27,14 @@ import { usePositions } from '@/lib/query/positions'
 const createEmployeeSchema = z.object({
   name: z.string().min(1, '이름을 입력해 주세요.').max(50, '이름은 50자 이내로 입력해 주세요.'),
   email: z.string().email('유효한 이메일을 입력해 주세요.'),
+  // 초기 로그인 비밀번호 (선택). 입력 시 즉시 로그인 가능한 활성 계정으로 생성된다.
+  initialPassword: z
+    .string()
+    .min(8, '비밀번호는 8자 이상이어야 합니다.')
+    .regex(/[A-Za-z]/, '영문자를 포함해 주세요.')
+    .regex(/[0-9]/, '숫자를 포함해 주세요.')
+    .or(z.literal(''))
+    .optional(),
   joinedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '입사일을 선택해 주세요.'),
   employmentType: z.enum(['regular', 'contract', 'part_time', 'daily']),
   accessLevel: z.enum(['EMPLOYEE', 'ORG_ADMIN', 'GENERAL_ADMIN']),
@@ -85,6 +93,7 @@ export default function EmployeeCreateDialog({ open, loading, onSubmit, onClose 
     defaultValues: {
       name: '',
       email: '',
+      initialPassword: '',
       joinedAt: new Date().toISOString().slice(0, 10),
       employmentType: 'regular',
       accessLevel: 'EMPLOYEE',
@@ -141,11 +150,31 @@ export default function EmployeeCreateDialog({ open, loading, onSubmit, onClose 
                 fullWidth
                 size="small"
                 error={!!errors.email}
-                helperText={errors.email?.message ?? '합류코드가 이 주소로 발송됩니다.'}
+                helperText={errors.email?.message ?? '로그인 아이디로 사용됩니다.'}
               />
             )}
           />
         </Box>
+
+        <Controller
+          name="initialPassword"
+          control={control}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              label="초기 비밀번호 (선택)"
+              type="password"
+              fullWidth
+              size="small"
+              autoComplete="new-password"
+              error={!!errors.initialPassword}
+              helperText={
+                errors.initialPassword?.message ??
+                '입력하면 즉시 로그인 가능합니다. 비워두면 추후 "비밀번호 재설정"으로 활성화하세요. (영문+숫자 8자 이상)'
+              }
+            />
+          )}
+        />
 
         <Controller
           name="organizationIds"

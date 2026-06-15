@@ -54,6 +54,7 @@ model Company {
   employeeCustomFields EmployeeCustomField[]
   documentAttachments  DocumentAttachment[]
   formCategories       FormCategory[]
+  auditLogs            AuditLog[]
 
   @@map("companies")
 }
@@ -1165,4 +1166,25 @@ model NotificationLog {
 
   @@index([ruleId, sentAt(sort: Desc)])
   @@map("notification_logs")
+}
+
+// 감사 로그 — 관리자 행위 추적 (출퇴근 수정·휴가 부여·설정 변경 등).
+// 다른 도메인 참조는 느슨하게 문자열 id로만 보관(삭제 가드 회피).
+model AuditLog {
+  id          String   @id @default(uuid())
+  companyId   String   @map("company_id")
+  actorId     String?  @map("actor_id")
+  actorName   String   @map("actor_name") @db.VarChar(100)
+  action      String   @db.VarChar(50)
+  targetType  String   @map("target_type") @db.VarChar(50)
+  targetId    String?  @map("target_id")
+  targetLabel String?  @map("target_label") @db.VarChar(200)
+  result      String   @default("SUCCESS") @db.VarChar(20)
+  detail      Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, createdAt(sort: Desc)])
+  @@map("audit_logs")
 }

@@ -8,6 +8,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { AccessLevel } from '@ablework/shared-constants'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { PrismaService } from '../../prisma/prisma.service'
+import { AuditService } from '../audit/audit.service'
 import { EVENTS } from '../../events/domain-events'
 import { CreateLeaveGroupDto, UpdateLeaveGroupDto } from './dto/create-leave-group.dto'
 import { CreateLeaveTypeDto, UpdateLeaveTypeDto } from './dto/create-leave-type.dto'
@@ -29,6 +30,7 @@ export class LeavesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly audit: AuditService,
   ) {}
 
   // ── HR-06-01 휴가 그룹 목록 ──────────────────────────────────────────────────
@@ -556,7 +558,7 @@ export class LeavesService {
 
   // ── HR-06-10 수동 발생 ───────────────────────────────────────────────────────
 
-  async manualAccrual(companyId: string, dto: ManualAccrualDto) {
+  async manualAccrual(companyId: string, dto: ManualAccrualDto, actorId?: string) {
     for (const employeeId of dto.employeeIds) {
       await this.assertEmployeeBelongsToCompany(companyId, employeeId)
     }
@@ -589,6 +591,26 @@ export class LeavesService {
         days: dto.days,
         companyId,
       })
+    }
+
+    // 감사 로그 (수동 휴가 부여)
+    try {
+      await this.audit.record({
+        companyId,
+        actorId,
+        action: 'LEAVE_GRANT',
+        targetType: 'LEAVE_BALANCE',
+        targetLabel: `${dto.employeeIds.length}명 / ${dto.days}일`,
+        result: 'SUCCESS',
+        detail: {
+          employeeIds: dto.employeeIds,
+          leaveTypeId: dto.leaveTypeId,
+          year: dto.year,
+          days: dto.days,
+        },
+      })
+    } catch {
+      // 감사 로그 실패가 본 동작을 막지 않도록 무시
     }
 
     return balances

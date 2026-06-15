@@ -42,6 +42,7 @@ import {
 @ApiTags('reports')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(AccessLevel.ORG_ADMIN) // 리포트는 관리자 전용(직원 화면 없음) — EMPLOYEE의 전사 근태통계 조회 차단
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}

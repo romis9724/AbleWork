@@ -1,46 +1,10 @@
 'use client'
-import { useState } from 'react'
-import { useForm, Controller } from 'react-hook-form'
-import { z } from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
-import Autocomplete from '@mui/material/Autocomplete'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
-import Chip from '@mui/material/Chip'
-import CircularProgress from '@mui/material/CircularProgress'
-import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContent from '@mui/material/DialogContent'
-import DialogTitle from '@mui/material/DialogTitle'
-import Divider from '@mui/material/Divider'
-import IconButton from '@mui/material/IconButton'
-import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
-import Snackbar from '@mui/material/Snackbar'
-import Alert from '@mui/material/Alert'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import TextField from '@mui/material/TextField'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
-import Tooltip from '@mui/material/Tooltip'
-import Typography from '@mui/material/Typography'
-import AddIcon from '@mui/icons-material/Add'
-import CalendarViewWeekOutlinedIcon from '@mui/icons-material/CalendarViewWeekOutlined'
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import FilterListIcon from '@mui/icons-material/FilterList'
-import LockOpenIcon from '@mui/icons-material/LockOpen'
-import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
-import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined'
-import PageHeader from '@/components/common/PageHeader'
-import EmptyState from '@/components/common/EmptyState'
-import { useSnackbar } from '@/hooks/useSnackbar'
+import { useMemo, useState } from 'react'
+import { PageHead } from '@/components/ab/Page'
+import { Emp, DateInput } from '@/components/ab/atoms'
+import { Modal, ConfirmDialog } from '@/components/ab/Modal'
+import { I, HRI } from '@/components/ab/icons'
+import { useToast } from '@/components/ab/Toast'
 import {
   useShifts,
   useShiftTypes,
@@ -50,676 +14,829 @@ import {
   useConfirmShift,
   useUnconfirmShift,
   type Shift,
+  type ShiftType,
 } from '@/lib/query/shifts'
-import { useEmployees } from '@/lib/query/employees'
-import { useOrganizations } from '@/lib/query/organizations'
+import { useEmployees, type Employee } from '@/lib/query/employees'
+import { usePositions } from '@/lib/query/positions'
+import { useOrganizations, type Organization } from '@/lib/query/organizations'
 import { useAuthStore } from '@/stores/auth.store'
 import { ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
-import WeeklyCalendar, { addDays, getMonday, toLocalDateStr } from './WeeklyCalendar'
-import BulkCreateDialog from './BulkCreateDialog'
 
-const STATUS_LABEL: Record<string, string> = {
-  confirmed: '확정', pending: '미확정', draft: '임시',
-}
-const STATUS_COLOR: Record<string, 'success' | 'warning' | 'default'> = {
-  confirmed: 'success', pending: 'warning', draft: 'default',
-}
+// ── 날짜 유틸 (로컬 기준) ─────────────────────────────────────────────────────
+const DOW = ['월', '화', '수', '목', '금', '토', '일'] as const
+const DAYS_PER_WEEK = 7
+const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/
 
-function formatDateKR(iso: string) {
-  return new Date(iso).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
+function toLocalDateStr(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
-function formatTimeKR(iso: string) {
-  return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
 }
-/** ISO 문자열 → 24시간 HH:MM (폼 입력용, TIME_REGEX 호환) */
-function toHHMM(iso: string) {
+/** 해당 날짜가 속한 주의 월요일 */
+function getMonday(date: Date): Date {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  return addDays(d, diff)
+}
+function toHHMM(iso: string): string {
   const d = new Date(iso)
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
-
-const today = new Date().toISOString().split('T')[0]
-const weekLater = new Date(Date.now() + 7 * 86_400_000).toISOString().split('T')[0]
-
-const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/
-
-const shiftSchema = z
-  .object({
-    employeeId: z.string().min(1, '직원을 선택해주세요'),
-    organizationId: z.string().min(1, '조직을 선택해주세요'),
-    date: z.string().min(1, '날짜를 선택해주세요'),
-    templateId: z.string().optional(),
-    startTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요').optional().or(z.literal('')),
-    endTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요').optional().or(z.literal('')),
-    shiftTypeId: z.string().min(1, '근무 유형을 선택해주세요'),
-  })
-  .superRefine((values, ctx) => {
-    if (!values.templateId) {
-      if (!values.startTime) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['startTime'], message: '시작 시간을 입력해주세요' })
-      }
-      if (!values.endTime) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endTime'], message: '종료 시간을 입력해주세요' })
-      }
-    }
-  })
-
-type ShiftFormValues = z.infer<typeof shiftSchema>
-
-interface DialogState {
-  open: boolean
-  editing: Shift | null
+function weekLabel(weekStart: Date): string {
+  const end = addDays(weekStart, DAYS_PER_WEEK - 1)
+  const fmt = (d: Date) => `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
+  const fmtShort = (d: Date) => `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
+  return `${fmt(weekStart)} – ${fmtShort(end)}`
 }
 
-type ViewMode = 'calendar' | 'list'
+/** 조직 트리를 깊이순 평탄화 (하위 부서까지 select에 노출) */
+function flattenOrgs(orgs: Organization[]): Organization[] {
+  return orgs.flatMap((o) => [o, ...flattenOrgs(o.children ?? [])])
+}
+
+/** 근무유형 카테고리 → 로스터 칩 클래스(.day/.night/.remote/.leave) */
+function shiftCellClass(type?: ShiftType): string {
+  const cat = (type?.category ?? '').toLowerCase()
+  const name = (type?.name ?? '').toLowerCase()
+  if (cat.includes('night') || name.includes('야간')) return 'night'
+  if (cat.includes('remote') || name.includes('재택')) return 'remote'
+  if (cat.includes('leave') || name.includes('휴') || name.includes('연차') || name.includes('반차')) return 'leave'
+  return 'day'
+}
+
+// ── 폼 상태 ───────────────────────────────────────────────────────────────────
+interface ShiftForm {
+  employeeId: string
+  organizationId: string
+  positionId: string
+  date: string
+  templateId: string
+  startTime: string
+  endTime: string
+  shiftTypeId: string
+}
+
+type AddTab = '템플릿 기준' | '조직 기준' | '직무 기준' | '직원 기준'
+
+const today = toLocalDateStr(new Date())
+
+function emptyForm(): ShiftForm {
+  return {
+    employeeId: '',
+    organizationId: '',
+    positionId: '',
+    date: today,
+    templateId: '',
+    startTime: '',
+    endTime: '',
+    shiftTypeId: '',
+  }
+}
+
+/** Employee.positionId 는 타입 선언에 없을 수 있어 안전하게 읽는다 */
+function readEmployeePositionId(emp: Employee): string | undefined {
+  const value = (emp as Employee & { positionId?: string }).positionId
+  return typeof value === 'string' ? value : undefined
+}
 
 export default function ShiftsPage() {
-  const [view, setView] = useState<ViewMode>('list')
+  const toast = useToast()
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
-  const [startDate, setStartDate] = useState(today)
-  const [endDate, setEndDate] = useState(weekLater)
   const [orgFilter, setOrgFilter] = useState<string | null>(null)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
 
-  const [dialog, setDialog] = useState<DialogState>({ open: false, editing: null })
-  const [bulkOpen, setBulkOpen] = useState(false)
-
-  const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<Shift | null>(null)
+  const [form, setForm] = useState<ShiftForm>(emptyForm)
+  const [addTab, setAddTab] = useState<AddTab>('직원 기준')
+  const [confirmTarget, setConfirmTarget] = useState<Shift | null>(null)
 
   const { user } = useAuthStore()
   const canUnconfirm =
-    !!user &&
-    ACCESS_LEVEL_HIERARCHY[user.accessLevel] >= ACCESS_LEVEL_HIERARCHY.GENERAL_ADMIN
+    !!user && ACCESS_LEVEL_HIERARCHY[user.accessLevel] >= ACCESS_LEVEL_HIERARCHY.GENERAL_ADMIN
 
-  // BE ShiftFilterDto는 startAt/endAt (YYYY-MM-DD) 파라미터를 사용
-  // 달력 뷰는 현재 주(월~일), 목록 뷰는 필터의 기간을 따른다
   const shiftsParams: Record<string, string | undefined> = {
-    startAt: view === 'calendar' ? toLocalDateStr(weekStart) : startDate,
-    endAt: view === 'calendar' ? toLocalDateStr(addDays(weekStart, 6)) : endDate,
+    startAt: toLocalDateStr(weekStart),
+    endAt: toLocalDateStr(addDays(weekStart, DAYS_PER_WEEK - 1)),
     ...(orgFilter ? { organizationId: orgFilter } : {}),
   }
 
-  const { data: shifts = [], isLoading: loadingShifts } = useShifts(shiftsParams)
+  const { data: shifts = [], isLoading } = useShifts(shiftsParams)
   const { data: shiftTypes = [] } = useShiftTypes()
   const { data: templates = [] } = useShiftTemplates()
-  const { data: employeeData } = useEmployees()
+  const { data: employeeData } = useEmployees({ limit: 200 })
   const employees = employeeData?.items ?? []
   const { data: organizations = [] } = useOrganizations()
-
-  // 달력 행: 조직 필터가 있으면 해당 조직 소속 직원만 표시
-  const calendarEmployees = orgFilter
-    ? employees.filter((e) =>
-        e.organizations?.some((o) => o.organization.id === orgFilter),
-      )
-    : employees
+  const { data: positions = [] } = usePositions()
+  const flatOrgs = useMemo(
+    () => flattenOrgs(organizations as Organization[]),
+    [organizations],
+  )
 
   const createMutation = useCreateShift()
   const updateMutation = useUpdateShift()
   const confirmMutation = useConfirmShift()
   const unconfirmMutation = useUnconfirmShift()
 
-  const { control, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<ShiftFormValues>({
-    resolver: zodResolver(shiftSchema),
-    defaultValues: {
-      employeeId: '',
-      organizationId: '',
-      date: today,
+  // 조직 필터 적용 직원 목록 (로스터 행)
+  const rosterEmployees: Employee[] = useMemo(() => {
+    const base = orgFilter
+      ? employees.filter((e) => e.organizations?.some((o) => o.organization.id === orgFilter))
+      : employees
+    return base
+  }, [employees, orgFilter])
+
+  const weekDates = useMemo(
+    () => Array.from({ length: DAYS_PER_WEEK }, (_, i) => addDays(weekStart, i)),
+    [weekStart],
+  )
+
+  // employeeId → dateStr → Shift[]
+  const shiftMap = useMemo(() => {
+    const map = new Map<string, Map<string, Shift[]>>()
+    for (const shift of shifts as Shift[]) {
+      const dateStr = toLocalDateStr(new Date(shift.startAt))
+      const byDate = map.get(shift.employeeId) ?? new Map<string, Shift[]>()
+      byDate.set(dateStr, [...(byDate.get(dateStr) ?? []), shift])
+      map.set(shift.employeeId, byDate)
+    }
+    return map
+  }, [shifts])
+
+  // ── 탭별 생성 대상 직원 (활성만) ──────────────────────────────────────────────
+  const targetEmployees: Employee[] = useMemo(() => {
+    const active = employees.filter((e) => e.isActive)
+    if (addTab === '조직 기준') {
+      if (!form.organizationId) return []
+      return active.filter((e) =>
+        e.organizations?.some((o) => o.organization.id === form.organizationId),
+      )
+    }
+    if (addTab === '직무 기준') {
+      if (!form.positionId) return []
+      return active.filter(
+        (e) =>
+          e.positions?.some((p) => p.position.id === form.positionId) ||
+          readEmployeePositionId(e) === form.positionId,
+      )
+    }
+    // 직원 기준 / 템플릿 기준 → 단일 직원
+    if (!form.employeeId) return []
+    const single = employees.find((e) => e.id === form.employeeId)
+    return single ? [single] : []
+  }, [addTab, employees, form.organizationId, form.positionId, form.employeeId])
+
+  // ── 모달 열기 ───────────────────────────────────────────────────────────────
+  function openCreate() {
+    setEditing(null)
+    setAddTab('직원 기준')
+    setForm(emptyForm())
+    setModalOpen(true)
+  }
+  function openEdit(shift: Shift) {
+    setEditing(shift)
+    setForm({
+      employeeId: shift.employeeId,
+      organizationId: shift.organizationId,
+      positionId: '',
+      date: shift.startAt.split('T')[0],
       templateId: '',
-      startTime: '',
-      endTime: '',
-      shiftTypeId: '',
-    },
-  })
-
-  const selectedTemplate = watch('templateId')
-
-  const openCreate = () => {
-    reset({ employeeId: '', organizationId: '', date: today, templateId: '', startTime: '', endTime: '', shiftTypeId: '' })
-    setDialog({ open: true, editing: null })
+      startTime: toHHMM(shift.startAt),
+      endTime: toHHMM(shift.endAt),
+      shiftTypeId: shift.shiftType?.id ?? '',
+    })
+    setModalOpen(true)
+  }
+  function closeModal() {
+    setModalOpen(false)
+    setEditing(null)
   }
 
-  /** 달력 셀 클릭 — 직원/날짜 프리필 생성 (직원의 대표 조직 자동 선택) */
-  const openCreateAt = (employeeId: string, date: string) => {
+  function patch(p: Partial<ShiftForm>) {
+    setForm((f) => ({ ...f, ...p }))
+  }
+  function applyTemplate(templateId: string) {
+    const tmpl = templates.find((t) => t.id === templateId)
+    if (tmpl) {
+      patch({
+        templateId,
+        startTime: tmpl.startTime,
+        endTime: tmpl.endTime,
+        ...(tmpl.shiftTypeId ? { shiftTypeId: tmpl.shiftTypeId } : {}),
+      })
+    } else {
+      patch({ templateId })
+    }
+  }
+  function pickEmployee(employeeId: string) {
     const employee = employees.find((e) => e.id === employeeId)
     const primaryOrgId =
       employee?.organizations?.find((o) => o.isPrimary)?.organization.id ??
       employee?.organizations?.[0]?.organization.id ??
       orgFilter ??
       ''
-    reset({ employeeId, organizationId: primaryOrgId, date, templateId: '', startTime: '', endTime: '', shiftTypeId: '' })
-    setDialog({ open: true, editing: null })
+    patch({ employeeId, organizationId: primaryOrgId })
   }
 
-  const openEdit = (shift: Shift) => {
-    const date = shift.startAt.split('T')[0]
-    reset({
-      employeeId: shift.employeeId,
-      organizationId: shift.organizationId,
-      date,
-      templateId: '',
-      startTime: toHHMM(shift.startAt),
-      endTime: toHHMM(shift.endAt),
-      shiftTypeId: shift.shiftType?.id ?? '',
-    })
-    setDialog({ open: true, editing: shift })
+  // 공통: 근무유형 + (템플릿 또는 유효 시작/종료시각) + 적용일자
+  const commonValid =
+    !!form.shiftTypeId &&
+    !!form.date &&
+    (!!form.templateId || (TIME_REGEX.test(form.startTime) && TIME_REGEX.test(form.endTime)))
+
+  // 탭별 대상 검증 (편집 모드는 항상 단일 직원 기준)
+  const targetValid = editing
+    ? !!form.employeeId
+    : addTab === '조직 기준'
+      ? !!form.organizationId && targetEmployees.length > 0
+      : addTab === '직무 기준'
+        ? !!form.positionId && targetEmployees.length > 0
+        : addTab === '템플릿 기준'
+          ? !!form.employeeId && !!form.templateId
+          : !!form.employeeId // 직원 기준
+
+  const formValid = commonValid && targetValid
+
+  /** 대상 직원의 소속 조직 id 해석 (조직/직무 기준 벌크 생성용) */
+  function resolveOrgId(emp: Employee): string {
+    return (
+      emp.organizations?.find((o) => o.isPrimary)?.organization.id ??
+      emp.organizations?.[0]?.organization.id ??
+      form.organizationId ??
+      ''
+    )
   }
 
-  const closeDialog = () => setDialog({ open: false, editing: null })
+  async function handleSave() {
+    if (!formValid) return
+    const template = templates.find((t) => t.id === form.templateId)
+    const startTime = template ? template.startTime : form.startTime
+    const endTime = template ? template.endTime : form.endTime
+    const startDate = new Date(`${form.date}T${startTime}:00`)
+    const endDate = new Date(`${form.date}T${endTime}:00`)
+    // 종료 == 시작이면 무효, 종료 < 시작이면 야간근무로 보고 종료를 +1일 보정
+    if (endDate.getTime() === startDate.getTime()) {
+      toast('종료 시각이 시작 시각보다 이후여야 합니다')
+      return
+    }
+    if (endDate.getTime() < startDate.getTime()) {
+      endDate.setDate(endDate.getDate() + 1)
+    }
+    const resolvedStart = startDate.toISOString()
+    const resolvedEnd = endDate.toISOString()
 
-  const onSubmit = async (values: ShiftFormValues) => {
-    const template = templates.find((t) => t.id === values.templateId)
-
-    const startTime = template ? template.startTime : values.startTime
-    const endTime = template ? template.endTime : values.endTime
-    // BE CreateShiftSchema는 ISO 8601(datetime) 형식 요구 → 로컬 시간 기준 ISO 변환
-    const resolvedStart = new Date(`${values.date}T${startTime}:00`).toISOString()
-    const resolvedEnd = new Date(`${values.date}T${endTime}:00`).toISOString()
-
-    const payload = {
-      employeeId: values.employeeId,
-      organizationId: values.organizationId,
-      shiftTypeId: values.shiftTypeId,
+    const basePayload = {
+      shiftTypeId: form.shiftTypeId,
       startAt: resolvedStart,
       endAt: resolvedEnd,
-      ...(values.templateId ? { templateId: values.templateId } : {}),
+      ...(form.templateId ? { templateId: form.templateId } : {}),
     }
 
-    try {
-      if (dialog.editing) {
-        await updateMutation.mutateAsync({ id: dialog.editing.id, ...payload })
-        showSnackbar('근무일정이 수정되었습니다.')
-      } else {
-        const result = await createMutation.mutateAsync(payload)
-        if (result.warning) {
-          showSnackbar(result.warning, 'warning')
-        } else {
-          showSnackbar('근무일정이 추가되었습니다.')
-        }
+    // ── 편집 모드: 단건 수정 ────────────────────────────────────────────────
+    if (editing) {
+      try {
+        await updateMutation.mutateAsync({
+          id: editing.id,
+          employeeId: form.employeeId,
+          organizationId: form.organizationId,
+          ...basePayload,
+        })
+        toast('근무일정을 수정했습니다')
+        closeModal()
+      } catch {
+        toast('저장 중 오류가 발생했습니다')
       }
-      closeDialog()
-    } catch {
-      showSnackbar('저장 중 오류가 발생했습니다.', 'error')
+      return
     }
+
+    // ── 생성 모드: 탭별 대상 직원 목록 ──────────────────────────────────────
+    const targets = targetEmployees
+    if (targets.length === 0) {
+      toast('대상 직원이 없습니다')
+      return
+    }
+
+    // 조직/직무 기준은 각 직원의 소속 조직을, 직원/템플릿 기준은 폼의 조직을 사용
+    const useEmployeeOrg = addTab === '조직 기준' || addTab === '직무 기준'
+
+    const results = await Promise.allSettled(
+      targets.map((emp) =>
+        createMutation.mutateAsync({
+          employeeId: emp.id,
+          organizationId: useEmployeeOrg ? resolveOrgId(emp) : form.organizationId,
+          ...basePayload,
+        }),
+      ),
+    )
+
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length
+    const failed = results.length - succeeded
+
+    if (succeeded === 0) {
+      toast('근무일정 생성에 실패했습니다')
+      return
+    }
+    toast(failed > 0 ? `${succeeded}건 생성, ${failed}건 실패` : `${succeeded}건 생성했습니다`)
+    closeModal()
   }
 
-  const handleConfirmSelected = async () => {
-    if (selected.size === 0) return
+  async function handleConfirm(shift: Shift) {
     try {
-      const results = await Promise.all([...selected].map((id) => confirmMutation.mutateAsync(id)))
-      const warnings = results.map((r) => r.warning).filter((w): w is string => !!w)
-      if (warnings.length > 0) {
-        showSnackbar(`${selected.size}건 확정 완료 — ${warnings[0]}`, 'warning')
-      } else {
-        showSnackbar(`${selected.size}건이 확정되었습니다.`)
-      }
-      setSelected(new Set())
+      const result = await confirmMutation.mutateAsync(shift.id)
+      toast(result.warning ?? '근무일정을 확정했습니다')
     } catch {
-      showSnackbar('확정 중 오류가 발생했습니다.', 'error')
+      toast('확정 중 오류가 발생했습니다')
+    } finally {
+      setConfirmTarget(null)
     }
   }
-
-  const handleUnconfirm = async (shift: Shift) => {
+  async function handleUnconfirm(shift: Shift) {
     try {
       await unconfirmMutation.mutateAsync(shift.id)
-      showSnackbar('확정이 해제되었습니다.')
+      toast('확정을 해제했습니다')
     } catch {
-      showSnackbar('확정 해제 중 오류가 발생했습니다.', 'error')
+      toast('확정 해제 중 오류가 발생했습니다')
     }
   }
 
-  const toggleSelect = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
-
-  const toggleSelectAll = () => {
-    if (selected.size === shifts.length) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(shifts.map((s) => s.id)))
-    }
-  }
-
-  const pendingShifts = (shifts as Shift[]).filter(
-    (s) => selected.has(s.id) && s.status !== 'confirmed',
-  )
+  const isSaving = createMutation.isPending || updateMutation.isPending
 
   return (
     <>
-      <PageHeader
-        title="근무일정 관리"
-        subtitle="직원별 근무일정을 조회하고 관리합니다."
-        actions={
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button variant="outlined" startIcon={<PlaylistAddIcon />} onClick={() => setBulkOpen(true)}>
-              일괄 생성
-            </Button>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-              근무일정 추가
-            </Button>
-          </Box>
+      <PageHead
+        eyebrow="Shift Schedule"
+        title="근무일정"
+        right={
+          <button className="btn btn-ghost btn-sm" onClick={openCreate}>
+            {I.plus({ style: { marginRight: 6 } })} 근무일정 추가
+          </button>
         }
       />
 
-      {/* Filters */}
-      <Paper
-        elevation={0}
-        sx={{ border: '1px solid', borderColor: 'divider', p: 2, mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}
-      >
-        <FilterListIcon sx={{ color: 'text.secondary' }} />
-        {view === 'list' && (
-          <>
-            <TextField
-              label="시작일"
-              type="date"
-              size="small"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ width: 160 }}
-            />
-            <TextField
-              label="종료일"
-              type="date"
-              size="small"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ width: 160 }}
-            />
-          </>
-        )}
-        <Autocomplete
-          size="small"
-          options={organizations}
-          getOptionLabel={(o) => o.name}
-          value={organizations.find((o) => o.id === orgFilter) ?? null}
-          onChange={(_, val) => setOrgFilter(val?.id ?? null)}
-          renderInput={(params) => <TextField {...params} label="조직" />}
-          sx={{ width: 200 }}
-          clearOnEscape
-        />
-        <Box sx={{ flexGrow: 1 }} />
-        <ToggleButtonGroup
-          size="small"
-          exclusive
-          value={view}
-          onChange={(_, next: ViewMode | null) => {
-            if (next) setView(next)
-          }}
-          aria-label="보기 전환"
-        >
-          <ToggleButton value="calendar" aria-label="주간 달력">
-            <CalendarViewWeekOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />
-            주간 달력
-          </ToggleButton>
-          <ToggleButton value="list" aria-label="목록">
-            <TableRowsOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />
-            목록
-          </ToggleButton>
-        </ToggleButtonGroup>
-      </Paper>
-
-      {/* Bulk action bar */}
-      {view === 'list' && selected.size > 0 && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, px: 1 }}>
-          <Typography variant="body2" color="text.secondary">
-            {selected.size}건 선택됨
-          </Typography>
-          <Tooltip title={pendingShifts.length === 0 ? '이미 모두 확정된 일정입니다' : ''}>
-            <span>
-              <Button
-                size="small"
-                variant="outlined"
-                color="success"
-                startIcon={<CheckCircleOutlineIcon />}
-                onClick={handleConfirmSelected}
-                disabled={pendingShifts.length === 0 || confirmMutation.isPending}
-              >
-                확정하기
-              </Button>
-            </span>
-          </Tooltip>
-          <Button size="small" onClick={() => setSelected(new Set())}>
-            선택 해제
-          </Button>
-        </Box>
-      )}
-
-      {view === 'calendar' ? (
-        loadingShifts ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-            <CircularProgress />
-          </Box>
-        ) : (
-          <WeeklyCalendar
-            weekStart={weekStart}
-            shifts={shifts as Shift[]}
-            employees={calendarEmployees}
-            canUnconfirm={canUnconfirm}
-            isUnconfirming={unconfirmMutation.isPending}
-            onWeekChange={setWeekStart}
-            onCellClick={openCreateAt}
-            onShiftClick={openEdit}
-            onUnconfirm={handleUnconfirm}
-          />
-        )
-      ) : loadingShifts ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : shifts.length === 0 ? (
-        <EmptyState
-          message="해당 기간에 근무일정이 없습니다."
-          action={
-            <Button variant="outlined" startIcon={<AddIcon />} onClick={openCreate}>
-              근무일정 추가
-            </Button>
-          }
-        />
-      ) : (
-        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-          <Table>
-            <TableHead>
-              <TableRow sx={{ bgcolor: 'background.default' }}>
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    indeterminate={selected.size > 0 && selected.size < shifts.length}
-                    checked={shifts.length > 0 && selected.size === shifts.length}
-                    onChange={toggleSelectAll}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell>직원명</TableCell>
-                <TableCell>날짜</TableCell>
-                <TableCell>근무 유형</TableCell>
-                <TableCell>시작 — 종료</TableCell>
-                <TableCell>상태</TableCell>
-                <TableCell align="right">관리</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {(shifts as Shift[]).map((shift) => (
-                <TableRow
-                  key={shift.id}
-                  hover
-                  selected={selected.has(shift.id)}
-                >
-                  <TableCell padding="checkbox">
-                    <Checkbox
-                      checked={selected.has(shift.id)}
-                      onChange={() => toggleSelect(shift.id)}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>
-                    {shift.employee?.name ?? '—'}
-                  </TableCell>
-                  <TableCell>{formatDateKR(shift.startAt)}</TableCell>
-                  <TableCell>
-                    {shift.shiftType ? (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                        {shift.shiftType.color && (
-                          <Box
-                            sx={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: '50%',
-                              bgcolor: shift.shiftType.color,
-                              flexShrink: 0,
-                            }}
-                          />
-                        )}
-                        <Typography variant="body2">{shift.shiftType.name}</Typography>
-                      </Box>
-                    ) : shift.template ? (
-                      <Typography variant="body2" color="text.secondary">{shift.template.name}</Typography>
-                    ) : (
-                      <Typography variant="body2" color="text.disabled">—</Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {formatTimeKR(shift.startAt)} — {formatTimeKR(shift.endAt)}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={STATUS_LABEL[shift.status] ?? shift.status}
-                      color={STATUS_COLOR[shift.status] ?? 'default'}
-                      size="small"
-                      variant={shift.status === 'confirmed' ? 'filled' : 'outlined'}
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    {shift.status === 'confirmed' && canUnconfirm && (
-                      <Tooltip title="확정 해제">
-                        <span>
-                          <IconButton
-                            size="small"
-                            color="warning"
-                            onClick={() => handleUnconfirm(shift)}
-                            disabled={unconfirmMutation.isPending}
-                          >
-                            <LockOpenIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    )}
-                    <IconButton size="small" onClick={() => openEdit(shift)}>
-                      <EditOutlinedIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
-
-      {/* Add / Edit Dialog */}
-      <Dialog open={dialog.open} onClose={closeDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>{dialog.editing ? '근무일정 수정' : '근무일정 추가'}</DialogTitle>
-        <DialogContent dividers>
-          <Box component="form" sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 0.5 }}>
-            <Controller
-              name="employeeId"
-              control={control}
-              render={({ field }) => (
-                <Autocomplete
-                  options={employees}
-                  getOptionLabel={(e) => e.name}
-                  value={employees.find((e) => e.id === field.value) ?? null}
-                  onChange={(_, val) => field.onChange(val?.id ?? '')}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="직원"
-                      required
-                      error={!!errors.employeeId}
-                      helperText={errors.employeeId?.message}
-                    />
-                  )}
-                />
-              )}
-            />
-
-            <Controller
-              name="organizationId"
-              control={control}
-              render={({ field }) => (
-                <Autocomplete
-                  options={organizations}
-                  getOptionLabel={(o) => o.name}
-                  value={organizations.find((o) => o.id === field.value) ?? null}
-                  onChange={(_, val) => field.onChange(val?.id ?? '')}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="조직"
-                      required
-                      error={!!errors.organizationId}
-                      helperText={errors.organizationId?.message}
-                    />
-                  )}
-                />
-              )}
-            />
-
-            <Controller
-              name="date"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  label="날짜"
-                  type="date"
-                  required
-                  fullWidth
-                  InputLabelProps={{ shrink: true }}
-                  error={!!errors.date}
-                  helperText={errors.date?.message}
-                />
-              )}
-            />
-
-            <Divider>
-              <Typography variant="caption" color="text.secondary">템플릿 또는 직접 입력</Typography>
-            </Divider>
-
-            <Controller
-              name="templateId"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  select
-                  label="근무일정 템플릿"
-                  fullWidth
-                  onChange={(e) => {
-                    field.onChange(e.target.value)
-                    const tmpl = templates.find((t) => t.id === e.target.value)
-                    if (tmpl) {
-                      setValue('startTime', tmpl.startTime)
-                      setValue('endTime', tmpl.endTime)
-                      if (tmpl.shiftTypeId) setValue('shiftTypeId', tmpl.shiftTypeId)
-                    }
-                  }}
-                >
-                  <MenuItem value=""><em>템플릿 없이 직접 입력</em></MenuItem>
-                  {templates.map((tmpl) => (
-                    <MenuItem key={tmpl.id} value={tmpl.id}>
-                      {tmpl.name} ({tmpl.startTime}–{tmpl.endTime})
-                    </MenuItem>
-                  ))}
-                </TextField>
-              )}
-            />
-
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <Controller
-                name="startTime"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    label="시작 시간"
-                    fullWidth
-                    placeholder="09:00"
-                    disabled={!!selectedTemplate}
-                    error={!!errors.startTime}
-                    helperText={errors.startTime?.message ?? 'HH:MM'}
-                  />
-                )}
-              />
-              <Controller
-                name="endTime"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    label="종료 시간"
-                    fullWidth
-                    placeholder="18:00"
-                    disabled={!!selectedTemplate}
-                    error={!!errors.endTime}
-                    helperText={errors.endTime?.message ?? 'HH:MM'}
-                  />
-                )}
-              />
-            </Box>
-
-            <Controller
-              name="shiftTypeId"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  select
-                  label="근무 유형"
-                  required
-                  fullWidth
-                  error={!!errors.shiftTypeId}
-                  helperText={errors.shiftTypeId?.message}
-                >
-                  <MenuItem value=""><em>선택하세요</em></MenuItem>
-                  {shiftTypes.map((type) => (
-                    <MenuItem key={type.id} value={type.id}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {type.color && (
-                          <Box
-                            sx={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: '50%',
-                              bgcolor: type.color,
-                              flexShrink: 0,
-                            }}
-                          />
-                        )}
-                        {type.name}
-                      </Box>
-                    </MenuItem>
-                  ))}
-                </TextField>
-              )}
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeDialog} disabled={isSubmitting}>취소</Button>
-          <Button
-            variant="contained"
-            onClick={handleSubmit(onSubmit)}
-            disabled={isSubmitting}
+      {/* 주 이동 + 조직 필터 */}
+      <div className="roster-toolbar">
+        <div className="wk-nav">
+          <button className="nb" onClick={() => setWeekStart(addDays(weekStart, -DAYS_PER_WEEK))} aria-label="이전 주">
+            {I.chevL()}
+          </button>
+          <span className="wk-label">{weekLabel(weekStart)}</span>
+          <button className="nb" onClick={() => setWeekStart(addDays(weekStart, DAYS_PER_WEEK))} aria-label="다음 주">
+            {I.chevR()}
+          </button>
+          <button className="btn btn-line btn-sm" onClick={() => setWeekStart(getMonday(new Date()))}>
+            오늘
+          </button>
+        </div>
+        <div className="fbar" style={{ margin: 0 }}>
+          <button
+            className={'fchip' + (orgFilter === null ? ' on' : '')}
+            onClick={() => setOrgFilter(null)}
           >
-            {isSubmitting ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
-            {dialog.editing ? '수정' : '추가'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+            {HRI.people({ className: 'ic' })} 전체 조직 <span className="cnt">{employees.length}</span>
+          </button>
+          <select
+            className="sel"
+            value={orgFilter ?? ''}
+            onChange={(e) => setOrgFilter(e.target.value || null)}
+            style={{ minWidth: 160 }}
+          >
+            <option value="">조직 선택</option>
+            {flatOrgs.map((o) => (
+              <option key={o.id} value={o.id}>
+                {'　'.repeat(o.depth)}
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-      {/* 일괄 생성 다이얼로그 */}
-      <BulkCreateDialog
-        open={bulkOpen}
-        templates={templates}
-        organizations={organizations}
-        defaultStartDate={view === 'calendar' ? toLocalDateStr(weekStart) : startDate}
-        defaultEndDate={view === 'calendar' ? toLocalDateStr(addDays(weekStart, 6)) : endDate}
-        onClose={() => setBulkOpen(false)}
-        onResult={showSnackbar}
-      />
+      {/* 로스터 표 */}
+      {isLoading ? (
+        <div className="ab-loading">
+          <span className="ab-spin" />
+          불러오는 중…
+        </div>
+      ) : (
+        <div className="roster-wrap">
+          <table className="roster">
+            <thead>
+              <tr>
+                <th className="emp-col">직원</th>
+                {weekDates.map((d, i) => (
+                  <th key={i} className={i === 6 ? 'sun' : i === 5 ? 'sat' : ''}>
+                    <span className="dow">{DOW[i]}</span>
+                    {String(d.getDate()).padStart(2, '0')}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rosterEmployees.length === 0 ? (
+                <tr>
+                  <td className="emp-col">—</td>
+                  <td colSpan={DAYS_PER_WEEK} className="tbl-empty">
+                    표시할 직원이 없습니다
+                  </td>
+                </tr>
+              ) : (
+                rosterEmployees.map((emp) => {
+                  const byDate = shiftMap.get(emp.id)
+                  const primaryOrg =
+                    emp.organizations?.find((o) => o.isPrimary)?.organization.name ??
+                    emp.organizations?.[0]?.organization.name
+                  return (
+                    <tr key={emp.id}>
+                      <td className="emp-col">
+                        <Emp name={emp.name} sub={primaryOrg} />
+                      </td>
+                      {weekDates.map((d, i) => {
+                        const dateStr = toLocalDateStr(d)
+                        const cellShifts = byDate?.get(dateStr) ?? []
+                        return (
+                          <td key={i}>
+                            {cellShifts.length === 0 ? (
+                              <span
+                                className="shift off"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                  openCreate()
+                                  pickEmployee(emp.id)
+                                  patch({ date: dateStr })
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    openCreate()
+                                    pickEmployee(emp.id)
+                                    patch({ date: dateStr })
+                                  }
+                                }}
+                                style={{ cursor: 'pointer' }}
+                              >
+                                휴무
+                              </span>
+                            ) : (
+                              cellShifts.map((shift) => {
+                                const cls = shiftCellClass(shift.shiftType)
+                                const confirmed = shift.status === 'confirmed'
+                                return (
+                                  <span
+                                    key={shift.id}
+                                    className={'shift ' + cls}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => openEdit(shift)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault()
+                                        openEdit(shift)
+                                      }
+                                    }}
+                                    title={confirmed ? '확정됨' : '클릭하여 수정'}
+                                  >
+                                    {shift.shiftType?.name ?? shift.template?.name ?? '근무'}
+                                    <span className="tm">
+                                      {toHHMM(shift.startAt)}–{toHHMM(shift.endAt)}
+                                    </span>
+                                    {!confirmed && (
+                                      <span
+                                        className="tbl-link"
+                                        role="button"
+                                        tabIndex={0}
+                                        style={{ display: 'block', fontSize: 10, marginTop: 4 }}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setConfirmTarget(shift)
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            setConfirmTarget(shift)
+                                          }
+                                        }}
+                                      >
+                                        확정
+                                      </span>
+                                    )}
+                                    {confirmed && canUnconfirm && (
+                                      <span
+                                        className="tbl-link"
+                                        role="button"
+                                        tabIndex={0}
+                                        style={{ display: 'block', fontSize: 10, marginTop: 4, color: 'var(--warn)' }}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleUnconfirm(shift)
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            handleUnconfirm(shift)
+                                          }
+                                        }}
+                                      >
+                                        확정 해제
+                                      </span>
+                                    )}
+                                  </span>
+                                )
+                              })
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={3000}
-        onClose={hideSnackbar}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      {/* 범례 */}
+      <div className="legend">
+        <div className="legend-item"><span className="sw day" />주간 근무</div>
+        <div className="legend-item"><span className="sw night" />야간 근무</div>
+        <div className="legend-item"><span className="sw remote" />재택 근무</div>
+        <div className="legend-item"><span className="sw leave" />연차 / 반차</div>
+        <div className="legend-item">
+          <span className="sw" style={{ borderStyle: 'dashed', borderColor: 'var(--line-soft)' }} />휴무
+        </div>
+      </div>
+
+      {/* 근무일정 추가/수정 모달 */}
+      <Modal
+        open={modalOpen}
+        onClose={closeModal}
+        eyebrow={editing ? 'Edit Shift' : 'New Shift'}
+        title={editing ? '근무일정 수정' : '근무일정 추가'}
+        maxWidth={820}
+        footer={
+          <>
+            <button className="btn btn-line" style={{ minWidth: 110 }} onClick={closeModal}>
+              {editing ? '취소' : '닫기'}
+            </button>
+            <button
+              className="btn btn-primary"
+              style={{ minWidth: 110 }}
+              disabled={!formValid || isSaving}
+              onClick={handleSave}
+            >
+              {editing ? '수정' : '추가하기'}
+            </button>
+          </>
+        }
       >
-        <Alert onClose={hideSnackbar} severity={snackbar.severity} variant="filled">
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
+        {!editing && (
+          <div className="tabs">
+            {(['템플릿 기준', '조직 기준', '직무 기준', '직원 기준'] as AddTab[]).map((t) => (
+              <button key={t} className={'tab' + (addTab === t ? ' on' : '')} onClick={() => setAddTab(t)}>
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="doc-section">
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap', marginBottom: 22 }}
+          >
+            {/* 대상 선택 — 편집 모드는 조직+직원, 생성 모드는 탭에 따라 분기 */}
+            {editing ? (
+              <>
+                <div
+                  className="doc-field"
+                  style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
+                >
+                  <span className="fk" style={{ paddingTop: 7 }}>조직</span>
+                  <span className="fv">
+                    <select
+                      className="sel"
+                      value={form.organizationId}
+                      onChange={(e) => patch({ organizationId: e.target.value })}
+                      style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 160 }}
+                    >
+                      <option value="">선택</option>
+                      {flatOrgs.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {'　'.repeat(o.depth)}
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </div>
+                <span className="cell-arrow">{I.arrow()}</span>
+                <div
+                  className="doc-field"
+                  style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
+                >
+                  <span className="fk" style={{ paddingTop: 7 }}>직원</span>
+                  <span className="fv">
+                    <select
+                      className="sel"
+                      value={form.employeeId}
+                      onChange={(e) => pickEmployee(e.target.value)}
+                      style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 160 }}
+                    >
+                      <option value="">선택</option>
+                      {employees.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.name}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </div>
+              </>
+            ) : addTab === '조직 기준' ? (
+              <div
+                className="doc-field"
+                style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
+              >
+                <span className="fk" style={{ paddingTop: 7 }}>조직</span>
+                <span className="fv" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <select
+                    className="sel"
+                    value={form.organizationId}
+                    onChange={(e) => patch({ organizationId: e.target.value })}
+                    style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 160 }}
+                  >
+                    <option value="">선택</option>
+                    {flatOrgs.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {'　'.repeat(o.depth)}
+                        {o.name}
+                      </option>
+                    ))}
+                  </select>
+                  {form.organizationId && (
+                    <span style={{ fontSize: 13, color: 'var(--fg-4)' }}>
+                      {targetEmployees.length}명에게 생성
+                    </span>
+                  )}
+                </span>
+              </div>
+            ) : addTab === '직무 기준' ? (
+              <div
+                className="doc-field"
+                style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
+              >
+                <span className="fk" style={{ paddingTop: 7 }}>직무</span>
+                <span className="fv" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <select
+                    className="sel"
+                    value={form.positionId}
+                    onChange={(e) => patch({ positionId: e.target.value })}
+                    style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 160 }}
+                  >
+                    <option value="">선택</option>
+                    {positions.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  {form.positionId && (
+                    <span style={{ fontSize: 13, color: 'var(--fg-4)' }}>
+                      {targetEmployees.length}명에게 생성
+                    </span>
+                  )}
+                </span>
+              </div>
+            ) : (
+              /* 직원 기준 / 템플릿 기준 — 단일 직원 */
+              <div
+                className="doc-field"
+                style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
+              >
+                <span className="fk" style={{ paddingTop: 7 }}>직원</span>
+                <span className="fv">
+                  <select
+                    className="sel"
+                    value={form.employeeId}
+                    onChange={(e) => pickEmployee(e.target.value)}
+                    style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 160 }}
+                  >
+                    <option value="">선택</option>
+                    {employees.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* 템플릿 — 템플릿 기준 탭에서는 필수, 그 외 선택 */}
+          {(() => {
+            const templateRequired = !editing && addTab === '템플릿 기준'
+            return (
+              <div className="doc-sec-head">
+                <span className="dot" />
+                <span className="t">근무 템플릿 {templateRequired ? '(필수)' : '(선택)'}</span>
+                <span className="en">Template</span>
+              </div>
+            )
+          })()}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+            {!(!editing && addTab === '템플릿 기준') && (
+              <button
+                className={'shift ' + (form.templateId === '' ? 'day' : 'off')}
+                style={{ display: 'inline-block', padding: '11px 16px', minWidth: 120, opacity: 1 }}
+                onClick={() => patch({ templateId: '' })}
+              >
+                직접 입력
+              </button>
+            )}
+            {templates.map((t) => (
+              <button
+                key={t.id}
+                className={'shift ' + (form.templateId === t.id ? 'day' : 'off')}
+                style={{ display: 'inline-block', padding: '11px 16px', minWidth: 130, opacity: 1 }}
+                onClick={() => applyTemplate(t.id)}
+              >
+                {t.name}
+                <span className="tm">
+                  {t.startTime} – {t.endTime}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* 근무 유형 + 직접 시간 */}
+          <div className="doc-sec-head">
+            <span className="dot" />
+            <span className="t">근무 유형 선택</span>
+            <span className="en">Shift Types</span>
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
+            {(shiftTypes as ShiftType[]).map((st) => (
+              <button
+                key={st.id}
+                className={'shift ' + (form.shiftTypeId === st.id ? shiftCellClass(st) : 'off')}
+                style={{ display: 'inline-block', padding: '11px 16px', minWidth: 120, opacity: 1 }}
+                onClick={() => patch({ shiftTypeId: st.id })}
+              >
+                {st.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="fld-range" style={{ marginBottom: 4 }}>
+            <input
+              className="inp-block"
+              placeholder="시작 09:00"
+              value={form.startTime}
+              disabled={!!form.templateId}
+              onChange={(e) => patch({ startTime: e.target.value })}
+              style={{ maxWidth: 140, fontFamily: 'var(--font-display)' }}
+            />
+            <span className="dash">~</span>
+            <input
+              className="inp-block"
+              placeholder="종료 18:00"
+              value={form.endTime}
+              disabled={!!form.templateId}
+              onChange={(e) => patch({ endTime: e.target.value })}
+              style={{ maxWidth: 140, fontFamily: 'var(--font-display)' }}
+            />
+          </div>
+        </div>
+
+        {/* 적용 일자 */}
+        <div className="doc-section">
+          <div className="doc-sec-head">
+            <span className="dot" />
+            <span className="t">적용 일자</span>
+            <span className="en">Date</span>
+          </div>
+          <DateInput value={form.date} onChange={(v) => patch({ date: v })} />
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!confirmTarget}
+        title="근무일정 확정"
+        message="확정 후에는 수정이 제한됩니다. 확정하시겠습니까?"
+        confirmLabel="확정"
+        onConfirm={() => confirmTarget && handleConfirm(confirmTarget)}
+        onCancel={() => setConfirmTarget(null)}
+      />
     </>
   )
 }

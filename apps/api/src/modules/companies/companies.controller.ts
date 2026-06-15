@@ -16,6 +16,8 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { RolesGuard } from '../../common/guards/roles.guard'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { CompanyId } from '../../common/decorators/company-id.decorator'
+import { CurrentUser } from '../../common/decorators/current-user.decorator'
+import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { AccessLevel } from '@ablework/shared-constants'
 import { CreateCompanySchema, CreateCompanyDto } from './dto/create-company.dto'
 import { UpdateCompanySchema, UpdateCompanyDto } from './dto/update-company.dto'
@@ -50,8 +52,9 @@ export class CompaniesController {
     @Param('id') id: string,
     @CompanyId() companyId: string,
     @Body(new ZodValidationPipe(UpdateCompanySchema)) dto: UpdateCompanyDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.companiesService.update(id, companyId, dto)
+    return this.companiesService.update(id, companyId, dto, user.employeeId)
   }
 
   @Post('join')

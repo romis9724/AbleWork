@@ -1,297 +1,232 @@
+/**
+ * AB 전자결재 — 공용 결재선 관리 (핸드오프 screens1.jsx ApprovalLines 네이티브 재구축).
+ * FilterPanel(작성일·결재선명·결재자명·작성자명) + .tbl-bar(＋결재선 등록) + .tbl
+ * (결재선명 tbl-link·결재선 흐름 .flow·수신/참조/공람 카운트·작성자·작성일).
+ * 행 클릭/등록은 LineModalNative(useState) 사용. 데이터/로직은 기존 훅 보존.
+ */
 'use client'
-import { useState } from 'react'
-import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
-import CircularProgress from '@mui/material/CircularProgress'
-import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContent from '@mui/material/DialogContent'
-import DialogTitle from '@mui/material/DialogTitle'
-import IconButton from '@mui/material/IconButton'
-import Paper from '@mui/material/Paper'
-import Snackbar from '@mui/material/Snackbar'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
-import AddIcon from '@mui/icons-material/Add'
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import PageHeader from '@/components/common/PageHeader'
-import EmptyState from '@/components/common/EmptyState'
-import ConfirmDialog from '@/components/common/ConfirmDialog'
-import ApprovalLineBuilder from '@/components/approval/ApprovalLineBuilder'
-import { STEP_ROLE_LABEL, isDeptRole, dateText } from '@/components/approval/approval-constants'
-import { useSnackbar } from '@/hooks/useSnackbar'
+import { useMemo, useState } from 'react'
+import { PageHead, FilterPanel } from '@/components/ab/Page'
+import { Field, TextInput, DateInput, TableEmpty } from '@/components/ab/atoms'
+import { ConfirmDialog } from '@/components/ab/Modal'
+import { I } from '@/components/ab/icons'
+import { useToast } from '@/components/ab/Toast'
+import LineModalNative from '@/components/approval/LineModalNative'
+import { dateText } from '@/components/approval/approval-constants'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { useConfirm } from '@/hooks/useConfirm'
 import { useEmployees } from '@/lib/query/employees'
 import { useOrganizations, type Organization } from '@/lib/query/organizations'
 import {
   useSharedApprovalLines,
-  useCreateSharedApprovalLine,
-  useUpdateSharedApprovalLine,
   useDeleteSharedApprovalLine,
   type ApprovalStepInput,
   type SharedApprovalLine,
+  type StepRole,
 } from '@/lib/query/documents'
 
-interface DialogState {
-  open: boolean
-  editing: SharedApprovalLine | null
+/** 결재 흐름(.flow)에 표시할 핵심 단계 역할(결재/합의). 수신/참조/공람은 카운트로 분리 집계 */
+const FLOW_ROLES: StepRole[] = ['APPROVER', 'AGREEMENT', 'DEPT_COLLABORATOR']
+/** 카운트 컬럼 매핑 */
+const RECEIVE_ROLES: StepRole[] = ['RECEIVER', 'DEPT_RECEIVER']
+
+interface ModalState {
+  mode: 'create' | 'edit'
+  line: SharedApprovalLine | null
 }
 
 export default function SharedApprovalLinesPage() {
+  const toast = useToast()
+  // 검색: 입력값(input) / 적용값(applied) 분리 — [조회] 버튼으로 적용
+  const [lineNameInput, setLineNameInput] = useState('')
+  const [approverInput, setApproverInput] = useState('')
+  const [authorInput, setAuthorInput] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [search, setSearch] = useState('')
+
   const { data: lines = [], isLoading } = useSharedApprovalLines(search.trim() || undefined)
-  const { data: employeeData } = useEmployees({ limit: 200, isActive: true })
+  const { data: employeeData } = useEmployees({ limit: 500, isActive: true })
   const { data: orgTree = [] } = useOrganizations()
-  const createMutation = useCreateSharedApprovalLine()
-  const updateMutation = useUpdateSharedApprovalLine()
   const deleteMutation = useDeleteSharedApprovalLine()
 
-  const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
-  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm()
+  const [modal, setModal] = useState<ModalState | null>(null)
+  const [confirmTarget, setConfirmTarget] = useState<SharedApprovalLine | null>(null)
 
-  const [dialog, setDialog] = useState<DialogState>({ open: false, editing: null })
-  const [name, setName] = useState('')
-  const [steps, setSteps] = useState<ApprovalStepInput[]>([])
-  const [errorMessage, setErrorMessage] = useState('')
+  // id → 이름 해석 맵 (저장된 line.steps 표시용)
+  const empNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const e of employeeData?.items ?? []) map.set(e.id, e.name)
+    return map
+  }, [employeeData])
 
-  const employeeName = (id?: string) =>
-    employeeData?.items.find((e) => e.id === id)?.name ?? '미지정'
-
-  // 조직 트리 평탄화 후 id→이름 조회
-  const flatOrgs = (() => {
-    const acc: Organization[] = []
+  const orgNameById = useMemo(() => {
+    const map = new Map<string, string>()
     const walk = (nodes: Organization[]) => {
       for (const n of nodes) {
-        acc.push(n)
+        map.set(n.id, n.name)
         if (n.children?.length) walk(n.children)
       }
     }
     walk(orgTree)
-    return acc
-  })()
-  const orgName = (id?: string) => flatOrgs.find((o) => o.id === id)?.name ?? '미지정'
+    return map
+  }, [orgTree])
 
-  /** 단계 표시 라벨 — 부서 단계는 부서명, 개인 단계는 직원명 */
-  const stepTargetName = (s: ApprovalStepInput) =>
-    isDeptRole(s.role) ? orgName(s.organizationId) : employeeName(s.assigneeId)
+  const stepName = (s: ApprovalStepInput): string =>
+    s.organizationId
+      ? orgNameById.get(s.organizationId) ?? '부서'
+      : empNameById.get(s.assigneeId ?? '') ?? '직원'
 
-  const openCreate = () => {
-    setName('')
-    setSteps([])
-    setErrorMessage('')
-    setDialog({ open: true, editing: null })
-  }
+  const countByRole = (line: SharedApprovalLine, roles: StepRole[]) =>
+    line.steps.filter((s) => roles.includes(s.role)).length
 
-  const openEdit = (line: SharedApprovalLine) => {
-    setName(line.name)
-    setSteps(
-      [...line.steps]
-        .sort((a, b) => a.stepOrder - b.stepOrder)
-        .map((s, i) => ({ ...s, stepOrder: i + 1 })),
-    )
-    setErrorMessage('')
-    setDialog({ open: true, editing: line })
-  }
+  const flowSteps = (line: SharedApprovalLine) =>
+    [...line.steps].sort((a, b) => a.stepOrder - b.stepOrder).filter((s) => FLOW_ROLES.includes(s.role))
 
-  const closeDialog = () => setDialog({ open: false, editing: null })
-
-  const handleSave = async () => {
-    setErrorMessage('')
-    if (!name.trim()) {
-      setErrorMessage('결재선 이름을 입력해주세요.')
-      return
-    }
-    const incomplete = (s: ApprovalStepInput) =>
-      isDeptRole(s.role) ? !s.organizationId : !s.assigneeId
-    if (steps.length === 0 || steps.some(incomplete)) {
-      setErrorMessage('모든 단계의 담당자(또는 부서)를 지정해주세요.')
-      return
-    }
-    const payload = {
-      name: name.trim(),
-      steps: steps.map((s, i) => ({ ...s, stepOrder: i + 1 })),
-    }
+  const handleDelete = async () => {
+    if (!confirmTarget) return
     try {
-      if (dialog.editing) {
-        await updateMutation.mutateAsync({ id: dialog.editing.id, ...payload })
-        showSnackbar('공용 결재선이 수정되었습니다.')
-      } else {
-        await createMutation.mutateAsync(payload)
-        showSnackbar('공용 결재선이 추가되었습니다.')
-      }
-      closeDialog()
+      await deleteMutation.mutateAsync(confirmTarget.id)
+      toast('결재선을 삭제했습니다.')
     } catch (e) {
-      setErrorMessage(getApiErrorMessage(e, '저장 중 오류가 발생했습니다.'))
+      toast(getApiErrorMessage(e, '삭제 중 오류가 발생했습니다.'))
+    } finally {
+      setConfirmTarget(null)
     }
   }
 
-  const handleDelete = async (line: SharedApprovalLine) => {
-    const ok = await confirm({
-      title: '공용 결재선 삭제',
-      message: `"${line.name}" 결재선을 삭제하시겠습니까?`,
-      confirmLabel: '삭제',
-      confirmColor: 'error',
-    })
-    if (!ok) return
-    try {
-      await deleteMutation.mutateAsync(line.id)
-      showSnackbar('삭제되었습니다.')
-    } catch (e) {
-      showSnackbar(getApiErrorMessage(e, '삭제 중 오류가 발생했습니다.'), 'error')
-    }
-  }
-
-  const saving = createMutation.isPending || updateMutation.isPending
-
-  if (isLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-        <CircularProgress />
-      </Box>
-    )
-  }
+  const handleQuery = () => setSearch(lineNameInput)
 
   return (
     <>
-      <PageHeader
-        title="공용 결재선"
-        subtitle="기안 작성 시 불러올 수 있는 공용 결재선을 관리합니다."
-        actions={
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            <TextField
-              size="small"
-              placeholder="이름 검색"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              sx={{ width: 180 }}
-            />
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-              결재선 추가
-            </Button>
-          </Box>
-        }
-      />
+      <PageHead eyebrow="Shared Approval Line" title="공용 결재선 관리" />
 
-      {lines.length === 0 ? (
-        <EmptyState
-          message="등록된 공용 결재선이 없습니다."
-          action={
-            <Button variant="outlined" startIcon={<AddIcon />} onClick={openCreate}>
-              첫 결재선 추가
-            </Button>
-          }
-        />
+      {/* 검색 필터 (핸드오프: 작성일·결재선명·결재자명·작성자명) */}
+      <FilterPanel>
+        <Field label="작성일">
+          <div className="fld-range">
+            <DateInput value={dateFrom} onChange={setDateFrom} />
+            <span className="dash">~</span>
+            <DateInput value={dateTo} onChange={setDateTo} />
+          </div>
+        </Field>
+        <Field label="결재선명">
+          <TextInput placeholder="결재선명 입력" value={lineNameInput} onChange={setLineNameInput} />
+        </Field>
+        <Field label="결재자명">
+          <TextInput placeholder="ID 또는 이름 입력" icon={I.search()} value={approverInput} onChange={setApproverInput} />
+        </Field>
+        <Field label="작성자명">
+          <TextInput placeholder="ID 또는 이름 입력" icon={I.search()} value={authorInput} onChange={setAuthorInput} />
+        </Field>
+      </FilterPanel>
+      <div className="filter-action">
+        <button className="btn btn-primary btn-query" onClick={handleQuery}>조회</button>
+      </div>
+
+      <div className="tbl-bar">
+        <span className="tbl-count">총 <b>{lines.length}</b>건</span>
+        <div className="tbl-tools">
+          <button className="btn btn-ghost btn-sm" onClick={() => setModal({ mode: 'create', line: null })}>＋ 결재선 등록</button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="ab-loading">
+          <span className="ab-spin" />
+          불러오는 중…
+        </div>
       ) : (
-        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-          <Table>
-            <TableHead>
-              <TableRow sx={{ bgcolor: 'background.default' }}>
-                <TableCell>이름</TableCell>
-                <TableCell>결재 단계</TableCell>
-                <TableCell sx={{ whiteSpace: 'nowrap' }}>작성자</TableCell>
-                <TableCell sx={{ whiteSpace: 'nowrap' }}>작성일</TableCell>
-                <TableCell align="right">관리</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {lines.map((line) => (
-                <TableRow key={line.id} hover>
-                  <TableCell sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{line.name}</TableCell>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-                      {[...line.steps]
-                        .sort((a, b) => a.stepOrder - b.stepOrder)
-                        .map((s, i) => (
-                          <Box key={`${line.id}-${i}`} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            {i > 0 && (
-                              <Typography variant="caption" color="text.disabled">→</Typography>
-                            )}
-                            <Chip
-                              size="small"
-                              variant="outlined"
-                              label={`${STEP_ROLE_LABEL[s.role] ?? s.role} · ${stepTargetName(s)}`}
-                            />
-                          </Box>
-                        ))}
-                    </Box>
-                  </TableCell>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{line.createdBy?.name ?? '—'}</TableCell>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{dateText(line.createdAt)}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                    <IconButton size="small" onClick={() => openEdit(line)} aria-label="수정">
-                      <EditOutlinedIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" color="error" onClick={() => handleDelete(line)} aria-label="삭제">
-                      <DeleteOutlineIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <div className="tbl-scroll wide">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th style={{ width: 180 }}>결재선명</th>
+                <th>결재선</th>
+                <th style={{ width: 70 }} className="c">수신</th>
+                <th style={{ width: 70 }} className="c">참조</th>
+                <th style={{ width: 70 }} className="c">공람</th>
+                <th style={{ width: 150 }}>작성자</th>
+                <th style={{ width: 110 }}>작성일</th>
+                <th style={{ width: 70 }} className="c">관리</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.length === 0 ? (
+                <TableEmpty colSpan={8} message="등록된 공용 결재선이 없습니다." />
+              ) : (
+                lines.map((line) => {
+                  const recv = countByRole(line, RECEIVE_ROLES)
+                  const ref = countByRole(line, ['REFERENCE'])
+                  const view = countByRole(line, ['VIEWER'])
+                  const flow = flowSteps(line)
+                  return (
+                    <tr key={line.id}>
+                      <td>
+                        <span
+                          className="tbl-link"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setModal({ mode: 'edit', line })}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              setModal({ mode: 'edit', line })
+                            }
+                          }}
+                        >
+                          {line.name}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="flow">
+                          {flow.length === 0 ? (
+                            <span className="zero">—</span>
+                          ) : (
+                            flow.map((s, i) => (
+                              <span key={`${line.id}-${i}`}>
+                                {i > 0 && <span className="arr">{I.arrow({ style: { display: 'inline', verticalAlign: 'middle' } })}</span>}
+                                <b>{stepName(s)}</b>
+                              </span>
+                            ))
+                          )}
+                        </span>
+                      </td>
+                      <td className="c">{recv ? recv : <span className="zero">0</span>}</td>
+                      <td className="c">{ref ? ref : <span className="zero">0</span>}</td>
+                      <td className="c">{view ? view : <span className="zero">0</span>}</td>
+                      <td className="muted">{line.createdBy?.name ?? '—'}</td>
+                      <td className="muted">{line.createdAt ? dateText(line.createdAt) : '—'}</td>
+                      <td className="c">
+                        <div style={{ display: 'inline-flex', gap: 8, color: 'var(--fg-4)' }}>
+                          <button className="modal-x" style={{ width: 26, height: 26 }} onClick={() => setModal({ mode: 'edit', line })} aria-label="수정">{I.edit()}</button>
+                          <button className="modal-x" style={{ width: 26, height: 26 }} onClick={() => setConfirmTarget(line)} aria-label="삭제">{I.trash()}</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {/* 추가/수정 다이얼로그 */}
-      <Dialog open={dialog.open} onClose={saving ? undefined : closeDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>{dialog.editing ? '공용 결재선 수정' : '공용 결재선 추가'}</DialogTitle>
-        <DialogContent dividers>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 0.5 }}>
-            {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
-            <TextField
-              label="결재선 이름"
-              required
-              fullWidth
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="예: 인사팀 기본 결재선"
-            />
-            <Box>
-              <Typography variant="subtitle2" fontWeight={700} mb={1}>단계 구성</Typography>
-              <ApprovalLineBuilder steps={steps} onChange={setSteps} disabled={saving} />
-            </Box>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeDialog} disabled={saving}>취소</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving}>
-            {saving ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
-            {dialog.editing ? '수정' : '추가'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {modal && (
+        <LineModalNative
+          line={modal.line}
+          mode={modal.mode}
+          onClose={() => setModal(null)}
+        />
+      )}
 
       <ConfirmDialog
-        open={confirmState.open}
-        title={confirmState.title}
-        message={confirmState.message}
-        confirmLabel={confirmState.confirmLabel}
-        confirmColor={confirmState.confirmColor}
-        loading={deleteMutation.isPending}
-        onConfirm={handleConfirm}
-        onCancel={handleCancel}
+        open={!!confirmTarget}
+        title="공용 결재선 삭제"
+        message={confirmTarget ? `"${confirmTarget.name}" 결재선을 삭제하시겠습니까?` : ''}
+        confirmLabel="삭제"
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmTarget(null)}
       />
-
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={3000}
-        onClose={hideSnackbar}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert onClose={hideSnackbar} severity={snackbar.severity} variant="filled">
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
     </>
   )
 }

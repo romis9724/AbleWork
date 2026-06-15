@@ -33,6 +33,7 @@ import {
 export class StandardizationRulesController {
   constructor(private readonly service: StandardizationRulesService) {}
 
+  @Roles(AccessLevel.ORG_ADMIN)
   @Get()
   @ApiOperation({ summary: '표준화 규칙 목록 조회' })
   findAll(@CompanyId() companyId: string) {

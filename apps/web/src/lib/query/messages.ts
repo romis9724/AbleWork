@@ -13,10 +13,14 @@ export interface MessageTemplate {
 export interface MessageLog {
   id: string
   title?: string
-  recipientCount: number
-  readCount: number
-  sentAt: string
-  createdAt: string
+  type?: string
+  /** GET /messages는 로그인 사용자가 수신한 메시지를 반환한다 (집계 필드 없음) */
+  recipientCount?: number
+  readCount?: number
+  sentAt?: string
+  /** 읽음 처리 시각. null이면 미열람 */
+  readAt?: string | null
+  createdAt?: string
 }
 
 const TEMPLATES_KEY = ['message-templates']

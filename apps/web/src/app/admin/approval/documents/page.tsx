@@ -1,121 +1,147 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Box from '@mui/material/Box'
-import CircularProgress from '@mui/material/CircularProgress'
-import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TablePagination from '@mui/material/TablePagination'
-import TableRow from '@mui/material/TableRow'
-import TextField from '@mui/material/TextField'
-import PageHeader from '@/components/common/PageHeader'
-import EmptyState from '@/components/common/EmptyState'
-import { DocStatusChip } from '@/components/approval/StatusChips'
+import { PageHead } from '@/components/ab/Page'
+import { Badge, type BadgeKind, TableEmpty } from '@/components/ab/atoms'
+import { I } from '@/components/ab/icons'
+import DocModal from '@/components/approval/DocModal'
 import { DOC_STATUS_LABEL, dateTimeText } from '@/components/approval/approval-constants'
 import { useDocuments, type DocumentStatus } from '@/lib/query/documents'
 
 const STATUS_OPTIONS: DocumentStatus[] = ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'RECALLED']
+const PAGE_SIZES = [10, 20, 50] as const
+
+/** 문서 상태 → 네이티브 Badge 종류 (DocModal 헤더 매핑과 동일) */
+const DOC_BADGE: Record<DocumentStatus, BadgeKind> = {
+  DRAFT: 'b-wait',
+  PENDING: 'b-prog',
+  APPROVED: 'b-done',
+  REJECTED: 'b-reject',
+  RECALLED: 'b-submit',
+}
 
 export default function DocumentLedgerPage() {
-  const router = useRouter()
-  const [page, setPage] = useState(0)
+  const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   const [status, setStatus] = useState('')
+  // 행 클릭 — 라우트 이동 대신 DocModal(view)
+  const [docId, setDocId] = useState<string | null>(null)
 
   const { data, isLoading } = useDocuments('ledger', {
-    page: page + 1,
+    page,
     limit,
     ...(status ? { status } : {}),
   })
 
   const items = data?.items ?? []
   const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / limit))
 
   return (
     <>
-      <PageHeader
+      <PageHead
+        eyebrow="Document Ledger"
         title="문서대장"
-        subtitle="회사 전체 전자결재 문서를 조회합니다."
-        actions={
-          <TextField
-            select
-            size="small"
-            label="상태"
+        right={
+          <select
+            className="sel"
             value={status}
             onChange={(e) => {
               setStatus(e.target.value)
-              setPage(0)
+              setPage(1)
             }}
-            sx={{ width: 160 }}
+            aria-label="상태"
           >
-            <MenuItem value="">전체</MenuItem>
+            <option value="">전체 상태</option>
             {STATUS_OPTIONS.map((s) => (
-              <MenuItem key={s} value={s}>{DOC_STATUS_LABEL[s]}</MenuItem>
+              <option key={s} value={s}>{DOC_STATUS_LABEL[s]}</option>
             ))}
-          </TextField>
+          </select>
         }
       />
 
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : items.length === 0 ? (
-        <EmptyState message="조회된 문서가 없습니다." />
-      ) : (
-        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow sx={{ bgcolor: 'background.default' }}>
-                <TableCell>문서번호</TableCell>
-                <TableCell>제목</TableCell>
-                <TableCell>양식</TableCell>
-                <TableCell>기안자</TableCell>
-                <TableCell>상태</TableCell>
-                <TableCell>상신일</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {items.map((item) => (
-                <TableRow
-                  key={item.id}
-                  hover
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => router.push(`/admin/approval/documents/${item.id}`)}
-                >
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{item.docNumber ?? '—'}</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>{item.title}</TableCell>
-                  <TableCell>{item.form?.name ?? '—'}</TableCell>
-                  <TableCell>{item.drafter?.name ?? '—'}</TableCell>
-                  <TableCell>
-                    <DocStatusChip status={item.status} />
-                  </TableCell>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{dateTimeText(item.submittedAt)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <TablePagination
-            component="div"
-            count={total}
-            page={page}
-            rowsPerPage={limit}
-            rowsPerPageOptions={[10, 20, 50]}
-            onPageChange={(_, p) => setPage(p)}
-            onRowsPerPageChange={(e) => {
+      <div className="tbl-bar">
+        <span className="tbl-count">총 <b>{total.toLocaleString()}</b>건</span>
+        <div className="tbl-tools">
+          <select
+            className="pgsize"
+            value={limit}
+            onChange={(e) => {
               setLimit(Number(e.target.value))
-              setPage(0)
+              setPage(1)
             }}
-            labelRowsPerPage="페이지당 행 수"
-            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
-          />
-        </TableContainer>
+          >
+            {PAGE_SIZES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="ab-loading">
+          <span className="ab-spin" />
+          불러오는 중…
+        </div>
+      ) : (
+        <>
+          <div className="tbl-scroll">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th style={{ width: 160 }}>문서번호</th>
+                  <th>제목</th>
+                  <th style={{ width: 150 }}>양식</th>
+                  <th style={{ width: 130 }}>기안자</th>
+                  <th style={{ width: 110 }} className="c">상태</th>
+                  <th style={{ width: 160 }}>상신일</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.length === 0 ? (
+                  <TableEmpty colSpan={6} message="조회된 문서가 없습니다." />
+                ) : (
+                  items.map((item) => (
+                    <tr
+                      key={item.id}
+                      style={{ cursor: 'pointer' }}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setDocId(item.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setDocId(item.id)
+                        }
+                      }}
+                    >
+                      <td className="muted">{item.docNumber ?? '—'}</td>
+                      <td>
+                        <span className="tbl-link">{item.title}</span>
+                      </td>
+                      <td className="muted">{item.form?.name ?? '—'}</td>
+                      <td>{item.drafter?.name ?? '—'}</td>
+                      <td className="c">
+                        <Badge kind={DOC_BADGE[item.status]}>{DOC_STATUS_LABEL[item.status]}</Badge>
+                      </td>
+                      <td className="muted">{dateTimeText(item.submittedAt)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="pager">
+            <button className="nav" disabled={page <= 1} onClick={() => setPage(page - 1)}>{I.chevL()}</button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              <button key={p} className={p === page ? 'on' : ''} onClick={() => setPage(p)}>{p}</button>
+            ))}
+            <button className="nav" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>{I.chevR()}</button>
+          </div>
+        </>
       )}
+
+      {docId && <DocModal documentId={docId} mode="view" onClose={() => setDocId(null)} />}
     </>
   )
 }

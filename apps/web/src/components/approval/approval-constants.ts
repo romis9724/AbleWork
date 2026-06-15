@@ -1,5 +1,11 @@
 import type { DocumentStatus, StepRole, StepStatus, DocumentBox } from '@/lib/query/documents'
 
+/**
+ * 기안 작성·문서 상세·양식 위저드 본문 최대 폭(px).
+ * 전자결재 문서 화면을 단일 컬럼으로 통일해 가독성과 화면 간 일관성을 유지한다.
+ */
+export const DOC_CONTENT_MAX_WIDTH = 960
+
 /** 문서 상태 라벨 */
 export const DOC_STATUS_LABEL: Record<DocumentStatus, string> = {
   DRAFT: '임시저장',
@@ -16,6 +22,24 @@ export const DOC_STATUS_STYLE: Record<DocumentStatus, { bg: string; fg: string }
   APPROVED: { bg: '#e8f5e9', fg: '#2e7d32' },
   REJECTED: { bg: '#ffebee', fg: '#c62828' },
   RECALLED: { bg: '#f3e5f5', fg: '#7b1fa2' },
+}
+
+/**
+ * 결재현황 진행단계(phase) 칩 — '상신/진행중/반려' 표시용.
+ * DocumentStatus가 아닌 진행 파생값을 보여주며, 결재 현황 목록에서 사용한다.
+ */
+export type DocPhase = 'SUBMITTED' | 'IN_PROGRESS' | 'REJECTED'
+
+export const DOC_PHASE_LABEL: Record<DocPhase, string> = {
+  SUBMITTED: '상신',
+  IN_PROGRESS: '진행중',
+  REJECTED: '반려',
+}
+
+export const DOC_PHASE_STYLE: Record<DocPhase, { bg: string; fg: string }> = {
+  SUBMITTED: { bg: '#e3f2fd', fg: '#1565c0' },
+  IN_PROGRESS: { bg: '#fff3e0', fg: '#e65100' },
+  REJECTED: { bg: '#ffebee', fg: '#c62828' },
 }
 
 /** 결재선 역할 라벨 */

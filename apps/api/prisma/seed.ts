@@ -386,6 +386,189 @@ async function main() {
   }
   console.log('✅ Document notification rules seeded:', documentNotificationRules.length)
 
+  // 17. 감사 로그 샘플 (멱등 — id 고정으로 upsert)
+  const now = Date.now()
+  const HOUR = 60 * 60 * 1000
+  const DAY = 24 * HOUR
+  const auditLogs: Array<{
+    id: string
+    actorId: string | null
+    actorName: string
+    action: string
+    targetType: string
+    targetId: string | null
+    targetLabel: string | null
+    result: string
+    detail: object | null
+    createdAt: Date
+  }> = [
+    {
+      id: 'seed-audit-01',
+      actorId: 'seed-emp-admin',
+      actorName: '최고관리자',
+      action: 'SETTINGS_UPDATE',
+      targetType: 'COMPANY',
+      targetId: company.id,
+      targetLabel: company.name,
+      result: 'SUCCESS',
+      detail: { changedKeys: ['name', 'timezone'] },
+      createdAt: new Date(now - 1 * HOUR),
+    },
+    {
+      id: 'seed-audit-02',
+      actorId: 'seed-emp-admin',
+      actorName: '최고관리자',
+      action: 'ATTENDANCE_UPDATE',
+      targetType: 'ATTENDANCE',
+      targetId: 'seed-att-001',
+      targetLabel: '홍길동 2026-06-12',
+      result: 'SUCCESS',
+      detail: { before: { status: 'LATE' }, after: { status: 'NORMAL' } },
+      createdAt: new Date(now - 3 * HOUR),
+    },
+    {
+      id: 'seed-audit-03',
+      actorId: 'seed-emp-orgadmin',
+      actorName: '김조직',
+      action: 'LEAVE_GRANT',
+      targetType: 'LEAVE_BALANCE',
+      targetId: null,
+      targetLabel: '1명 / 3일',
+      result: 'SUCCESS',
+      detail: { employeeIds: ['seed-emp-001'], days: 3, year: 2026 },
+      createdAt: new Date(now - 5 * HOUR),
+    },
+    {
+      id: 'seed-audit-04',
+      actorId: 'seed-emp-admin',
+      actorName: '최고관리자',
+      action: 'ATTENDANCE_UPDATE',
+      targetType: 'ATTENDANCE',
+      targetId: 'seed-att-002',
+      targetLabel: '김영업 2026-06-11',
+      result: 'FAIL',
+      detail: { reason: '확정된 기록 수정 시도' },
+      createdAt: new Date(now - 1 * DAY - 2 * HOUR),
+    },
+    {
+      id: 'seed-audit-05',
+      actorId: 'seed-emp-orgadmin',
+      actorName: '김조직',
+      action: 'SETTINGS_UPDATE',
+      targetType: 'COMPANY',
+      targetId: company.id,
+      targetLabel: company.name,
+      result: 'SUCCESS',
+      detail: { changedKeys: ['locale'] },
+      createdAt: new Date(now - 1 * DAY - 6 * HOUR),
+    },
+    {
+      id: 'seed-audit-06',
+      actorId: 'seed-emp-admin',
+      actorName: '최고관리자',
+      action: 'LEAVE_GRANT',
+      targetType: 'LEAVE_BALANCE',
+      targetId: null,
+      targetLabel: '3명 / 1일',
+      result: 'SUCCESS',
+      detail: { employeeIds: ['seed-emp-001', 'seed-emp-orgadmin', 'seed-emp-sales'], days: 1, year: 2026 },
+      createdAt: new Date(now - 2 * DAY),
+    },
+    {
+      id: 'seed-audit-07',
+      actorId: 'seed-emp-orgadmin',
+      actorName: '김조직',
+      action: 'ATTENDANCE_UPDATE',
+      targetType: 'ATTENDANCE',
+      targetId: 'seed-att-003',
+      targetLabel: '홍길동 2026-06-09',
+      result: 'SUCCESS',
+      detail: { before: { clockOutAt: null }, after: { clockOutAt: '2026-06-09T18:00:00' } },
+      createdAt: new Date(now - 2 * DAY - 4 * HOUR),
+    },
+    {
+      id: 'seed-audit-08',
+      actorId: null,
+      actorName: '시스템',
+      action: 'LEAVE_GRANT',
+      targetType: 'LEAVE_BALANCE',
+      targetId: null,
+      targetLabel: '연차 자동발생 (전사)',
+      result: 'SUCCESS',
+      detail: { trigger: 'cron', ruleId: 'seed-accrual-annual' },
+      createdAt: new Date(now - 3 * DAY),
+    },
+    {
+      id: 'seed-audit-09',
+      actorId: 'seed-emp-admin',
+      actorName: '최고관리자',
+      action: 'SETTINGS_UPDATE',
+      targetType: 'COMPANY',
+      targetId: company.id,
+      targetLabel: company.name,
+      result: 'SUCCESS',
+      detail: { changedKeys: ['businessNumber'] },
+      createdAt: new Date(now - 4 * DAY),
+    },
+    {
+      id: 'seed-audit-10',
+      actorId: 'seed-emp-orgadmin',
+      actorName: '김조직',
+      action: 'ATTENDANCE_UPDATE',
+      targetType: 'ATTENDANCE',
+      targetId: 'seed-att-004',
+      targetLabel: '김영업 2026-06-05',
+      result: 'SUCCESS',
+      detail: { before: { status: 'ABSENT' }, after: { status: 'NORMAL' } },
+      createdAt: new Date(now - 5 * DAY),
+    },
+    {
+      id: 'seed-audit-11',
+      actorId: 'seed-emp-admin',
+      actorName: '최고관리자',
+      action: 'LEAVE_GRANT',
+      targetType: 'LEAVE_BALANCE',
+      targetId: null,
+      targetLabel: '1명 / 5일',
+      result: 'FAIL',
+      detail: { reason: '존재하지 않는 휴가 유형' },
+      createdAt: new Date(now - 6 * DAY),
+    },
+    {
+      id: 'seed-audit-12',
+      actorId: 'seed-emp-admin',
+      actorName: '최고관리자',
+      action: 'SETTINGS_UPDATE',
+      targetType: 'COMPANY',
+      targetId: company.id,
+      targetLabel: company.name,
+      result: 'SUCCESS',
+      detail: { changedKeys: ['logoUrl'] },
+      createdAt: new Date(now - 7 * DAY),
+    },
+  ]
+
+  for (const log of auditLogs) {
+    await prisma.auditLog.upsert({
+      where: { id: log.id },
+      update: {},
+      create: {
+        id: log.id,
+        companyId: company.id,
+        actorId: log.actorId,
+        actorName: log.actorName,
+        action: log.action,
+        targetType: log.targetType,
+        targetId: log.targetId,
+        targetLabel: log.targetLabel,
+        result: log.result,
+        detail: log.detail ?? undefined,
+        createdAt: log.createdAt,
+      },
+    })
+  }
+  console.log('✅ Audit logs seeded:', auditLogs.length)
+
   console.log('\n✅ Seed completed!')
   console.log('─────────────────────────────────')
   console.log('관리자:     admin@ablework.io / admin1234!')

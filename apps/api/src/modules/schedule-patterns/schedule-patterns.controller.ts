@@ -35,7 +35,8 @@ import {
 export class SchedulePatternsController {
   constructor(private readonly service: SchedulePatternsService) {}
 
-  // HR-04-10 패턴 목록
+  // HR-04-10 패턴 목록 (관리자 전용 — 직원 비노출)
+  @Roles(AccessLevel.ORG_ADMIN)
   @Get()
   @ApiOperation({ summary: '스케줄 패턴 목록 조회' })
   findAll(@CompanyId() companyId: string) {

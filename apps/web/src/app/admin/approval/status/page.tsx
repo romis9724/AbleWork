@@ -1,40 +1,35 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
-import Chip from '@mui/material/Chip'
-import CircularProgress from '@mui/material/CircularProgress'
-import IconButton from '@mui/material/IconButton'
-import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
-import Snackbar from '@mui/material/Snackbar'
-import Stack from '@mui/material/Stack'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TablePagination from '@mui/material/TablePagination'
-import TableRow from '@mui/material/TableRow'
-import TextField from '@mui/material/TextField'
-import Tooltip from '@mui/material/Tooltip'
-import Typography from '@mui/material/Typography'
-import RefreshIcon from '@mui/icons-material/Refresh'
-import PageHeader from '@/components/common/PageHeader'
-import EmptyState from '@/components/common/EmptyState'
-import ConfirmDialog from '@/components/common/ConfirmDialog'
-import { dateTimeText } from '@/components/approval/approval-constants'
+import { PageHead, FilterPanel } from '@/components/ab/Page'
+import { Badge, type BadgeKind, Field, DateInput, TextInput, TableEmpty } from '@/components/ab/atoms'
+import { ConfirmDialog } from '@/components/ab/Modal'
+import { I } from '@/components/ab/icons'
+import { useToast } from '@/components/ab/Toast'
+import { dateTimeText, DOC_PHASE_LABEL, type DocPhase } from '@/components/approval/approval-constants'
+import DocModal from '@/components/approval/DocModal'
 import {
   useDocuments,
   useDocumentForms,
   useBulkForceDeleteDocuments,
   type DocumentListItem,
 } from '@/lib/query/documents'
-import { useSnackbar } from '@/hooks/useSnackbar'
 import { getApiErrorMessage } from '@/lib/api-error'
+
+/** 결재 현황 phase → 네이티브 Badge 종류 (상신=회색 / 진행중=오렌지 / 반려=레드) */
+const PHASE_BADGE: Record<DocPhase, BadgeKind> = {
+  SUBMITTED: 'b-submit',
+  IN_PROGRESS: 'b-prog',
+  REJECTED: 'b-reject',
+}
+
+/** 목록 항목 → 표시 phase (반려 > 진행중 > 상신) */
+function phaseOf(item: DocumentListItem): DocPhase {
+  if (item.status === 'REJECTED') return 'REJECTED'
+  if (item.phase === 'IN_PROGRESS') return 'IN_PROGRESS'
+  return 'SUBMITTED'
+}
+
+type DocModalState = { documentId: string | null; mode: 'view' | 'create' }
 
 // 결재 현황 상태 필터 — 카카오워크 동일(상신/진행중/반려만)
 const STATUS_FILTERS = [
@@ -55,32 +50,23 @@ interface FilterForm {
 }
 
 const EMPTY_FILTER: FilterForm = { dateFrom: '', dateTo: '', formId: '', status: '', search: '' }
-
-/** 상신/진행중/반려 표시 칩 — phase(상신/진행중) + REJECTED */
-function PhaseChip({ item }: { item: DocumentListItem }) {
-  if (item.status === 'REJECTED') {
-    return <Chip size="small" label="반려" sx={{ bgcolor: '#ffebee', color: '#c62828', fontWeight: 600 }} />
-  }
-  if (item.phase === 'IN_PROGRESS') {
-    return <Chip size="small" label="진행중" sx={{ bgcolor: '#fff3e0', color: '#e65100', fontWeight: 600 }} />
-  }
-  return <Chip size="small" label="상신" sx={{ bgcolor: '#e3f2fd', color: '#1565c0', fontWeight: 600 }} />
-}
+const PAGE_SIZES = [10, 20, 50] as const
 
 export default function ApprovalStatusPage() {
-  const router = useRouter()
-  const [page, setPage] = useState(0)
+  const toast = useToast()
+  const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   // 필터: 입력값(form) / 적용값(applied) 분리 — [조회] 버튼으로 적용
   const [form, setForm] = useState<FilterForm>(EMPTY_FILTER)
   const [applied, setApplied] = useState<FilterForm>(EMPTY_FILTER)
   const [selected, setSelected] = useState<string[]>([])
   const [confirmBulk, setConfirmBulk] = useState(false)
-  const { snackbar, showSnackbar, hideSnackbar } = useSnackbar()
+  // 행 클릭/등록 — 라우트 이동 대신 DocModal
+  const [docModal, setDocModal] = useState<DocModalState | null>(null)
 
   const { data: forms } = useDocumentForms()
   const { data, isLoading, isFetching, refetch } = useDocuments('status', {
-    page: page + 1,
+    page,
     limit,
     ...(applied.status ? { status: applied.status } : {}),
     ...(applied.formId ? { formId: applied.formId } : {}),
@@ -90,23 +76,17 @@ export default function ApprovalStatusPage() {
   })
   const bulkDelete = useBulkForceDeleteDocuments()
 
-  const items = data?.items ?? []
+  const items = useMemo(() => data?.items ?? [], [data])
   const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / limit))
 
   const pageIds = useMemo(() => items.map((i) => i.id), [items])
   const allChecked = pageIds.length > 0 && pageIds.every((id) => selected.includes(id))
-  const someChecked = selected.length > 0 && !allChecked
+  const someChecked = selected.length > 0
 
   function applyFilter() {
     setApplied(form)
-    setPage(0)
-    setSelected([])
-  }
-
-  function resetFilter() {
-    setForm(EMPTY_FILTER)
-    setApplied(EMPTY_FILTER)
-    setPage(0)
+    setPage(1)
     setSelected([])
   }
 
@@ -118,6 +98,11 @@ export default function ApprovalStatusPage() {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
+  function gotoPage(p: number) {
+    setPage(p)
+    setSelected([])
+  }
+
   function handleBulkDelete() {
     if (selected.length === 0) return
     bulkDelete.mutate(selected, {
@@ -125,12 +110,12 @@ export default function ApprovalStatusPage() {
         const skippedMsg = res.skipped.length
           ? ` (제외 ${res.skipped.length}건 — HR연동/삭제불가 상태)`
           : ''
-        showSnackbar(`${res.deletedCount}건 삭제했습니다.${skippedMsg}`)
+        toast(`${res.deletedCount}건 삭제했습니다.${skippedMsg}`)
         setSelected([])
         setConfirmBulk(false)
       },
       onError: (err) => {
-        showSnackbar(getApiErrorMessage(err, '선택 삭제에 실패했습니다.'), 'error')
+        toast(getApiErrorMessage(err, '선택 삭제에 실패했습니다.'))
         setConfirmBulk(false)
       },
     })
@@ -138,178 +123,188 @@ export default function ApprovalStatusPage() {
 
   return (
     <>
-      <PageHeader
+      <PageHead
+        eyebrow="Approval Status"
         title="결재 현황"
-        subtitle="진행 중인 전자결재 문서(상신·진행중·반려)를 조회하고, 오류·중단된 문서를 선택 삭제합니다."
+        right={
+          <span className="page-stamp">
+            {new Date().toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })} 기준
+            <span className="rf" onClick={() => refetch()}>{I.refresh()}</span>
+          </span>
+        }
       />
 
-      {/* 필터 바 */}
-      <Paper
-        elevation={0}
-        sx={{ p: 2, mb: 2, border: '1px solid', borderColor: 'divider' }}
-      >
-        <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="flex-end">
-          <TextField
-            type="date"
-            size="small"
-            label="상신일(시작)"
-            value={form.dateFrom}
-            onChange={(e) => setForm((f) => ({ ...f, dateFrom: e.target.value }))}
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 170 }}
-          />
-          <TextField
-            type="date"
-            size="small"
-            label="상신일(종료)"
-            value={form.dateTo}
-            onChange={(e) => setForm((f) => ({ ...f, dateTo: e.target.value }))}
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 170 }}
-          />
-          <TextField
-            select
-            size="small"
-            label="기안양식"
+      {/* 필터 */}
+      <FilterPanel>
+        <Field label="상신일">
+          <div className="fld-range">
+            <DateInput value={form.dateFrom} onChange={(v) => setForm((f) => ({ ...f, dateFrom: v }))} />
+            <span className="dash">~</span>
+            <DateInput value={form.dateTo} onChange={(v) => setForm((f) => ({ ...f, dateTo: v }))} />
+          </div>
+        </Field>
+        <Field label="기안양식">
+          <select
+            className="sel"
             value={form.formId}
             onChange={(e) => setForm((f) => ({ ...f, formId: e.target.value }))}
-            sx={{ width: 180 }}
           >
-            <MenuItem value="">전체</MenuItem>
+            <option value="">전체</option>
             {(forms ?? []).map((fm) => (
-              <MenuItem key={fm.id} value={fm.id}>{fm.name}</MenuItem>
+              <option key={fm.id} value={fm.id}>{fm.name}</option>
             ))}
-          </TextField>
-          <TextField
-            select
-            size="small"
-            label="결재상태"
+          </select>
+        </Field>
+        <Field label="결재상태">
+          <select
+            className="sel"
             value={form.status}
             onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as StatusFilter }))}
-            sx={{ width: 130 }}
           >
             {STATUS_FILTERS.map((s) => (
-              <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>
+              <option key={s.value} value={s.value}>{s.label}</option>
             ))}
-          </TextField>
-          <TextField
-            size="small"
-            label="제목/문서번호"
+          </select>
+        </Field>
+        <Field label="검색어">
+          <TextInput
+            placeholder="제목 또는 문서번호 입력"
+            icon={I.search()}
             value={form.search}
-            onChange={(e) => setForm((f) => ({ ...f, search: e.target.value }))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') applyFilter()
-            }}
-            sx={{ width: 220 }}
+            onChange={(v) => setForm((f) => ({ ...f, search: v }))}
           />
-          <Button variant="contained" onClick={applyFilter}>조회</Button>
-          <Button variant="text" color="inherit" onClick={resetFilter}>초기화</Button>
-        </Stack>
-      </Paper>
+        </Field>
+      </FilterPanel>
+      <div className="filter-action">
+        <button className="btn btn-primary btn-query" onClick={applyFilter}>조회</button>
+      </div>
 
-      {/* 액션 바 */}
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-        <Stack direction="row" alignItems="center" spacing={1.5}>
-          <Typography variant="body2" color="text.secondary">
-            총 <b>{total.toLocaleString()}</b>건
-            {selected.length > 0 && <> · 선택 {selected.length}건</>}
-          </Typography>
-          <Tooltip title="새로고침">
-            <IconButton size="small" onClick={() => refetch()}>
-              <RefreshIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          {isFetching && <CircularProgress size={16} />}
-        </Stack>
-        <Button
-          size="small"
-          color="error"
-          variant="outlined"
-          disabled={selected.length === 0 || bulkDelete.isPending}
-          onClick={() => setConfirmBulk(true)}
-        >
-          선택 삭제
-        </Button>
-      </Stack>
+      {/* 표 상단 툴바 */}
+      <div className="tbl-bar">
+        <span className="tbl-count">
+          총 <b>{total.toLocaleString()}</b>건
+          {selected.length > 0 && <> · 선택 {selected.length}건</>}
+          {isFetching && <span className="ab-spin" style={{ marginLeft: 10, verticalAlign: 'middle' }} />}
+        </span>
+        <div className="tbl-tools">
+          <button
+            className="btn btn-line btn-sm"
+            disabled={selected.length === 0 || bulkDelete.isPending}
+            onClick={() => setConfirmBulk(true)}
+          >
+            선택 삭제
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setDocModal({ documentId: null, mode: 'create' })}
+          >
+            {I.plus({ style: { marginRight: 6 } })}기안 등록
+          </button>
+          <select
+            className="pgsize"
+            value={limit}
+            onChange={(e) => {
+              setLimit(Number(e.target.value))
+              setPage(1)
+              setSelected([])
+            }}
+          >
+            {PAGE_SIZES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
-          <CircularProgress />
-        </Box>
-      ) : items.length === 0 ? (
-        <EmptyState message="조회된 문서가 없습니다." />
+        <div className="ab-loading">
+          <span className="ab-spin" />
+          불러오는 중…
+        </div>
       ) : (
-        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow sx={{ bgcolor: 'background.default' }}>
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    size="small"
-                    checked={allChecked}
-                    indeterminate={someChecked}
-                    onChange={toggleAll}
-                  />
-                </TableCell>
-                <TableCell>기안양식</TableCell>
-                <TableCell>기안 제목</TableCell>
-                <TableCell>기안자</TableCell>
-                <TableCell>상신일시</TableCell>
-                <TableCell>현재 결재자</TableCell>
-                <TableCell>결재상태</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {items.map((item) => {
-                const checked = selected.includes(item.id)
-                return (
-                  <TableRow key={item.id} hover selected={checked}>
-                    <TableCell padding="checkbox">
-                      <Checkbox
-                        size="small"
-                        checked={checked}
-                        onChange={() => toggleOne(item.id)}
-                      />
-                    </TableCell>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{item.form?.name ?? '—'}</TableCell>
-                    <TableCell
-                      sx={{ fontWeight: 600, cursor: 'pointer', color: 'primary.main' }}
-                      onClick={() => router.push(`/admin/approval/status/${item.id}`)}
-                    >
-                      {item.title}
-                    </TableCell>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{item.drafter?.name ?? '—'}</TableCell>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{dateTimeText(item.submittedAt)}</TableCell>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                      {item.status === 'REJECTED' ? '—' : (item.currentApprover?.name ?? '—')}
-                    </TableCell>
-                    <TableCell>
-                      <PhaseChip item={item} />
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-          <TablePagination
-            component="div"
-            count={total}
-            page={page}
-            rowsPerPage={limit}
-            rowsPerPageOptions={[10, 20, 50]}
-            onPageChange={(_, p) => {
-              setPage(p)
-              setSelected([])
-            }}
-            onRowsPerPageChange={(e) => {
-              setLimit(Number(e.target.value))
-              setPage(0)
-              setSelected([])
-            }}
-            labelRowsPerPage="페이지당 행 수"
-            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
-          />
-        </TableContainer>
+        <>
+          <div className="tbl-scroll">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th style={{ width: 44 }} className="c">
+                    <input
+                      type="checkbox"
+                      className="ck"
+                      checked={allChecked}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someChecked && !allChecked
+                      }}
+                      onChange={toggleAll}
+                    />
+                  </th>
+                  <th style={{ width: 130 }}>기안양식</th>
+                  <th>기안 제목</th>
+                  <th style={{ width: 150 }}>기안자</th>
+                  <th style={{ width: 160 }}>상신일시</th>
+                  <th style={{ width: 150 }}>현재 결재자</th>
+                  <th style={{ width: 110 }} className="c">결재상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.length === 0 ? (
+                  <TableEmpty colSpan={7} message="조회된 문서가 없습니다." />
+                ) : (
+                  items.map((item) => {
+                    const checked = selected.includes(item.id)
+                    return (
+                      <tr key={item.id}>
+                        <td className="c" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="ck"
+                            checked={checked}
+                            onChange={() => toggleOne(item.id)}
+                          />
+                        </td>
+                        <td className="muted">{item.form?.name ?? '—'}</td>
+                        <td>
+                          <span
+                            className="tbl-link"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setDocModal({ documentId: item.id, mode: 'view' })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                setDocModal({ documentId: item.id, mode: 'view' })
+                              }
+                            }}
+                          >
+                            {item.title}
+                          </span>
+                        </td>
+                        <td>{item.drafter?.name ?? '—'}</td>
+                        <td className="muted">{dateTimeText(item.submittedAt)}</td>
+                        <td>
+                          {item.status === 'REJECTED' ? '—' : (item.currentApprover?.name ?? '—')}
+                        </td>
+                        <td className="c">
+                          <Badge kind={PHASE_BADGE[phaseOf(item)]}>
+                            {DOC_PHASE_LABEL[phaseOf(item)]}
+                          </Badge>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="pager">
+            <button className="nav" disabled={page <= 1} onClick={() => gotoPage(page - 1)}>{I.chevL()}</button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              <button key={p} className={p === page ? 'on' : ''} onClick={() => gotoPage(p)}>{p}</button>
+            ))}
+            <button className="nav" disabled={page >= totalPages} onClick={() => gotoPage(page + 1)}>{I.chevR()}</button>
+          </div>
+        </>
       )}
 
       <ConfirmDialog
@@ -321,16 +316,16 @@ export default function ApprovalStatusPage() {
         onCancel={() => setConfirmBulk(false)}
       />
 
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={3500}
-        onClose={hideSnackbar}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert onClose={hideSnackbar} severity={snackbar.severity} variant="filled">
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
+      {docModal && (
+        <DocModal
+          documentId={docModal.documentId}
+          mode={docModal.mode}
+          onClose={() => {
+            setDocModal(null)
+            refetch()
+          }}
+        />
+      )}
     </>
   )
 }
