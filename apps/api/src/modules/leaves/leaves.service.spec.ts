@@ -8,6 +8,7 @@ import { AccessLevel } from '@ablework/shared-constants'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { LeavesService } from './leaves.service'
 import { PrismaService } from '../../prisma/prisma.service'
+import { AuditService } from '../audit/audit.service'
 
 // ── 공통 픽스처 ────────────────────────────────────────────────────────────────
 
@@ -119,6 +120,7 @@ describe('LeavesService', () => {
         LeavesService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
+        { provide: AuditService, useValue: { record: jest.fn() } },
       ],
     }).compile()
 
