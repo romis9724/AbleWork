@@ -138,7 +138,10 @@ cat > "${TMP}/gha-policy.json" <<JSON
      "Condition":{"StringEquals":{"aws:ResourceTag/Project":"${PROJECT}","aws:ResourceTag/Env":"${ENVIRONMENT}"}}},
     {"Sid":"SsmPoll","Effect":"Allow",
      "Action":["ssm:GetCommandInvocation","ssm:ListCommandInvocations","ssm:ListCommands"],
-     "Resource":"*"}
+     "Resource":"*"},
+    {"Sid":"S3DeployAssets","Effect":"Allow",
+     "Action":["s3:PutObject"],
+     "Resource":"arn:aws:s3:::${S3_BUCKET}/deploy/*"}
   ]
 }
 JSON
