@@ -141,7 +141,10 @@ cat > "${TMP}/gha-policy.json" <<JSON
      "Resource":"*"},
     {"Sid":"S3DeployAssets","Effect":"Allow",
      "Action":["s3:PutObject"],
-     "Resource":"arn:aws:s3:::${S3_BUCKET}/deploy/*"}
+     "Resource":"arn:aws:s3:::${S3_BUCKET}/deploy/*"},
+    {"Sid":"Ec2Describe","Effect":"Allow",
+     "Action":"ec2:DescribeInstances",
+     "Resource":"*"}
   ]
 }
 JSON
