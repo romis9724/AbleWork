@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing'
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { CompaniesService } from './companies.service'
 import { PrismaService } from '../../prisma/prisma.service'
+import { AuditService } from '../audit/audit.service'
 
 const mockCompany = {
   id: 'company-1',
@@ -63,6 +64,7 @@ describe('CompaniesService', () => {
       providers: [
         CompaniesService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: AuditService, useValue: { record: jest.fn() } },
       ],
     }).compile()
 

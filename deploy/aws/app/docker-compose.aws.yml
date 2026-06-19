@@ -1,0 +1,16 @@
+# EC2에서 실행되는 프로덕션 compose — ECR 이미지를 pull 해서 구동.
+# ECR_REGISTRY 는 deploy.sh 가 export 한다. env 파일은 fetch-env.sh 가 SSM에서 생성한다.
+name: ablework
+services:
+  api:
+    image: ${ECR_REGISTRY}/ablework-api:latest
+    restart: unless-stopped
+    env_file: [.env.app]
+    ports: ['3001:3001']
+
+  web:
+    image: ${ECR_REGISTRY}/ablework-web:latest
+    restart: unless-stopped
+    env_file: [.env.web]
+    ports: ['3000:3000']
+    depends_on: [api]

@@ -12,6 +12,12 @@ refs/
 !apps/api/.env.example
 !apps/web/.env.example
 
+# AWS 배포 비밀(SSM 주입용) — 절대 커밋 금지. .example 만 추적.
+deploy/aws/.env.prod
+!deploy/aws/.env.prod.example
+# AWS 배포 상태(리소스 ID 캐시)
+deploy/aws/.state/
+
 # 빌드 산출물
 node_modules/
 dist/
