@@ -6,6 +6,7 @@ import { I } from '@/components/ab/icons'
 import DocModal from '@/components/approval/DocModal'
 import { DOC_STATUS_LABEL, dateTimeText } from '@/components/approval/approval-constants'
 import { useDocuments, type DocumentStatus } from '@/lib/query/documents'
+import { useDebounce } from '@/hooks/useDebounce'
 
 const STATUS_OPTIONS: DocumentStatus[] = ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'RECALLED']
 const PAGE_SIZES = [10, 20, 50] as const
@@ -23,6 +24,8 @@ export default function DocumentLedgerPage() {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   const [status, setStatus] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const search = useDebounce(searchInput, 300)
   // 행 클릭 — 라우트 이동 대신 DocModal(view)
   const [docId, setDocId] = useState<string | null>(null)
 
@@ -30,6 +33,7 @@ export default function DocumentLedgerPage() {
     page,
     limit,
     ...(status ? { status } : {}),
+    ...(search ? { search } : {}),
   })
 
   const items = data?.items ?? []
@@ -42,20 +46,34 @@ export default function DocumentLedgerPage() {
         eyebrow="Document Ledger"
         title="문서대장"
         right={
-          <select
-            className="sel"
-            value={status}
-            onChange={(e) => {
-              setStatus(e.target.value)
-              setPage(1)
-            }}
-            aria-label="상태"
-          >
-            <option value="">전체 상태</option>
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>{DOC_STATUS_LABEL[s]}</option>
-            ))}
-          </select>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              className="inp"
+              type="search"
+              placeholder="제목·문서번호 검색"
+              value={searchInput}
+              onChange={(e) => {
+                setSearchInput(e.target.value)
+                setPage(1)
+              }}
+              aria-label="문서 검색"
+              style={{ minWidth: 200 }}
+            />
+            <select
+              className="sel"
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value)
+                setPage(1)
+              }}
+              aria-label="상태"
+            >
+              <option value="">전체 상태</option>
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>{DOC_STATUS_LABEL[s]}</option>
+              ))}
+            </select>
+          </div>
         }
       />
 

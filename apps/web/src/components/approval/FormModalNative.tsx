@@ -48,6 +48,10 @@ export default function FormModalNative({ form, mode, onClose }: Props) {
     form?.visibilityScope ?? 'DEPARTMENT',
   )
   const [description, setDescription] = useState(form?.description ?? '')
+  // 결재 옵션 (C-4): 전결 허용·반려 재기안 허용·압축파일 업로드 허용
+  const [allowPreApproval, setAllowPreApproval] = useState(form?.allowPreApproval ?? false)
+  const [allowReDraft, setAllowReDraft] = useState(form?.allowReDraft ?? false)
+  const [allowZipUpload, setAllowZipUpload] = useState(form?.allowZipUpload ?? false)
 
   const busy = createMutation.isPending || updateMutation.isPending
 
@@ -61,6 +65,9 @@ export default function FormModalNative({ form, mode, onClose }: Props) {
       isActive,
       visibilityScope,
       description: description.trim() || null,
+      allowPreApproval,
+      allowReDraft,
+      allowZipUpload,
     }
     try {
       if (isEdit && form) {
@@ -154,6 +161,17 @@ export default function FormModalNative({ form, mode, onClose }: Props) {
               <span className="fk">설명</span>
               <span className="fv" style={{ width: '100%' }}>
                 <input className="inp-block" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="양식 용도에 대한 간단한 설명 (선택)" />
+              </span>
+            </div>
+
+            <div className="doc-field">
+              <span className="fk">결재 옵션</span>
+              <span className="fv">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <Toggle on={allowPreApproval} onChange={setAllowPreApproval} label="전결 허용 (상위 결재자가 즉시 최종 승인)" />
+                  <Toggle on={allowReDraft} onChange={setAllowReDraft} label="반려 후 재기안 허용" />
+                  <Toggle on={allowZipUpload} onChange={setAllowZipUpload} label="압축파일(zip) 업로드 허용" />
+                </div>
               </span>
             </div>
           </div>
