@@ -128,6 +128,17 @@ export class MessagesController {
     return this.messagesService.findMyMessages(user.employeeId, query)
   }
 
+  // ── MSG-06b 회사 발송 이력 (관리자용) ─────────────────────────────────────────
+  @Get('sent')
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '회사 발송 이력 조회 (ORG_ADMIN 이상)' })
+  findSentMessages(
+    @CompanyId() companyId: string,
+    @Query(new ZodValidationPipe(MessageQuerySchema)) query: MessageQueryDto,
+  ) {
+    return this.messagesService.findSentMessages(companyId, query)
+  }
+
   // ── MSG-07 메시지 읽음 처리 ───────────────────────────────────────────────────
 
   @Post(':id/read')

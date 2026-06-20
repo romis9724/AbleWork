@@ -21,14 +21,18 @@ interface RecipientTarget {
 
 // ── 순수 헬퍼 (단위 테스트 대상) ───────────────────────────────────────────────
 
-/** `{{이름}}`, `{{name}}` 등 기본 변수를 치환한다. 매칭되지 않는 변수는 원문 유지. */
+/**
+ * 템플릿 변수 치환. `{{이름}}` 과 `#{이름}` 두 문법을 모두 지원한다(FE 안내가 `#{}` 형식이므로).
+ * 매칭되지 않는 변수는 원문 유지.
+ */
 export function renderTemplate(
   content: string,
   vars: Record<string, string>,
 ): string {
-  return content.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (match, key: string) =>
-    vars[key] !== undefined ? vars[key] : match,
-  )
+  const sub = (match: string, key: string) => (vars[key] !== undefined ? vars[key] : match)
+  return content
+    .replace(/\{\{\s*([^{}]+?)\s*\}\}/g, sub) // {{변수}}
+    .replace(/#\{\s*([^{}]+?)\s*\}/g, sub) // #{변수}
 }
 
 /** 해당 타임존 기준 'YYYY-MM-DD' 날짜 문자열 */
@@ -162,13 +166,17 @@ export class MessageAutomationProcessor extends WorkerHost {
     }
 
     // 6. 변수 치환 후 메시지 생성
+    const monthStr = String(Number(todayStr.slice(5, 7))) // '6' 형식
     const baseVars: Record<string, string> = {
       회사명: automation.company.name,
       company: automation.company.name,
       날짜: todayStr,
       date: todayStr,
+      월: monthStr,
+      month: monthStr,
     }
-    const hasPerRecipientVars = /\{\{\s*(이름|name)\s*\}\}/.test(
+    // {{이름}}·#{이름}·#{employee} 등 수신자 개인화 변수 사용 여부
+    const hasPerRecipientVars = /(?:\{\{|#\{)\s*(이름|name|employee)\s*\}/.test(
       automation.template.content,
     )
 
@@ -185,6 +193,7 @@ export class MessageAutomationProcessor extends WorkerHost {
                 ...baseVars,
                 이름: recipient.name,
                 name: recipient.name,
+                employee: recipient.name,
               }),
               automationId: automation.id,
               templateId: automation.templateId,

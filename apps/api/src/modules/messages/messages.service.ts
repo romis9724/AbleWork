@@ -177,6 +177,42 @@ export class MessagesService {
     }
   }
 
+  /** MSG-06b 회사 발송 이력 (관리자용 — 수신자 기준이 아닌 회사 전체 발송 메시지) */
+  async findSentMessages(companyId: string, query: MessageQueryDto) {
+    const { page, limit } = query
+    const skip = (page - 1) * limit
+    const where = { companyId }
+
+    const [items, total] = await Promise.all([
+      this.prisma.message.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { sentAt: 'desc' },
+        select: {
+          id: true,
+          type: true,
+          title: true,
+          content: true,
+          sentAt: true,
+          recipients: { select: { readAt: true } },
+        },
+      }),
+      this.prisma.message.count({ where }),
+    ])
+
+    return {
+      items: items.map(({ recipients, ...m }) => ({
+        ...m,
+        recipientCount: recipients.length,
+        readCount: recipients.filter((r: { readAt: Date | null }) => r.readAt != null).length,
+      })),
+      total,
+      page,
+      limit,
+    }
+  }
+
   // ── MSG-07 메시지 읽음 처리 ───────────────────────────────────────────────────
 
   async markAsRead(messageId: string, employeeId: string, dto?: ReadMessageDto) {
