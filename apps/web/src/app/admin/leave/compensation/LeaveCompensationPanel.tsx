@@ -27,6 +27,8 @@ export default function LeaveCompensationPanel() {
   const [leaveTypeId, setLeaveTypeId] = useState('')
   const [days, setDays] = useState('1')
   const [reason, setReason] = useState('')
+  const [year, setYear] = useState(String(new Date().getFullYear()))
+  const [expiresAt, setExpiresAt] = useState('')
   const [snack, setSnack] = useState<{ open: boolean; msg: string; sev: 'success' | 'error' }>({ open: false, msg: '', sev: 'success' })
 
   async function handleSubmit() {
@@ -39,12 +41,15 @@ export default function LeaveCompensationPanel() {
         employeeId: employee.id,
         leaveTypeId,
         days: Number(days),
+        year: year ? Number(year) : undefined,
+        expiresAt: expiresAt || undefined,
         reason: reason || undefined,
       })
       setSnack({ open: true, msg: '보상휴가가 발생됐습니다.', sev: 'success' })
       setEmployee(null)
       setDays('1')
       setReason('')
+      setExpiresAt('')
     } catch {
       setSnack({ open: true, msg: '처리 중 오류가 발생했습니다.', sev: 'error' })
     }
@@ -88,6 +93,25 @@ export default function LeaveCompensationPanel() {
             fullWidth
             helperText="0.5 단위로 입력"
           />
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <TextField
+              label="발생 연도"
+              type="number"
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              inputProps={{ min: 2000, max: 2100 }}
+              fullWidth
+            />
+            <TextField
+              label="만료일"
+              type="date"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              fullWidth
+              helperText="미지정 시 무기한"
+            />
+          </Box>
           <TextField
             label="발생 사유"
             value={reason}
