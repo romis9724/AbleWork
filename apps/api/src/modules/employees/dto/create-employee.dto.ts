@@ -29,3 +29,23 @@ export const CreateEmployeeSchema = z.object({
 })
 
 export type CreateEmployeeDto = z.infer<typeof CreateEmployeeSchema>
+
+/** 직원 일괄 등록 (CSV) — 조직은 이름으로 해석, 누락 필드는 서버 기본값 적용 */
+export const BulkCreateEmployeeSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(50),
+        email: z.string().email(),
+        joinedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        employmentType: z.string().optional(),
+        organizationName: z.string().optional(),
+        employeeNumber: z.string().max(50).optional(),
+        phone: z.string().max(20).optional(),
+      }),
+    )
+    .min(1, '등록할 행이 없습니다.')
+    .max(500, '한 번에 최대 500행까지 등록할 수 있습니다.'),
+})
+
+export type BulkCreateEmployeeDto = z.infer<typeof BulkCreateEmployeeSchema>

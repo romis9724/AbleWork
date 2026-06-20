@@ -25,6 +25,8 @@ import {
   CreateEmployeeDto,
   CreateEmployeeSchema,
   EmployeePasswordSchema,
+  BulkCreateEmployeeDto,
+  BulkCreateEmployeeSchema,
 } from './dto/create-employee.dto'
 import { UpdateEmployeeDto, UpdateEmployeeSchema } from './dto/update-employee.dto'
 import { EmployeeFilterDto, EmployeeFilterSchema } from './dto/employee-filter.dto'
@@ -77,6 +79,18 @@ export class EmployeesController {
     @CurrentUser() requester: JwtPayload,
   ) {
     return this.employeesService.create(companyId, dto, requester)
+  }
+
+  // HR-03-02b 직원 일괄 등록 (CSV)
+  @Post('bulk')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '직원 일괄 등록 (GENERAL_ADMIN 이상)' })
+  bulkCreate(
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(BulkCreateEmployeeSchema)) dto: BulkCreateEmployeeDto,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.employeesService.bulkCreate(companyId, dto.rows, requester)
   }
 
   // HR-03-03 직원 상세

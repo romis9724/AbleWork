@@ -11,7 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { CompanySettingsService } from '../companies/company-settings.service'
 import { AccessLevel, ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
-import { CreateEmployeeDto } from './dto/create-employee.dto'
+import { CreateEmployeeDto, type BulkCreateEmployeeDto } from './dto/create-employee.dto'
 import { UpdateEmployeeDto } from './dto/update-employee.dto'
 import { EmployeeFilterDto } from './dto/employee-filter.dto'
 import { CreateWageInfoDto } from '../wage-info/dto/create-wage-info.dto'
@@ -184,6 +184,65 @@ export class EmployeesService {
     })
 
     return created
+  }
+
+  // ── 직원 일괄 등록 (CSV) ────────────────────────────────────────────────────
+
+  async bulkCreate(
+    companyId: string,
+    rows: BulkCreateEmployeeDto['rows'],
+    requester: JwtPayload,
+  ): Promise<{ created: number; errors: { row: number; message: string }[] }> {
+    const orgs = await this.prisma.organization.findMany({
+      where: { companyId },
+      select: { id: true, name: true },
+    })
+    const orgByName = new Map(orgs.map((o) => [o.name.trim(), o.id]))
+    const employmentMap: Record<string, 'regular' | 'contract' | 'part_time' | 'daily'> = {
+      regular: 'regular', 정규직: 'regular',
+      contract: 'contract', 계약직: 'contract',
+      part_time: 'part_time', 단시간: 'part_time', 파트타임: 'part_time',
+      daily: 'daily', 일용직: 'daily',
+    }
+
+    let created = 0
+    const errors: { row: number; message: string }[] = []
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i]
+      const rowNo = i + 2 // CSV 헤더(1행) + 1-기준
+      try {
+        const orgId = orgByName.get((r.organizationName ?? '').trim())
+        if (!orgId) {
+          throw new Error(`조직 '${r.organizationName ?? ''}'을(를) 찾을 수 없습니다.`)
+        }
+        const employmentType = employmentMap[(r.employmentType ?? '').trim()] ?? 'regular'
+        await this.create(
+          companyId,
+          {
+            name: r.name.trim(),
+            email: r.email.trim(),
+            joinedAt: r.joinedAt,
+            employmentType,
+            accessLevel: 'EMPLOYEE',
+            organizationIds: [orgId],
+            primaryOrganizationId: orgId,
+            positionIds: [],
+            ...(r.employeeNumber ? { employeeNumber: r.employeeNumber.trim() } : {}),
+            ...(r.phone ? { phone: r.phone.trim() } : {}),
+          } as CreateEmployeeDto,
+          requester,
+        )
+        created++
+      } catch (e: unknown) {
+        const msg =
+          (e as { response?: { message?: string }; message?: string })?.response?.message ??
+          (e instanceof Error ? e.message : '알 수 없는 오류')
+        errors.push({ row: rowNo, message: msg })
+      }
+    }
+
+    return { created, errors }
   }
 
   // ── 직원 수정 ───────────────────────────────────────────────────────────────
