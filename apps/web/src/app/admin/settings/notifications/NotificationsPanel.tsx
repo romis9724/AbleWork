@@ -84,7 +84,10 @@ export default function NotificationsPanel() {
 
   const { data: rawRules, isLoading: rulesLoading } = useQuery({
     queryKey: ['notification-rules'],
-    queryFn: () => apiClient.get('/notifications/rules'),
+    // limit 미지정 시 서버 기본값(20)에 잘려, 알림 이벤트(26종) 중 일부 규칙이
+    // 응답에서 누락된다 → 해당 이벤트 토글이 항상 OFF로 표시되고 변경이 반영되지 않음.
+    // 규칙 수는 이벤트 종류만큼(수십 개)으로 한정되므로 상한(100)으로 전량 조회한다.
+    queryFn: () => apiClient.get('/notifications/rules', { params: { limit: 100 } }),
     staleTime: 30_000,
   })
   const rules: NotificationRule[] = Array.isArray(rawRules)
