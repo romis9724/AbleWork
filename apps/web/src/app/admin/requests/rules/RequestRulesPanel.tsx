@@ -44,10 +44,17 @@ import { usePositions } from '@/lib/query/positions'
 
 const REQUEST_TYPES = [
   { value: 'LEAVE_CREATE', label: '휴가 신청' },
+  { value: 'LEAVE_MODIFY', label: '휴가 변경' },
+  { value: 'LEAVE_DELETE', label: '휴가 취소' },
   { value: 'SHIFT_CREATE', label: '근무일정 추가' },
+  { value: 'SHIFT_MODIFY', label: '근무일정 변경' },
+  { value: 'SHIFT_DELETE', label: '근무일정 삭제' },
   { value: 'ATTENDANCE_EDIT', label: '출퇴근 정정' },
+  { value: 'ATTENDANCE_CREATE', label: '출퇴근 추가' },
+  { value: 'ATTENDANCE_DELETE', label: '출퇴근 삭제' },
   { value: 'DEVICE_CHANGE', label: '기기 변경' },
   { value: 'OFFSITE_WORK', label: '외근 신청' },
+  { value: 'CUSTOM', label: '커스텀 요청' },
 ] as const
 
 type RequestTypeValue = (typeof REQUEST_TYPES)[number]['value'] | ''
