@@ -11,11 +11,12 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { CompanySettingsService } from '../companies/company-settings.service'
 import { AccessLevel, ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
-import { CreateEmployeeDto } from './dto/create-employee.dto'
+import { CreateEmployeeDto, type BulkCreateEmployeeDto } from './dto/create-employee.dto'
 import { UpdateEmployeeDto } from './dto/update-employee.dto'
 import { EmployeeFilterDto } from './dto/employee-filter.dto'
 import { CreateWageInfoDto } from '../wage-info/dto/create-wage-info.dto'
 import { EVENTS } from '../../events/domain-events'
+import { AuditService } from '../audit/audit.service'
 
 @Injectable()
 export class EmployeesService {
@@ -23,6 +24,7 @@ export class EmployeesService {
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
     private readonly settingsService: CompanySettingsService,
+    private readonly audit: AuditService,
   ) {}
 
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
@@ -107,7 +109,7 @@ export class EmployeesService {
 
   // ── 직원 등록 ───────────────────────────────────────────────────────────────
 
-  async create(companyId: string, dto: CreateEmployeeDto) {
+  async create(companyId: string, dto: CreateEmployeeDto, requester?: JwtPayload) {
     const { email, initialPassword, organizationIds, primaryOrganizationId, positionIds, joinedAt, ...rest } =
       dto
 
@@ -118,7 +120,7 @@ export class EmployeesService {
     // 없으면 비활성 계정으로 생성하고, 추후 비밀번호 재설정으로 활성화한다.
     const passwordHash = initialPassword ? await bcrypt.hash(initialPassword, 10) : ''
 
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const created = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // User 조회 또는 신규 생성
       let user = await tx.user.findUnique({ where: { email } })
       if (!user) {
@@ -171,6 +173,76 @@ export class EmployeesService {
 
       return employee
     })
+
+    await this.audit.record({
+      companyId,
+      actorId: requester?.employeeId ?? null,
+      action: 'EMPLOYEE_CREATE',
+      targetType: 'EMPLOYEE',
+      targetId: created.id,
+      targetLabel: created.name,
+    })
+
+    return created
+  }
+
+  // ── 직원 일괄 등록 (CSV) ────────────────────────────────────────────────────
+
+  async bulkCreate(
+    companyId: string,
+    rows: BulkCreateEmployeeDto['rows'],
+    requester: JwtPayload,
+  ): Promise<{ created: number; errors: { row: number; message: string }[] }> {
+    const orgs = await this.prisma.organization.findMany({
+      where: { companyId },
+      select: { id: true, name: true },
+    })
+    const orgByName = new Map(orgs.map((o) => [o.name.trim(), o.id]))
+    const employmentMap: Record<string, 'regular' | 'contract' | 'part_time' | 'daily'> = {
+      regular: 'regular', 정규직: 'regular',
+      contract: 'contract', 계약직: 'contract',
+      part_time: 'part_time', 단시간: 'part_time', 파트타임: 'part_time',
+      daily: 'daily', 일용직: 'daily',
+    }
+
+    let created = 0
+    const errors: { row: number; message: string }[] = []
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i]
+      const rowNo = i + 2 // CSV 헤더(1행) + 1-기준
+      try {
+        const orgId = orgByName.get((r.organizationName ?? '').trim())
+        if (!orgId) {
+          throw new Error(`조직 '${r.organizationName ?? ''}'을(를) 찾을 수 없습니다.`)
+        }
+        const employmentType = employmentMap[(r.employmentType ?? '').trim()] ?? 'regular'
+        await this.create(
+          companyId,
+          {
+            name: r.name.trim(),
+            email: r.email.trim(),
+            joinedAt: r.joinedAt,
+            employmentType,
+            accessLevel: 'EMPLOYEE',
+            organizationIds: [orgId],
+            primaryOrganizationId: orgId,
+            positionIds: [],
+            ...(r.employeeNumber ? { employeeNumber: r.employeeNumber.trim() } : {}),
+            ...(r.phone ? { phone: r.phone.trim() } : {}),
+          } as CreateEmployeeDto,
+          requester,
+        )
+        created++
+      } catch (e: unknown) {
+        const msg =
+          (e as { response?: { message?: string }; message?: string })?.response?.message ??
+          (e instanceof Error ? e.message : '알 수 없는 오류')
+        errors.push({ row: rowNo, message: msg })
+      }
+    }
+
+    return { created, errors }
   }
 
   // ── 직원 수정 ───────────────────────────────────────────────────────────────
@@ -267,7 +339,7 @@ export class EmployeesService {
     }
 
     // isActive=false 설정과 조직 결재자 해제를 하나의 트랜잭션으로 묶는다 (원자성)
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const result = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // 비활성 직원이 조직 결재자로 남지 않도록 approverId를 해제한다
       await tx.organization.updateMany({
         where: { approverId: id, companyId },
@@ -282,6 +354,17 @@ export class EmployeesService {
         },
       })
     })
+
+    await this.audit.record({
+      companyId,
+      actorId: requester.employeeId,
+      action: 'EMPLOYEE_DEACTIVATE',
+      targetType: 'EMPLOYEE',
+      targetId: id,
+      targetLabel: existing.name,
+    })
+
+    return result
   }
 
   // ── 재활성화 ────────────────────────────────────────────────────────────────
@@ -381,6 +464,57 @@ export class EmployeesService {
         effectiveFrom: new Date(dto.effectiveFrom),
       },
     })
+  }
+
+  // ── 근로정보 수정/삭제 ──────────────────────────────────────────────────────
+
+  private async assertWageInfo(employeeId: string, wageId: string) {
+    const wage = await this.prisma.wageInfo.findFirst({ where: { id: wageId, employeeId } })
+    if (!wage) {
+      throw new NotFoundException({
+        code: 'WAGE_INFO_NOT_FOUND',
+        message: '근로정보를 찾을 수 없습니다.',
+      })
+    }
+    return wage
+  }
+
+  async updateWageInfo(
+    companyId: string,
+    employeeId: string,
+    wageId: string,
+    dto: CreateWageInfoDto,
+    requester: JwtPayload,
+  ) {
+    const existing = await this.assertEmployee(companyId, employeeId)
+    await this.guardOrgScope(requester, existing)
+    await this.assertWageInfo(employeeId, wageId)
+
+    return this.prisma.wageInfo.update({
+      where: { id: wageId },
+      data: {
+        hourlyWage: dto.hourlyWage,
+        contractedWorkDays: dto.contractedWorkDays,
+        contractedHoursPerWeek: dto.contractedHoursPerWeek,
+        weeklyPaidHolidayDay: dto.weeklyPaidHolidayDay ?? null,
+        maxHoursPerWeek: dto.maxHoursPerWeek ?? 52,
+        effectiveFrom: new Date(dto.effectiveFrom),
+      },
+    })
+  }
+
+  async deleteWageInfo(
+    companyId: string,
+    employeeId: string,
+    wageId: string,
+    requester: JwtPayload,
+  ) {
+    const existing = await this.assertEmployee(companyId, employeeId)
+    await this.guardOrgScope(requester, existing)
+    await this.assertWageInfo(employeeId, wageId)
+
+    await this.prisma.wageInfo.delete({ where: { id: wageId } })
+    return { success: true }
   }
 
   // ── 내부 헬퍼 ───────────────────────────────────────────────────────────────

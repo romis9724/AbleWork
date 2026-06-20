@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { KpiGrid } from '@/components/ab/Page'
-import { Emp, Badge, RadioGroup } from '@/components/ab/atoms'
+import { Emp, Badge } from '@/components/ab/atoms'
 import { Modal } from '@/components/ab/Modal'
 import { I } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
@@ -33,8 +33,17 @@ interface AccrualForm {
   leaveTypeId: string
   days: string
   note: string
+  year: string
+  expiresAt: string
 }
-const defaultAccrualForm: AccrualForm = { employeeIds: [], leaveTypeId: '', days: '', note: '' }
+const defaultAccrualForm: AccrualForm = {
+  employeeIds: [],
+  leaveTypeId: '',
+  days: '',
+  note: '',
+  year: String(new Date().getFullYear()),
+  expiresAt: '',
+}
 
 /**
  * 휴가 현황 본문 패널.
@@ -64,14 +73,12 @@ export default function LeaveStatusPanel() {
   // Grant (manual accrual) modal
   const [grantOpen, setGrantOpen] = useState(false)
   const [form, setForm] = useState<AccrualForm>(defaultAccrualForm)
-  const [grantMode, setGrantMode] = useState<'즉시' | '예약'>('즉시')
 
   // 공용 휴가 추가 다이얼로그
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false)
 
   function openGrant() {
     setForm(defaultAccrualForm)
-    setGrantMode('즉시')
     setGrantOpen(true)
   }
 
@@ -82,6 +89,8 @@ export default function LeaveStatusPanel() {
         employeeIds: form.employeeIds.map((e) => e.id),
         leaveTypeId: form.leaveTypeId,
         days: Number(form.days),
+        year: form.year ? Number(form.year) : undefined,
+        expiresAt: form.expiresAt || undefined,
         note: form.note || undefined,
       })
       setGrantOpen(false)
@@ -393,16 +402,31 @@ export default function LeaveStatusPanel() {
           </div>
 
           <div className="doc-field">
-            <span className="fk">부여 방식</span>
+            <span className="fk">발생 연도</span>
             <span className="fv">
-              <RadioGroup
-                value={grantMode}
-                onChange={setGrantMode}
-                options={[
-                  { value: '즉시', label: '즉시 부여' },
-                  { value: '예약', label: '예약 부여' },
-                ]}
+              <input
+                className="inp-block"
+                type="number"
+                min={2000}
+                max={2100}
+                value={form.year}
+                onChange={(e) => setForm((f) => ({ ...f, year: e.target.value }))}
+                style={{ maxWidth: 120, fontFamily: 'var(--font-display)' }}
               />
+            </span>
+          </div>
+
+          <div className="doc-field">
+            <span className="fk">만료일</span>
+            <span className="fv">
+              <input
+                className="inp-block"
+                type="date"
+                value={form.expiresAt}
+                onChange={(e) => setForm((f) => ({ ...f, expiresAt: e.target.value }))}
+                style={{ maxWidth: 180 }}
+              />
+              <span style={{ fontSize: 12, color: 'var(--fg-4)', marginLeft: 8 }}>미지정 시 무기한</span>
             </span>
           </div>
         </div>

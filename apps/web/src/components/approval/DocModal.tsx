@@ -21,6 +21,7 @@ import {
   useDocumentForms,
   useDocumentStepAction,
   useRecallDocument,
+  useSharedApprovalLines,
   useSubmitDocument,
   useUpdateDocument,
   type ApprovalStepDetail,
@@ -30,6 +31,7 @@ import {
   type StepAction,
   type StepStatus,
 } from '@/lib/query/documents'
+import { useEmployees } from '@/lib/query/employees'
 import ApprovalLineBuilder from './ApprovalLineBuilder'
 import DynamicFormFields from './DynamicFormFields'
 import RichTextEditor from './RichTextEditor'
@@ -151,6 +153,9 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   // 상세 (view/edit) — create는 미로드
   const { data: doc, isLoading } = useDocument(isCreate ? null : documentId)
   const { data: forms = [] } = useDocumentForms()
+  const { data: sharedLines = [] } = useSharedApprovalLines()
+  const { data: empData } = useEmployees({ isActive: true, limit: 200 })
+  const employees = empData?.items ?? []
 
   const createMutation = useCreateDocument()
   const updateMutation = useUpdateDocument()
@@ -166,6 +171,10 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({})
   const [steps, setSteps] = useState<ApprovalStepInput[]>([])
   const [comment, setComment] = useState('')
+  // 공람/참조 사후 추가 picker (C-8) + 공용 결재선 선택 (C-6)
+  const [ccEmpId, setCcEmpId] = useState('')
+  const [ccRole, setCcRole] = useState<'VIEWER' | 'REFERENCE'>('VIEWER')
+  const [sharedLineId, setSharedLineId] = useState('')
   const [initializedFor, setInitializedFor] = useState<string | null>(null)
 
   // 편집 모드 진입 시 원본으로 폼 채우기 (1회)
@@ -219,8 +228,23 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     !isHrLinked && actionsVisible && !!myPendingStep && ['REFERENCE', 'VIEWER'].includes(myPendingStep.role)
   const canReceive =
     !isHrLinked && actionsVisible && !!myPendingStep && ['RECEIVER', 'DEPT_RECEIVER'].includes(myPendingStep.role)
+  // 내가 이미 처리(승인/대결)한 단계 — 진행 중 문서면 결재취소 가능 (다음 단계 미처리 여부는 BE가 강제)
+  const myActedStep = detailSteps.find(
+    (s) => s.assignee?.id === myEmployeeId && (s.status === 'APPROVED' || s.status === 'PROXY_APPROVED'),
+  )
+  const canCancelApproval = !isHrLinked && !!myActedStep && doc?.status === 'PENDING'
+  // 현재 결재 단계보다 앞선 결재(흐름) 단계가 있으면 전단계 반려 가능 (정책 off 시 BE가 거부)
+  const hasPrevFlowStep =
+    !!myPendingStep &&
+    detailSteps.some((s) => FLOW_ROLES.includes(s.role) && s.stepOrder < myPendingStep.stepOrder)
   const canRecall = isDrafter && doc?.status === 'PENDING' && !hasActedStep
-  const isDraftMine = isDrafter && doc?.status === 'DRAFT'
+  // 기안자 본인이 수정 가능한 상태: DRAFT(임시저장) + RECALLED(회수) + REJECTED(반려)
+  const isEditableMine = isDrafter && ['DRAFT', 'RECALLED', 'REJECTED'].includes(doc?.status ?? '')
+  // 재상신 가능: RECALLED는 항상, REJECTED는 양식의 allowReDraft 허용 시 (BE 정책과 일치)
+  const canReDraft =
+    isDrafter &&
+    (doc?.status === 'RECALLED' ||
+      (doc?.status === 'REJECTED' && (doc?.form?.allowReDraft ?? false)))
   const isParticipant = detailSteps.some(
     (s) => FLOW_ROLES.includes(s.role) && s.assignee?.id === myEmployeeId,
   )
@@ -248,8 +272,10 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     .map((s) => ({ label: STEP_ROLE_LABEL[s.role], name: s.assignee?.name ?? s.organization?.name ?? '미지정' }))
 
   // ----- 액션 핸들러 -----
-  const runStepAction = async (action: StepAction, requireComment = false) => {
-    if (!doc || !myPendingStep) return
+  const runStepAction = async (action: StepAction, requireComment = false, targetStepId?: string) => {
+    // 기본은 내 PENDING 단계. 결재취소(cancel-approval)처럼 이미 처리한 단계를 대상으로 할 때는 targetStepId 전달.
+    const stepId = targetStepId ?? myPendingStep?.id
+    if (!doc || !stepId) return
     if (requireComment && !comment.trim()) {
       toast('의견을 입력해 주세요')
       return
@@ -257,7 +283,7 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     try {
       await stepAction.mutateAsync({
         documentId: doc.id,
-        stepId: myPendingStep.id,
+        stepId,
         action,
         comment: comment.trim() || undefined,
       })
@@ -291,6 +317,30 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
       setMode('view')
     } catch {
       toast('수정 중 오류가 발생했습니다')
+    }
+  }
+
+  /** 회수/반려 문서 재상신: 수정 내용 저장 후 기존 결재선으로 다시 상신 → PENDING */
+  const handleResubmit = async () => {
+    if (!doc) return
+    if (steps.length === 0 || !steps.some((s) => s.role === 'APPROVER')) {
+      toast('결재(승인) 단계가 없어 재상신할 수 없습니다')
+      return
+    }
+    try {
+      await updateMutation.mutateAsync({
+        id: doc.id,
+        title: title.trim(),
+        content: { body, ...fieldValues },
+      })
+      await submitMutation.mutateAsync({
+        id: doc.id,
+        steps: steps.map((s, i) => ({ ...s, stepOrder: i + 1 })),
+      })
+      toast('재상신했습니다')
+      onClose()
+    } catch {
+      toast('재상신 중 오류가 발생했습니다')
     }
   }
 
@@ -346,18 +396,31 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     }
   }
 
-  /** 공람·참조 사후 추가 (간단: 본인을 공람자로 추가) — 깊은 선택은 별도 팝업이나, 모달 내 최소 동작 */
-  const handleAddCcSelf = async () => {
-    if (!doc || !myEmployeeId) return
+  /** 공람·참조 사후 추가 — 선택한 직원을 지정 역할(공람/참조)로 추가 (C-8) */
+  const handleAddCc = async () => {
+    if (!doc) return
+    const assigneeId = ccEmpId || myEmployeeId
+    if (!assigneeId) {
+      toast('추가할 직원을 선택해 주세요')
+      return
+    }
     try {
       await addCcMutation.mutateAsync({
         documentId: doc.id,
-        steps: [{ role: 'VIEWER', assigneeId: myEmployeeId }],
+        steps: [{ role: ccRole, assigneeId }],
       })
-      toast('공람 대상에 추가했습니다')
+      toast(`${ccRole === 'REFERENCE' ? '참조' : '공람'} 대상에 추가했습니다`)
+      setCcEmpId('')
     } catch {
       toast('추가 중 오류가 발생했습니다')
     }
+  }
+
+  /** 공용 결재선 선택 → 작성 중 결재선(steps) prefill (C-6) */
+  const applySharedLine = (lineId: string) => {
+    setSharedLineId(lineId)
+    const line = sharedLines.find((l) => l.id === lineId)
+    if (line) setSteps(line.steps.map((s, i) => ({ ...s, stepOrder: i + 1 })))
   }
 
   // ----- 헤더 텍스트 -----
@@ -376,15 +439,12 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
           <button className="btn btn-line" onClick={() => { toast('문서를 인쇄합니다'); window.print() }}>
             {I.print({ style: { marginRight: 7 } })}인쇄
           </button>
-          {canAddCc && (
-            <button className="btn btn-line" disabled={busy} onClick={handleAddCcSelf}>공람 추가</button>
-          )}
           {canRecall && (
             <button className="btn btn-line" disabled={busy} onClick={handleRecall}>
               {I.undo({ style: { marginRight: 7 } })}회수
             </button>
           )}
-          {isDraftMine && (
+          {isEditableMine && (
             <button className="btn btn-ghost" disabled={busy} onClick={() => setMode('edit')}>
               {I.edit({ style: { marginRight: 7 } })}수정
             </button>
@@ -393,11 +453,22 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
             <button className="btn btn-primary" disabled={busy} onClick={() => runStepAction('view')}>확인 처리</button>
           )}
           {canReceive && (
-            <button className="btn btn-primary" disabled={busy} onClick={() => runStepAction('receive')}>수신 처리</button>
+            <>
+              <button className="btn btn-primary" disabled={busy} onClick={() => runStepAction('receive')}>수신 처리</button>
+              {myPendingStep?.role === 'DEPT_RECEIVER' && (
+                <button className="btn btn-line" style={{ color: 'var(--err)', borderColor: 'rgba(255,127,127,0.4)' }} disabled={busy} onClick={() => runStepAction('bounce', true)}>반송</button>
+              )}
+            </>
+          )}
+          {canCancelApproval && (
+            <button className="btn btn-line" disabled={busy} onClick={() => runStepAction('cancel-approval', false, myActedStep?.id)}>결재 취소</button>
           )}
           {canApprove && (
             <>
               <button className="btn btn-line" style={{ color: 'var(--err)', borderColor: 'rgba(255,127,127,0.4)' }} disabled={busy} onClick={() => runStepAction('reject', true)}>반려</button>
+              {hasPrevFlowStep && (
+                <button className="btn btn-line" disabled={busy} onClick={() => runStepAction('return-prev', true)}>전단계 반려</button>
+              )}
               {allowPreApproval && myPendingStep?.role === 'APPROVER' && (
                 <button className="btn btn-line" disabled={busy} onClick={() => runStepAction('pre-approve', true)}>전결</button>
               )}
@@ -414,7 +485,10 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
       return (
         <>
           <button className="btn btn-line" style={{ minWidth: 110 }} disabled={busy} onClick={() => setMode('view')}>취소</button>
-          <button className="btn btn-primary" style={{ minWidth: 110 }} disabled={busy || !title.trim()} onClick={handleSave}>저장</button>
+          <button className="btn btn-line" style={{ minWidth: 110 }} disabled={busy || !title.trim()} onClick={handleSave}>저장</button>
+          {canReDraft && (
+            <button className="btn btn-primary" style={{ minWidth: 110 }} disabled={busy || !title.trim()} onClick={handleResubmit}>재상신</button>
+          )}
         </>
       )
     }
@@ -452,7 +526,24 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
               <div className="doc-section">
                 <div className="doc-sec-head"><span className="dot" /><span className="t">결재선</span><span className="en">Approval Line</span></div>
                 {isCreate ? (
-                  <ApprovalLineBuilder steps={steps} onChange={setSteps} disabled={busy} />
+                  <>
+                    {sharedLines.length > 0 && (
+                      <div style={{ marginBottom: 10 }}>
+                        <select
+                          className="sel"
+                          style={{ maxWidth: 320 }}
+                          value={sharedLineId}
+                          onChange={(e) => applySharedLine(e.target.value)}
+                        >
+                          <option value="">공용 결재선 선택 (선택 시 자동 구성)</option>
+                          {sharedLines.map((l) => (
+                            <option key={l.id} value={l.id}>{l.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <ApprovalLineBuilder steps={steps} onChange={setSteps} disabled={busy} />
+                  </>
                 ) : lineSet ? (
                   <div className="aline">{stampLine.map((s, i) => <ApprovalStamp key={i} s={s} />)}</div>
                 ) : (
@@ -499,12 +590,37 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
                 {isView && (
                   <div className="doc-field">
                     <span className="fk">참조 · 공람</span>
-                    <span className="fv">
+                    <span className="fv" style={{ width: '100%' }}>
                       <div className="chips">
                         {ccChips.length > 0
                           ? ccChips.map((c, i) => <span key={i} className="chip">{c.label} · {c.name}</span>)
                           : <span className="muted">없음</span>}
                       </div>
+                      {canAddCc && (
+                        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                          <select
+                            className="sel"
+                            style={{ maxWidth: 200 }}
+                            value={ccEmpId}
+                            onChange={(e) => setCcEmpId(e.target.value)}
+                          >
+                            <option value="">직원 선택</option>
+                            {employees.map((emp) => (
+                              <option key={emp.id} value={emp.id}>{emp.name}</option>
+                            ))}
+                          </select>
+                          <select
+                            className="sel"
+                            style={{ maxWidth: 120 }}
+                            value={ccRole}
+                            onChange={(e) => setCcRole(e.target.value as 'VIEWER' | 'REFERENCE')}
+                          >
+                            <option value="VIEWER">공람</option>
+                            <option value="REFERENCE">참조</option>
+                          </select>
+                          <button className="btn btn-line btn-sm" disabled={busy || !ccEmpId} onClick={handleAddCc}>추가</button>
+                        </div>
+                      )}
                     </span>
                   </div>
                 )}

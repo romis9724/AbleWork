@@ -87,8 +87,11 @@ export class AttendancesController {
   @Get('now-at-work')
   @Roles(AccessLevel.ORG_ADMIN)
   @ApiOperation({ summary: '현재 근무 현황 조회 (ORG_ADMIN 이상, companyId 기준)' })
-  getNowAtWork(@CompanyId() companyId: string) {
-    return this.service.getNowAtWork(companyId)
+  getNowAtWork(
+    @CompanyId() companyId: string,
+    @Query('organizationId') organizationId?: string,
+  ) {
+    return this.service.getNowAtWork(companyId, organizationId)
   }
 
   // HR-05-04 출근 기록

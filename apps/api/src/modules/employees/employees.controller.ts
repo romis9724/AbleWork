@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -24,6 +25,8 @@ import {
   CreateEmployeeDto,
   CreateEmployeeSchema,
   EmployeePasswordSchema,
+  BulkCreateEmployeeDto,
+  BulkCreateEmployeeSchema,
 } from './dto/create-employee.dto'
 import { UpdateEmployeeDto, UpdateEmployeeSchema } from './dto/update-employee.dto'
 import { EmployeeFilterDto, EmployeeFilterSchema } from './dto/employee-filter.dto'
@@ -73,8 +76,21 @@ export class EmployeesController {
   create(
     @CompanyId() companyId: string,
     @Body(new ZodValidationPipe(CreateEmployeeSchema)) dto: CreateEmployeeDto,
+    @CurrentUser() requester: JwtPayload,
   ) {
-    return this.employeesService.create(companyId, dto)
+    return this.employeesService.create(companyId, dto, requester)
+  }
+
+  // HR-03-02b 직원 일괄 등록 (CSV)
+  @Post('bulk')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '직원 일괄 등록 (GENERAL_ADMIN 이상)' })
+  bulkCreate(
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(BulkCreateEmployeeSchema)) dto: BulkCreateEmployeeDto,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.employeesService.bulkCreate(companyId, dto.rows, requester)
   }
 
   // HR-03-03 직원 상세
@@ -184,5 +200,36 @@ export class EmployeesController {
     @CurrentUser() requester: JwtPayload,
   ) {
     return this.employeesService.createWageInfo(companyId, id, dto, requester)
+  }
+
+  // HR-03-10 근로정보 수정
+  @Patch(':id/wage-info/:wageId')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '근로정보 수정 (GENERAL_ADMIN 이상)' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiParam({ name: 'wageId', type: String })
+  updateWageInfo(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @Param('wageId') wageId: string,
+    @Body(new ZodValidationPipe(CreateWageInfoSchema)) dto: CreateWageInfoDto,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.employeesService.updateWageInfo(companyId, id, wageId, dto, requester)
+  }
+
+  // HR-03-11 근로정보 삭제
+  @Delete(':id/wage-info/:wageId')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '근로정보 삭제 (GENERAL_ADMIN 이상)' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiParam({ name: 'wageId', type: String })
+  deleteWageInfo(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @Param('wageId') wageId: string,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.employeesService.deleteWageInfo(companyId, id, wageId, requester)
   }
 }

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { CompaniesModule } from '../companies/companies.module'
+import { AuditModule } from '../audit/audit.module'
 import { ApprovalEnabledGuard } from '../../common/guards/approval-enabled.guard'
 import { DocumentsController } from './documents.controller'
 import { DocumentsService } from './documents.service'
@@ -23,7 +24,7 @@ import { FormCategoriesService } from './form-categories.service'
  * - /documents             기안/상신/회수/문서함 + 결재 처리
  */
 @Module({
-  imports: [CompaniesModule],
+  imports: [CompaniesModule, AuditModule],
   controllers: [
     DocumentFormsController,
     FormCategoriesController,

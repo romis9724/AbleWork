@@ -1,7 +1,8 @@
 'use client'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { PageHead } from '@/components/ab/Page'
-import { Badge, Seg, Emp, Radio, Note, TableEmpty } from '@/components/ab/atoms'
+import { Seg, Emp, Radio, Note, TableEmpty } from '@/components/ab/atoms'
 import { I } from '@/components/ab/icons'
 import { Modal, ConfirmDialog } from '@/components/ab/Modal'
 import { useToast } from '@/components/ab/Toast'
@@ -10,10 +11,10 @@ import {
   useCreateMessageTemplate,
   useUpdateMessageTemplate,
   useDeleteMessageTemplate,
-  useMessageLogs,
+  useSentMessages,
   useSendMessage,
   type MessageTemplate,
-  type MessageLog,
+  type SentMessage,
 } from '@/lib/query/messages'
 import { useEmployees, type Employee } from '@/lib/query/employees'
 
@@ -55,13 +56,14 @@ function fmtDateTime(iso?: string): string {
 
 export default function MessagesPage() {
   const toast = useToast()
+  const router = useRouter()
   const [tab, setTab] = useState<SegTab>('logs')
 
   const { data: rawTemplates, isLoading: templatesLoading } = useMessageTemplates()
   const templates = unwrap<MessageTemplate>(rawTemplates)
 
-  const { data: logsRaw, isLoading: logsLoading } = useMessageLogs()
-  const logs = unwrap<MessageLog>(logsRaw)
+  const { data: logsRaw, isLoading: logsLoading } = useSentMessages()
+  const logs = unwrap<SentMessage>(logsRaw)
 
   const { data: employeesData } = useEmployees({ isActive: true })
   const employees: Employee[] = employeesData?.items ?? []
@@ -188,7 +190,7 @@ export default function MessagesPage() {
         title="메시지"
         right={
           <div className="head-actions">
-            <button className="btn btn-line btn-sm" onClick={() => toast('자동화 규칙 관리')}>
+            <button className="btn btn-line btn-sm" onClick={() => router.push('/admin/messages/automations')}>
               자동화 규칙
             </button>
             <button className="btn btn-ghost btn-sm" onClick={openCompose}>
@@ -238,21 +240,18 @@ export default function MessagesPage() {
             <thead>
               <tr>
                 <th>제목</th>
-                <th style={{ width: 110 }} className="c">
-                  읽음
-                </th>
+                <th style={{ width: 90 }} className="c">수신</th>
+                <th style={{ width: 90 }} className="c">읽음</th>
                 <th style={{ width: 150 }}>발송일시</th>
-                <th style={{ width: 100 }} className="c">
-                  상태
-                </th>
               </tr>
             </thead>
             <tbody>
               {logs.length === 0 ? (
-                <TableEmpty colSpan={4} message="수신한 메시지가 없습니다" />
+                <TableEmpty colSpan={4} message="발송한 메시지가 없습니다" />
               ) : (
                 logs.map((log) => {
-                  const isRead = !!log.readAt
+                  const showDetail = () =>
+                    toast(log.content ? `${log.title ?? '메시지'}: ${log.content.slice(0, 80)}` : (log.title ?? '메시지'))
                   return (
                     <tr key={log.id}>
                       <td className="lead">
@@ -260,29 +259,24 @@ export default function MessagesPage() {
                           className="tbl-link"
                           role="button"
                           tabIndex={0}
-                          onClick={() => toast(`'${log.title ?? '메시지'}' 상세`)}
+                          onClick={showDetail}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault()
-                              toast(`'${log.title ?? '메시지'}' 상세`)
+                              showDetail()
                             }
                           }}
                         >
                           {log.title ?? '—'}
                         </span>
                       </td>
+                      <td className="c"><span className="att-dur">{log.recipientCount ?? 0}명</span></td>
                       <td className="c">
-                        <span
-                          className="att-dur"
-                          style={{ color: isRead ? 'var(--ok)' : 'var(--fg-5)' }}
-                        >
-                          {isRead ? '읽음' : '안읽음'}
+                        <span className="att-dur" style={{ color: 'var(--ok)' }}>
+                          {log.readCount ?? 0}/{log.recipientCount ?? 0}
                         </span>
                       </td>
                       <td className="muted att-dur">{fmtDateTime(log.sentAt ?? log.createdAt)}</td>
-                      <td className="c">
-                        <Badge kind="b-done">발송됨</Badge>
-                      </td>
                     </tr>
                   )
                 })
@@ -505,7 +499,7 @@ export default function MessagesPage() {
             </div>
 
             <p style={{ fontSize: 11, color: 'var(--fg-5)', margin: '4px 0 0' }}>
-              치환 변수: {'#{employee}'} · {'#{team}'} · {'#{month}'} 사용 가능
+              치환 변수({'#{이름}'} · {'#{회사명}'} · {'#{날짜}'} · {'#{month}'})는 자동화 규칙 발송 시 적용됩니다
             </p>
           </div>
         </div>
@@ -558,13 +552,13 @@ export default function MessagesPage() {
                   className="ta"
                   value={templateForm.content}
                   onChange={(e) => setTemplateForm((f) => ({ ...f, content: e.target.value }))}
-                  placeholder="안녕하세요, #{employee}님."
+                  placeholder="안녕하세요, #{이름}님."
                   style={{ minHeight: 120 }}
                 />
               </span>
             </div>
             <Note title="치환 변수">
-              {'#{employee}'} · {'#{team}'} · {'#{month}'} 형식으로 입력하면 발송 시 자동 치환됩니다.
+              {'#{이름}'} · {'#{회사명}'} · {'#{날짜}'} · {'#{month}'} (또는 {'{{이름}}'} 형식) 으로 입력하면 자동화 발송 시 자동 치환됩니다.
             </Note>
           </div>
         </div>

@@ -14,6 +14,11 @@ const ACTION_LABELS: Record<string, string> = {
   ATTENDANCE_UPDATE: '출퇴근 수정',
   LEAVE_GRANT: '휴가 부여',
   SETTINGS_UPDATE: '설정 변경',
+  EMPLOYEE_CREATE: '직원 등록',
+  EMPLOYEE_DEACTIVATE: '직원 퇴사 처리',
+  DOCUMENT_APPROVED: '문서 최종 승인',
+  DOCUMENT_APPROVE_STEP: '문서 결재 승인',
+  DOCUMENT_REJECT: '문서 반려',
 }
 
 const ACTION_OPTIONS = Object.entries(ACTION_LABELS)

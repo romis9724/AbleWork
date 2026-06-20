@@ -24,6 +24,7 @@ import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import IconButton from '@mui/material/IconButton'
 import AddIcon from '@mui/icons-material/Add'
+import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import PageHeader from '@/components/common/PageHeader'
 import EmptyState from '@/components/common/EmptyState'
@@ -56,10 +57,18 @@ export default function StandardizationPage() {
     staleTime: 60_000,
   })
 
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+
   const saveMutation = useMutation({
     mutationFn: (d: unknown) => editing ? apiClient.patch(`/standardization-rules/${editing.id}`, d) : apiClient.post('/standardization-rules', d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['standardization-rules'] }); setOpen(false); setSnack({ open: true, msg: '저장됐습니다.', sev: 'success' }) },
     onError: () => setSnack({ open: true, msg: '저장에 실패했습니다.', sev: 'error' }),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/standardization-rules/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['standardization-rules'] }); setDeleteId(null); setSnack({ open: true, msg: '삭제됐습니다.', sev: 'success' }) },
+    onError: () => { setDeleteId(null); setSnack({ open: true, msg: '삭제에 실패했습니다.', sev: 'error' }) },
   })
 
   function openAdd() { setEditing(null); setForm(defaultForm); setOpen(true) }
@@ -84,7 +93,10 @@ export default function StandardizationPage() {
                   <TableCell>{TIME_RULES.find(t => t.value === r.startTimeRule)?.label ?? r.startTimeRule}</TableCell>
                   <TableCell>{TIME_RULES.find(t => t.value === r.endTimeRule)?.label ?? r.endTimeRule}</TableCell>
                   <TableCell>{r.isDefault && <Chip label="기본" color="primary" size="small" />}</TableCell>
-                  <TableCell><IconButton size="small" onClick={() => openEdit(r)}><EditIcon fontSize="small" /></IconButton></TableCell>
+                  <TableCell>
+                    <IconButton size="small" onClick={() => openEdit(r)}><EditIcon fontSize="small" /></IconButton>
+                    <IconButton size="small" color="error" onClick={() => setDeleteId(r.id)}><DeleteIcon fontSize="small" /></IconButton>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -110,6 +122,14 @@ export default function StandardizationPage() {
         <DialogActions>
           <Button onClick={() => setOpen(false)}>취소</Button>
           <Button onClick={() => saveMutation.mutate(form)} variant="contained" disabled={saveMutation.isPending}>저장</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={!!deleteId} onClose={() => setDeleteId(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>표준화 규칙 삭제</DialogTitle>
+        <DialogContent>이 표준화 규칙을 삭제하시겠습니까? 되돌릴 수 없습니다.</DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteId(null)}>취소</Button>
+          <Button onClick={() => deleteId && deleteMutation.mutate(deleteId)} color="error" variant="contained" disabled={deleteMutation.isPending}>삭제</Button>
         </DialogActions>
       </Dialog>
       <Snackbar open={snack.open} autoHideDuration={4000} onClose={() => setSnack(s => ({ ...s, open: false }))}><Alert severity={snack.sev}>{snack.msg}</Alert></Snackbar>

@@ -101,6 +101,29 @@ describe('renderTemplate', () => {
       '일반 공지입니다.',
     )
   })
+
+  it('#{변수} 문법도 치환한다 (FE 안내 형식)', () => {
+    expect(
+      renderTemplate('안녕하세요, #{이름}님. 이번 달은 #{month}입니다.', {
+        이름: '홍길동',
+        month: '6',
+      }),
+    ).toBe('안녕하세요, 홍길동님. 이번 달은 6입니다.')
+  })
+
+  it('#{employee} 별칭과 #{회사명}을 치환한다', () => {
+    expect(
+      renderTemplate('#{employee}님, #{회사명} 공지', { employee: '김직원', 회사명: '에이블' }),
+    ).toBe('김직원님, 에이블 공지')
+  })
+
+  it('{{}} 와 #{} 를 한 콘텐츠에서 함께 치환한다', () => {
+    expect(renderTemplate('{{이름}} / #{month}', { 이름: '홍', month: '6' })).toBe('홍 / 6')
+  })
+
+  it('#{} 미매칭 변수는 원문 유지', () => {
+    expect(renderTemplate('#{없음} 내용', { 이름: '홍' })).toBe('#{없음} 내용')
+  })
 })
 
 describe('날짜/시간 헬퍼', () => {

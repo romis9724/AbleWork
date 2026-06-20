@@ -50,7 +50,8 @@ export default function MyAttendancesPage() {
   const { start, end } = useMemo(monthRange, [])
   const employeeId = useAuthStore((s) => s.user?.employeeId)
   // 본인 기록만 조회 — 관리자가 직원 모드로 봐도 본인 출퇴근만 노출(서버도 EMPLOYEE는 강제 스코핑)
-  const { data, isLoading } = useAttendances({ startDate: start, endDate: end, employeeId })
+  // 한 달치 전체를 받기 위해 limit 상향(기본 20 → 100). 월 최대 ~31일이라 충분.
+  const { data, isLoading } = useAttendances({ startDate: start, endDate: end, employeeId, limit: '100' })
   const records = unwrap(data)
 
   return (

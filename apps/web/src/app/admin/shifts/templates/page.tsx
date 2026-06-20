@@ -11,13 +11,11 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
-import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -52,7 +50,6 @@ const schema = z.object({
   shiftTypeId: z.string().min(1, '근무일정 유형을 선택해주세요'),
   startTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요'),
   endTime: z.string().regex(TIME_REGEX, 'HH:MM 형식으로 입력해주세요'),
-  autoBreak: z.boolean(),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -81,15 +78,13 @@ export default function ShiftTemplatesPage() {
       name: '',
       shiftTypeId: '',
       startTime: '09:00',
-      endTime: '18:00',
-      autoBreak: false,
-    },
+      endTime: '18:00',    },
   })
 
   const isLoading = loadingTemplates || loadingTypes
 
   const openCreate = () => {
-    reset({ code: '', name: '', shiftTypeId: '', startTime: '09:00', endTime: '18:00', autoBreak: false })
+    reset({ code: '', name: '', shiftTypeId: '', startTime: '09:00', endTime: '18:00' })
     setDialog({ open: true, editing: null })
   }
 
@@ -99,9 +94,7 @@ export default function ShiftTemplatesPage() {
       name: template.name,
       shiftTypeId: template.shiftTypeId,
       startTime: template.startTime,
-      endTime: template.endTime,
-      autoBreak: false,
-    })
+      endTime: template.endTime,    })
     setDialog({ open: true, editing: template })
   }
 
@@ -113,7 +106,6 @@ export default function ShiftTemplatesPage() {
       shiftTypeId: values.shiftTypeId,
       startTime: values.startTime,
       endTime: values.endTime,
-      autoBreak: values.autoBreak,
       ...(values.code ? { code: values.code } : {}),
     }
 
@@ -345,17 +337,6 @@ export default function ShiftTemplatesPage() {
                 )}
               />
             </Box>
-
-            <Controller
-              name="autoBreak"
-              control={control}
-              render={({ field }) => (
-                <FormControlLabel
-                  control={<Switch checked={field.value} onChange={(e) => field.onChange(e.target.checked)} />}
-                  label="자동 휴게시간 사용"
-                />
-              )}
-            />
           </Box>
         </DialogContent>
         <DialogActions>

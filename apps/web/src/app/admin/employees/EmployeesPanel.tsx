@@ -1,11 +1,13 @@
 'use client'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { Badge, Emp, Seg, Toggle, TableEmpty, Pager, type BadgeKind } from '@/components/ab/atoms'
 import { I, HRI } from '@/components/ab/icons'
 import { ConfirmDialog } from '@/components/ab/Modal'
 import { useToast } from '@/components/ab/Toast'
 import { useDebounce } from '@/hooks/useDebounce'
+import apiClient from '@/lib/api-client'
 import {
   useEmployees,
   useCreateEmployee,
@@ -195,6 +197,74 @@ export default function EmployeesPanel() {
     toast('엑셀로 내보냈습니다')
   }
 
+  // 전체 직원 export: 현재 필터를 유지한 채 전체를 조회해 내보낸다(현재 페이지 한정 문제 해소)
+  async function handleExportAll() {
+    try {
+      const res = (await apiClient.get('/employees', {
+        params: {
+          search: debouncedSearch || undefined,
+          organizationId: organizationId || undefined,
+          positionId: positionId || undefined,
+          isActive: !showInactive,
+          limit: 10000,
+        },
+      })) as unknown as { items?: Employee[] }
+      handleExport(res.items?.length ? res.items : employees)
+    } catch {
+      handleExport(employees)
+      toast('전체 조회에 실패해 현재 페이지만 내보냈습니다')
+    }
+  }
+
+  // ── CSV 일괄 업로드 (D-5) ────────────────────────────────────────────────────
+  const qc = useQueryClient()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const CSV_HEADER = '이름,이메일,입사일(YYYY-MM-DD),고용형태,조직명,사번,전화'
+
+  async function handleUploadFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // 같은 파일 재선택 허용
+    if (!file) return
+    setUploading(true)
+    try {
+      const text = await file.text()
+      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+      if (lines.length < 2) {
+        toast('데이터 행이 없습니다. 헤더 + 1행 이상 필요합니다')
+        return
+      }
+      // 헤더는 무시하고 컬럼 순서 고정: 이름,이메일,입사일,고용형태,조직명,사번,전화
+      const rows = lines.slice(1).map((line) => {
+        const c = line.split(',').map((v) => v.trim())
+        return {
+          name: c[0] ?? '',
+          email: c[1] ?? '',
+          joinedAt: c[2] ?? '',
+          employmentType: c[3] || undefined,
+          organizationName: c[4] || undefined,
+          employeeNumber: c[5] || undefined,
+          phone: c[6] || undefined,
+        }
+      })
+      const res = (await apiClient.post('/employees/bulk', { rows })) as unknown as {
+        created: number
+        errors: { row: number; message: string }[]
+      }
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      if (res.errors.length === 0) {
+        toast(`${res.created}명을 일괄 등록했습니다`)
+      } else {
+        toast(`${res.created}명 등록 · ${res.errors.length}건 실패 (${res.errors[0].row}행: ${res.errors[0].message})`)
+      }
+    } catch {
+      toast('업로드 처리 중 오류가 발생했습니다 (CSV 형식 확인)')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const colCount = tab === 'work' ? 8 : 8
 
   return (
@@ -207,18 +277,25 @@ export default function EmployeesPanel() {
         <div className="head-actions">
           <button
             className="btn btn-line btn-sm"
-            onClick={() => {
-              handleExport(employees)
-              if (total > employees.length) {
-                toast(`현재 페이지 ${employees.length}건만 내보냈습니다. 전체 ${total}건은 페이지를 이동하며 내보내세요`)
-              }
-            }}
+            onClick={handleExportAll}
           >
             {I.down({ style: { marginRight: 7 } })}다운로드
           </button>
-          <button className="btn btn-line btn-sm" onClick={() => toast('엑셀 업로드 기능 준비 중입니다')}>
-            {HRI.up({ style: { marginRight: 7 } })}업로드
+          <button
+            className="btn btn-line btn-sm"
+            disabled={uploading}
+            title={`CSV 컬럼: ${CSV_HEADER}`}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {HRI.up({ style: { marginRight: 7 } })}{uploading ? '업로드 중…' : '업로드'}
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            style={{ display: 'none' }}
+            onChange={handleUploadFile}
+          />
           {canCreate && (
             <button className="btn btn-ghost btn-sm" onClick={() => setCreateOpen(true)}>
               {I.plus({ style: { marginRight: 6 } })}직원 추가하기

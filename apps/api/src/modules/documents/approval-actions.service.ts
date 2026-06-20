@@ -7,6 +7,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
+import { AuditService } from '../audit/audit.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { EVENTS } from '../../events/domain-events'
 import {
@@ -58,6 +59,7 @@ export class ApprovalActionsService {
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
     private readonly settings: CompanySettingsService,
+    private readonly audit: AuditService,
   ) {}
 
   // ── AP-03-01 승인 ────────────────────────────────────────────────────────────
@@ -155,6 +157,16 @@ export class ApprovalActionsService {
     })
 
     this.emitProgressEvents(companyId, document, result)
+
+    await this.audit.record({
+      companyId,
+      actorId: actor.employeeId,
+      action: result.document.status === DocStatus.APPROVED ? 'DOCUMENT_APPROVED' : 'DOCUMENT_APPROVE_STEP',
+      targetType: 'DOCUMENT',
+      targetId: document.id,
+      targetLabel: document.title,
+    })
+
     return result.document
   }
 
@@ -220,6 +232,15 @@ export class ApprovalActionsService {
       companyId,
       drafterId: document.drafterId,
       title: document.title,
+    })
+
+    await this.audit.record({
+      companyId,
+      actorId: actor.employeeId,
+      action: 'DOCUMENT_REJECT',
+      targetType: 'DOCUMENT',
+      targetId: document.id,
+      targetLabel: document.title,
     })
 
     return updated

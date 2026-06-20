@@ -27,11 +27,13 @@ import apiClient from '@/lib/api-client'
 import { useLeaveTypes } from '@/lib/query/leaves'
 import { useMessageTemplates, type MessageTemplate } from '@/lib/query/messages'
 
-interface MessageAutomation { id: string; name: string; automationType: string; triggerBasis: string; offsetDays: number; sendTime: string; isActive: boolean; leaveType?: { name: string }; template?: { name: string } }
+interface MessageAutomation { id: string; name: string; automationType: string; triggerBasis: string; offsetDays: number; sendTime: string; isActive: boolean; templateId?: string; leaveTypeId?: string | null; leaveType?: { name: string }; template?: { name: string } }
 
 export default function MessageAutomationsPage() {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [leaveTypeId, setLeaveTypeId] = useState('')
@@ -70,9 +72,21 @@ export default function MessageAutomationsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['message-automations'] }),
   })
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...d }: { id: string } & Record<string, unknown>) => apiClient.patch(`/messages/automations/${id}`, d),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['message-automations'] }); setOpen(false); setEditingId(null); setSnack({ open: true, msg: '자동화 규칙을 수정했습니다.', sev: 'success' }) },
+    onError: () => setSnack({ open: true, msg: '저장에 실패했습니다.', sev: 'error' }),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/messages/automations/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['message-automations'] }); setDeleteId(null); setSnack({ open: true, msg: '자동화 규칙을 삭제했습니다.', sev: 'success' }) },
+    onError: () => { setDeleteId(null); setSnack({ open: true, msg: '삭제에 실패했습니다.', sev: 'error' }) },
+  })
+
   function handleSave() {
     if (!name.trim() || !templateId) return
-    createMutation.mutate({
+    const payload = {
       name: name.trim(),
       automationType: 'leave_reminder',
       templateId,
@@ -80,12 +94,25 @@ export default function MessageAutomationsPage() {
       triggerBasis: trigger,
       offsetDays: Number(offset),
       sendTime,
-      startsAt: new Date().toISOString(),
-      isActive: true,
-    })
+    }
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, ...payload })
+    } else {
+      createMutation.mutate({ ...payload, startsAt: new Date().toISOString(), isActive: true })
+    }
   }
 
-  function openAdd() { setName(''); setTemplateId(''); setLeaveTypeId(''); setTrigger('leave_start'); setOffset('-1'); setSendTime('09:00'); setOpen(true) }
+  function openAdd() { setEditingId(null); setName(''); setTemplateId(''); setLeaveTypeId(''); setTrigger('leave_start'); setOffset('-1'); setSendTime('09:00'); setOpen(true) }
+  function openEdit(a: MessageAutomation) {
+    setEditingId(a.id)
+    setName(a.name)
+    setTemplateId(a.templateId ?? '')
+    setLeaveTypeId(a.leaveTypeId ?? '')
+    setTrigger(a.triggerBasis)
+    setOffset(String(a.offsetDays))
+    setSendTime(a.sendTime?.slice(0, 5) || '09:00')
+    setOpen(true)
+  }
 
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress /></Box>
 
@@ -105,8 +132,12 @@ export default function MessageAutomationsPage() {
                     <Chip label={`${a.sendTime} 발송`} size="small" variant="outlined" />
                   </Box>
                 </CardContent>
-                <CardActions>
+                <CardActions sx={{ justifyContent: 'space-between' }}>
                   <FormControlLabel control={<Switch checked={a.isActive} size="small" onChange={e => toggleMutation.mutate({ id: a.id, isActive: e.target.checked })} />} label={a.isActive ? '활성' : '비활성'} />
+                  <Box>
+                    <Button size="small" onClick={() => openEdit(a)}>수정</Button>
+                    <Button size="small" color="error" onClick={() => setDeleteId(a.id)}>삭제</Button>
+                  </Box>
                 </CardActions>
               </Card>
             </Grid>
@@ -114,7 +145,7 @@ export default function MessageAutomationsPage() {
         </Grid>
       )}
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>자동화 규칙 추가</DialogTitle>
+        <DialogTitle>{editingId ? '자동화 규칙 수정' : '자동화 규칙 추가'}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
           <TextField label="규칙명" required value={name} onChange={e => setName(e.target.value)} fullWidth autoFocus />
           <TextField label="메시지 템플릿" required select value={templateId} onChange={e => setTemplateId(e.target.value)} fullWidth helperText={templates.length === 0 ? '먼저 메시지 템플릿을 생성하세요.' : undefined}>
@@ -133,7 +164,15 @@ export default function MessageAutomationsPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>취소</Button>
-          <Button onClick={handleSave} variant="contained" disabled={createMutation.isPending || !name.trim() || !templateId}>추가</Button>
+          <Button onClick={handleSave} variant="contained" disabled={createMutation.isPending || updateMutation.isPending || !name.trim() || !templateId}>{editingId ? '수정' : '추가'}</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={!!deleteId} onClose={() => setDeleteId(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>자동화 규칙 삭제</DialogTitle>
+        <DialogContent>이 자동화 규칙을 삭제하시겠습니까? 되돌릴 수 없습니다.</DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteId(null)}>취소</Button>
+          <Button onClick={() => deleteId && deleteMutation.mutate(deleteId)} color="error" variant="contained" disabled={deleteMutation.isPending}>삭제</Button>
         </DialogActions>
       </Dialog>
       <Snackbar open={snack.open} autoHideDuration={4000} onClose={() => setSnack(s => ({ ...s, open: false }))}><Alert severity={snack.sev}>{snack.msg}</Alert></Snackbar>

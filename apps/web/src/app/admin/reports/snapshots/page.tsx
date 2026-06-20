@@ -27,6 +27,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog'
 import apiClient from '@/lib/api-client'
 
 interface ReportSnapshot { id: string; name?: string | null; periodStart: string; periodEnd: string; isLocked: boolean; createdAt: string }
+interface SnapshotRow { employeeId: string; employeeName?: string; totalWorkDays?: number; lateCount?: number; earlyLeaveCount?: number; absentCount?: number; totalWorkMinutes?: number }
 
 export default function ReportSnapshotsPage() {
   const qc = useQueryClient()
@@ -58,6 +59,15 @@ export default function ReportSnapshotsPage() {
     onError: () => setSnack({ open: true, msg: '마감에 실패했습니다.', sev: 'error' }),
   })
 
+  // 행 보기 (저장된 직원별 집계)
+  const [viewTarget, setViewTarget] = useState<ReportSnapshot | null>(null)
+  const { data: rowsData, isLoading: rowsLoading } = useQuery({
+    queryKey: ['snapshot-rows', viewTarget?.id],
+    queryFn: () => apiClient.get(`/reports/snapshots/${viewTarget!.id}/rows`) as Promise<{ rows: SnapshotRow[] }>,
+    enabled: !!viewTarget,
+  })
+  const snapshotRows: SnapshotRow[] = rowsData?.rows ?? []
+
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress /></Box>
 
   return (
@@ -74,7 +84,10 @@ export default function ReportSnapshotsPage() {
                   <TableCell>{s.periodStart?.slice(0,10)} ~ {s.periodEnd?.slice(0,10)}</TableCell>
                   <TableCell>{new Date(s.createdAt).toLocaleDateString('ko-KR')}</TableCell>
                   <TableCell><Chip label={s.isLocked ? '마감' : '열림'} color={s.isLocked ? 'default' : 'success'} size="small" /></TableCell>
-                  <TableCell>{!s.isLocked && <Button size="small" startIcon={<LockIcon />} onClick={() => setLockTarget(s)}>마감</Button>}</TableCell>
+                  <TableCell>
+                    <Button size="small" onClick={() => setViewTarget(s)}>행 보기</Button>
+                    {!s.isLocked && <Button size="small" startIcon={<LockIcon />} onClick={() => setLockTarget(s)}>마감</Button>}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -113,6 +126,34 @@ export default function ReportSnapshotsPage() {
         </DialogActions>
       </Dialog>
       <ConfirmDialog open={!!lockTarget} title="스냅샷 마감" message="마감 후에는 수정할 수 없습니다. 계속하시겠습니까?" confirmLabel="마감" onConfirm={() => lockTarget && lockMutation.mutate(lockTarget.id)} onCancel={() => setLockTarget(null)} />
+
+      <Dialog open={!!viewTarget} onClose={() => setViewTarget(null)} maxWidth="md" fullWidth>
+        <DialogTitle>{viewTarget?.name ?? '스냅샷'} — 직원별 집계</DialogTitle>
+        <DialogContent>
+          {rowsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} /></Box>
+          ) : snapshotRows.length === 0 ? (
+            <Box sx={{ py: 4, textAlign: 'center', color: 'text.secondary' }}>저장된 집계 행이 없습니다.</Box>
+          ) : (
+            <Table size="small">
+              <TableHead><TableRow><TableCell>직원</TableCell><TableCell align="right">근무일</TableCell><TableCell align="right">지각</TableCell><TableCell align="right">조퇴</TableCell><TableCell align="right">결근</TableCell><TableCell align="right">실근무(h)</TableCell></TableRow></TableHead>
+              <TableBody>
+                {snapshotRows.map((r) => (
+                  <TableRow key={r.employeeId}>
+                    <TableCell>{r.employeeName ?? r.employeeId}</TableCell>
+                    <TableCell align="right">{r.totalWorkDays ?? 0}</TableCell>
+                    <TableCell align="right">{r.lateCount ?? 0}</TableCell>
+                    <TableCell align="right">{r.earlyLeaveCount ?? 0}</TableCell>
+                    <TableCell align="right">{r.absentCount ?? 0}</TableCell>
+                    <TableCell align="right">{Math.round((r.totalWorkMinutes ?? 0) / 6) / 10}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setViewTarget(null)}>닫기</Button></DialogActions>
+      </Dialog>
       <Snackbar open={snack.open} autoHideDuration={4000} onClose={() => setSnack(s => ({ ...s, open: false }))}><Alert severity={snack.sev}>{snack.msg}</Alert></Snackbar>
     </>
   )

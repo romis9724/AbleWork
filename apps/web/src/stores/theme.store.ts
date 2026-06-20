@@ -1,21 +1,19 @@
 'use client'
 import { create } from 'zustand'
-import { DEFAULT_THEME_ID, isThemeId, THEME_COOKIE, type ThemeId } from '@/theme/tokens'
+import { DEFAULT_THEME_ID, THEME_COOKIE, type ThemeId } from '@/theme/tokens'
 
 /**
  * 테마 선택 상태.
  *
  * 영속화: 쿠키(`ablework-theme`, 1년). 레이아웃(서버)이 같은 쿠키를 읽어
- * <html data-theme> 와 초기 MUI 테마를 동일하게 렌더 → FOUC/하이드레이션 불일치 없음.
- * 전환 시 즉시 document.documentElement.dataset.theme 와 쿠키를 갱신한다.
+ * <html data-theme> 와 초기 MUI 테마를 동일하게 렌더 → FOUC 없음.
+ *
+ * 초기값은 반드시 결정적(DEFAULT_THEME_ID)이어야 한다 — 서버 렌더와 클라이언트
+ * 첫 렌더가 동일해야 하이드레이션 불일치가 없다. 클라이언트에서 cookie 를 직접 읽어
+ * 초기화하면 서버(DEFAULT)와 어긋나 ThemeSwitcher 라벨 등에서 하이드레이션 에러가
+ * 발생하고, 그 트리 재생성 과정에서 첫 상호작용(예: 로그인 클릭)이 유실된다.
+ * 쿠키 테마 복원은 ThemeRegistry 가 마운트 후 hydrate(initialThemeId) 로 수행한다.
  */
-
-function readThemeCookie(): ThemeId {
-  if (typeof document === 'undefined') return DEFAULT_THEME_ID
-  const match = document.cookie.match(/(?:^|;\s*)ablework-theme=([^;]+)/)
-  const value = match?.[1] ? decodeURIComponent(match[1]) : ''
-  return isThemeId(value) ? value : DEFAULT_THEME_ID
-}
 
 function persist(id: ThemeId): void {
   if (typeof document === 'undefined') return
@@ -33,7 +31,7 @@ interface ThemeState {
 }
 
 export const useThemeStore = create<ThemeState>((set) => ({
-  themeId: readThemeCookie(),
+  themeId: DEFAULT_THEME_ID,
   setTheme: (id) => {
     persist(id)
     set({ themeId: id })

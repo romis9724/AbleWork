@@ -479,14 +479,19 @@ export class AttendancesService {
 
   // ── 현재 근무 현황 ───────────────────────────────────────────────────────────
 
-  async getNowAtWork(companyId: string) {
-    // 오늘 날짜 기준 00:00 ~ 현재까지 출근한 직원
+  async getNowAtWork(companyId: string, organizationId?: string) {
+    // 오늘 날짜 기준 00:00 ~ 현재까지 출근한 직원 (조직 필터는 주 소속 기준)
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
 
     const openAttendances = await this.prisma.attendance.findMany({
       where: {
-        employee: { companyId },
+        employee: {
+          companyId,
+          ...(organizationId && {
+            organizations: { some: { organizationId, isPrimary: true } },
+          }),
+        },
         clockInAt: { gte: todayStart },
         clockOutAt: null,
       },
@@ -623,10 +628,18 @@ export class AttendancesService {
     companyId: string,
     _employeeId: string,
     clockInAt: Date,
-    shift: { startAt: Date } | null,
+    shift: {
+      startAt: Date
+      shiftType?: { isDeemedWork: boolean; noClockInRequired: boolean } | null
+    } | null,
   ): Promise<{ status: string; isOncall: boolean }> {
     if (!shift) {
       return { status: 'oncall', isOncall: true }
+    }
+
+    // 간주근로(isDeemedWork) 유형은 출근 시각과 무관하게 deemed_work 로 판정
+    if (shift.shiftType?.isDeemedWork) {
+      return { status: 'deemed_work', isOncall: false }
     }
 
     const [lateGrace, clockinBefore] = await Promise.all([
@@ -703,7 +716,12 @@ export class AttendancesService {
   private async findShiftForClockIn(
     employeeId: string,
     clockInAt: Date,
-  ): Promise<{ id: string; startAt: Date; endAt: Date } | null> {
+  ): Promise<{
+    id: string
+    startAt: Date
+    endAt: Date
+    shiftType: { isDeemedWork: boolean; noClockInRequired: boolean } | null
+  } | null> {
     const dayStart = new Date(clockInAt)
     dayStart.setHours(0, 0, 0, 0)
     const dayEnd = new Date(clockInAt)
@@ -715,7 +733,12 @@ export class AttendancesService {
         startAt: { gte: dayStart, lte: dayEnd },
       },
       orderBy: { startAt: 'asc' },
-      select: { id: true, startAt: true, endAt: true },
+      select: {
+        id: true,
+        startAt: true,
+        endAt: true,
+        shiftType: { select: { isDeemedWork: true, noClockInRequired: true } },
+      },
     })
   }
 

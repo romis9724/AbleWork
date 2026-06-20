@@ -66,6 +66,26 @@ export const useMessageLogs = () =>
     staleTime: 30_000,
   })
 
+/** 관리자 회사 발송 이력 (수신자 기준이 아닌 회사 전체 발송 메시지) */
+export interface SentMessage {
+  id: string
+  title?: string
+  type?: string
+  content?: string
+  sentAt?: string
+  createdAt?: string
+  recipientCount?: number
+  readCount?: number
+}
+
+export const useSentMessages = () =>
+  useQuery({
+    queryKey: [...LOGS_KEY, 'sent'],
+    queryFn: () =>
+      apiClient.get('/messages/sent') as Promise<SentMessage[] | { items: SentMessage[] }>,
+    staleTime: 30_000,
+  })
+
 export interface SendMessagePayload {
   title: string
   content: string

@@ -82,11 +82,16 @@ export class ReportsService {
     companyId: string,
     filter: ReportFilterDto,
   ): Promise<EmployeeReportRow[]> {
-    // TODO(lateThresholdMinutes/earlyLeaveThresholdMinutes): 지각/조퇴 판정이
-    // attendance.status 기반이라 분 단위 임곗값 필터를 즉시 적용할 수 없음.
-    // 근무일정(shift) 시작/종료 시각과 조인해 지각/조퇴 '분'을 산출할 수 있게 되면
-    // lateCount/earlyLeaveCount 집계에 임곗값을 반영할 것.
-    const { startDate, endDate, organizationId, employeeId } = filter
+    // 지각/조퇴 임곗값: 지정 시 근무일정(shift) 시작/종료 시각과 비교해 '분' 단위로 재판정한다.
+    // 미지정 시 저장된 attendance.status('late'/'early_leave') 기준을 그대로 사용한다.
+    const {
+      startDate,
+      endDate,
+      organizationId,
+      employeeId,
+      lateThresholdMinutes,
+      earlyLeaveThresholdMinutes,
+    } = filter
     const start = new Date(startDate)
     const end = new Date(endDate)
 
@@ -219,8 +224,18 @@ export class ReportsService {
         row.totalWorkDays++
       }
       if (att.status === 'normal') row.normalCount++
-      if (att.status === 'late') row.lateCount++
-      if (att.status === 'early_leave') row.earlyLeaveCount++
+      // 지각: 임곗값 지정 시 (출근시각 − 일정시작) 분이 임곗값 초과일 때만 집계
+      if (lateThresholdMinutes != null && att.shift) {
+        if (this.diffMinutes(att.shift.startAt, att.clockInAt) > lateThresholdMinutes) row.lateCount++
+      } else if (att.status === 'late') {
+        row.lateCount++
+      }
+      // 조퇴: 임곗값 지정 시 (일정종료 − 퇴근시각) 분이 임곗값 초과일 때만 집계
+      if (earlyLeaveThresholdMinutes != null && att.shift && att.clockOutAt != null) {
+        if (this.diffMinutes(att.clockOutAt, att.shift.endAt) > earlyLeaveThresholdMinutes) row.earlyLeaveCount++
+      } else if (att.status === 'early_leave') {
+        row.earlyLeaveCount++
+      }
       if (att.status === 'absent') row.absentCount++
       if (att.clockOutAt == null && att.status !== 'absent') {
         row.missingClockOutCount++ // 출근만 있고 퇴근 없는 건
@@ -471,6 +486,31 @@ export class ReportsService {
     }
 
     return snapshot
+  }
+
+  // ── 스냅샷 행(직원별 집계) 조회 ──────────────────────────────────────────────
+
+  async findSnapshotRows(companyId: string, snapshotId: string) {
+    const snapshot = await this.prisma.reportSnapshot.findFirst({
+      where: { id: snapshotId, companyId },
+    })
+    if (!snapshot) {
+      throw new NotFoundException({
+        code: 'SNAPSHOT_NOT_FOUND',
+        message: '스냅샷을 찾을 수 없습니다.',
+      })
+    }
+    const rows = await this.prisma.reportSnapshotRow.findMany({
+      where: { snapshotId },
+      orderBy: { id: 'asc' },
+    })
+    return {
+      snapshot: { id: snapshot.id, name: snapshot.name, isLocked: snapshot.isLocked },
+      rows: rows.map((r) => ({
+        employeeId: r.employeeId,
+        ...((r.values ?? {}) as Record<string, unknown>),
+      })),
+    }
   }
 
   // ── 스냅샷 잠금 ───────────────────────────────────────────────────────────

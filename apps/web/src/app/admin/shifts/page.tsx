@@ -11,6 +11,7 @@ import {
   useShiftTemplates,
   useCreateShift,
   useUpdateShift,
+  useDeleteShift,
   useConfirmShift,
   useUnconfirmShift,
   type Shift,
@@ -46,8 +47,11 @@ function getMonday(date: Date): Date {
   const diff = day === 0 ? -6 : 1 - day
   return addDays(d, diff)
 }
-function toHHMM(iso: string): string {
-  const d = new Date(iso)
+function toHHMM(value: string): string {
+  // 이미 HH:mm 이면 그대로, ISO/datetime 이면 로컬 시각으로 변환.
+  if (TIME_REGEX.test(value)) return value
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return value
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 function weekLabel(weekStart: Date): string {
@@ -117,6 +121,7 @@ export default function ShiftsPage() {
   const [form, setForm] = useState<ShiftForm>(emptyForm)
   const [addTab, setAddTab] = useState<AddTab>('직원 기준')
   const [confirmTarget, setConfirmTarget] = useState<Shift | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Shift | null>(null)
 
   const { user } = useAuthStore()
   const canUnconfirm =
@@ -130,7 +135,12 @@ export default function ShiftsPage() {
 
   const { data: shifts = [], isLoading } = useShifts(shiftsParams)
   const { data: shiftTypes = [] } = useShiftTypes()
-  const { data: templates = [] } = useShiftTemplates()
+  const { data: rawTemplates = [] } = useShiftTemplates()
+  // 템플릿 시간은 API 가 ISO(1970-01-01T..Z)로 주므로 표시·폼 주입·저장 전 HH:mm 으로 정규화한다.
+  const templates = useMemo(
+    () => rawTemplates.map((t) => ({ ...t, startTime: toHHMM(t.startTime), endTime: toHHMM(t.endTime) })),
+    [rawTemplates],
+  )
   const { data: employeeData } = useEmployees({ limit: 200 })
   const employees = employeeData?.items ?? []
   const { data: organizations = [] } = useOrganizations()
@@ -142,6 +152,7 @@ export default function ShiftsPage() {
 
   const createMutation = useCreateShift()
   const updateMutation = useUpdateShift()
+  const deleteMutation = useDeleteShift()
   const confirmMutation = useConfirmShift()
   const unconfirmMutation = useUnconfirmShift()
 
@@ -217,6 +228,19 @@ export default function ShiftsPage() {
   function closeModal() {
     setModalOpen(false)
     setEditing(null)
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return
+    try {
+      await deleteMutation.mutateAsync(deleteTarget.id)
+      toast('근무일정을 삭제했습니다')
+      setDeleteTarget(null)
+      closeModal()
+    } catch {
+      toast('삭제 중 오류가 발생했습니다 (확정된 일정은 삭제할 수 없습니다)')
+      setDeleteTarget(null)
+    }
   }
 
   function patch(p: Partial<ShiftForm>) {
@@ -585,6 +609,16 @@ export default function ShiftsPage() {
         maxWidth={820}
         footer={
           <>
+            {editing && editing.status !== 'confirmed' && (
+              <button
+                className="btn btn-line"
+                style={{ minWidth: 110, color: 'var(--err)', borderColor: 'rgba(255,127,127,0.4)', marginRight: 'auto' }}
+                disabled={isSaving || deleteMutation.isPending}
+                onClick={() => setDeleteTarget(editing)}
+              >
+                삭제
+              </button>
+            )}
             <button className="btn btn-line" style={{ minWidth: 110 }} onClick={closeModal}>
               {editing ? '취소' : '닫기'}
             </button>
@@ -836,6 +870,15 @@ export default function ShiftsPage() {
         confirmLabel="확정"
         onConfirm={() => confirmTarget && handleConfirm(confirmTarget)}
         onCancel={() => setConfirmTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="근무일정 삭제"
+        message="이 근무일정을 삭제하시겠습니까? 되돌릴 수 없습니다."
+        confirmLabel="삭제"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
       />
     </>
   )

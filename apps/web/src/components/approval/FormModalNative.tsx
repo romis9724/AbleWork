@@ -11,10 +11,18 @@ import { Radio, Toggle } from '@/components/ab/atoms'
 import {
   useCreateDocumentForm,
   useFormCategories,
+  useSharedApprovalLines,
   useUpdateDocumentForm,
   type DocumentForm,
   type FormVisibilityScope,
 } from '@/lib/query/documents'
+import { useEmployees } from '@/lib/query/employees'
+import {
+  DocumentFieldType,
+  DOCUMENT_FIELD_TYPE_LABEL,
+  readFormFields,
+  type DocumentFieldDef,
+} from '@ablework/shared-constants'
 
 interface Props {
   form?: DocumentForm | null
@@ -36,6 +44,9 @@ export default function FormModalNative({ form, mode, onClose }: Props) {
   const toast = useToast()
   const isEdit = mode === 'edit'
   const { data: categories = [] } = useFormCategories()
+  const { data: sharedLines = [] } = useSharedApprovalLines()
+  const { data: empData } = useEmployees({ isActive: true, limit: 200 })
+  const employees = empData?.items ?? []
   const createMutation = useCreateDocumentForm()
   const updateMutation = useUpdateDocumentForm()
 
@@ -48,6 +59,20 @@ export default function FormModalNative({ form, mode, onClose }: Props) {
     form?.visibilityScope ?? 'DEPARTMENT',
   )
   const [description, setDescription] = useState(form?.description ?? '')
+  // 결재 옵션 (C-4): 전결 허용·반려 재기안 허용·압축파일 업로드 허용
+  const [allowPreApproval, setAllowPreApproval] = useState(form?.allowPreApproval ?? false)
+  const [allowReDraft, setAllowReDraft] = useState(form?.allowReDraft ?? false)
+  const [allowZipUpload, setAllowZipUpload] = useState(form?.allowZipUpload ?? false)
+  // C-4b: 기본 결재선·양식 담당자·동적 양식 항목
+  const [defaultLineId, setDefaultLineId] = useState(form?.defaultLineId ?? '')
+  const [formOwnerId, setFormOwnerId] = useState(form?.formOwnerId ?? '')
+  const [fields, setFields] = useState<DocumentFieldDef[]>(() => readFormFields(form?.fieldsSchema))
+
+  const addField = () =>
+    setFields((fs) => [...fs, { key: `field${fs.length + 1}`, label: '', type: DocumentFieldType.TEXT, required: false }])
+  const removeField = (i: number) => setFields((fs) => fs.filter((_, idx) => idx !== i))
+  const updateField = (i: number, patch: Partial<DocumentFieldDef>) =>
+    setFields((fs) => fs.map((f, idx) => (idx === i ? { ...f, ...patch } : f)))
 
   const busy = createMutation.isPending || updateMutation.isPending
 
@@ -61,6 +86,12 @@ export default function FormModalNative({ form, mode, onClose }: Props) {
       isActive,
       visibilityScope,
       description: description.trim() || null,
+      allowPreApproval,
+      allowReDraft,
+      allowZipUpload,
+      defaultLineId: defaultLineId || null,
+      formOwnerId: formOwnerId || null,
+      fieldsSchema: { fields: fields.filter((f) => f.label.trim() && f.key.trim()) },
     }
     try {
       if (isEdit && form) {
@@ -154,6 +185,60 @@ export default function FormModalNative({ form, mode, onClose }: Props) {
               <span className="fk">설명</span>
               <span className="fv" style={{ width: '100%' }}>
                 <input className="inp-block" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="양식 용도에 대한 간단한 설명 (선택)" />
+              </span>
+            </div>
+
+            <div className="doc-field">
+              <span className="fk">결재 옵션</span>
+              <span className="fv">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <Toggle on={allowPreApproval} onChange={setAllowPreApproval} label="전결 허용 (상위 결재자가 즉시 최종 승인)" />
+                  <Toggle on={allowReDraft} onChange={setAllowReDraft} label="반려 후 재기안 허용" />
+                  <Toggle on={allowZipUpload} onChange={setAllowZipUpload} label="압축파일(zip) 업로드 허용" />
+                </div>
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 40px' }}>
+              <div className="doc-field">
+                <span className="fk">기본 결재선</span>
+                <span className="fv">
+                  <select className="sel" value={defaultLineId} onChange={(e) => setDefaultLineId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
+                    <option value="">없음 (상신 시 직접 구성)</option>
+                    {sharedLines.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </span>
+              </div>
+              <div className="doc-field">
+                <span className="fk">양식 담당자</span>
+                <span className="fv">
+                  <select className="sel" value={formOwnerId} onChange={(e) => setFormOwnerId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
+                    <option value="">미지정</option>
+                    {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                  </select>
+                </span>
+              </div>
+            </div>
+
+            <div className="doc-field">
+              <span className="fk">양식 항목</span>
+              <span className="fv" style={{ width: '100%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {fields.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input className="inp-block" style={{ width: 120 }} value={f.key} onChange={(e) => updateField(i, { key: e.target.value })} placeholder="키" />
+                      <input className="inp-block" style={{ flex: 1, minWidth: 140 }} value={f.label} onChange={(e) => updateField(i, { label: e.target.value })} placeholder="항목 이름" />
+                      <select className="sel" style={{ width: 130 }} value={f.type} onChange={(e) => updateField(i, { type: e.target.value as DocumentFieldDef['type'] })}>
+                        {Object.values(DocumentFieldType).map((t) => <option key={t} value={t}>{DOCUMENT_FIELD_TYPE_LABEL[t]}</option>)}
+                      </select>
+                      <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input type="checkbox" checked={f.required} onChange={(e) => updateField(i, { required: e.target.checked })} />필수
+                      </label>
+                      <button type="button" className="btn btn-line btn-sm" onClick={() => removeField(i)}>삭제</button>
+                    </div>
+                  ))}
+                  <button type="button" className="btn btn-line btn-sm" style={{ alignSelf: 'flex-start' }} onClick={addField}>＋ 항목 추가</button>
+                </div>
               </span>
             </div>
           </div>

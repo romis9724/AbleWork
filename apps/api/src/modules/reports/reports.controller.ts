@@ -98,6 +98,13 @@ export class ReportsController {
     return this.reportsService.findSnapshots(companyId, filter)
   }
 
+  // ── 스냅샷 행(직원별 집계) 조회 ──────────────────────────────────────────────
+  @Get('snapshots/:id/rows')
+  @ApiOperation({ summary: '리포트 스냅샷 직원별 행 조회' })
+  findSnapshotRows(@CompanyId() companyId: string, @Param('id') snapshotId: string) {
+    return this.reportsService.findSnapshotRows(companyId, snapshotId)
+  }
+
   // ── 스냅샷 생성 ───────────────────────────────────────────────────────────
 
   @Post('snapshots')

@@ -1,5 +1,6 @@
 'use client'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNowAtWork, useAttendances, type Attendance, type NowAtWork } from '@/lib/query/attendances'
 import { useRequests, useApproveRequest, useRejectRequest, type Request } from '@/lib/query/requests'
 import { PageHead, KpiGrid, Kpi, CardBox } from '@/components/ab/Page'
@@ -31,7 +32,14 @@ function unwrap<T>(raw: unknown): T[] {
 export default function DashboardPage() {
   const toast = useToast()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const todayStr = today()
+
+  const handleRefresh = async () => {
+    // 대시보드가 의존하는 활성 쿼리(근무현황·출퇴근·요청)를 모두 무효화해 실제로 재조회한다.
+    await queryClient.invalidateQueries()
+    toast('현황을 새로고침했습니다')
+  }
 
   const { data: nowRaw } = useNowAtWork()
   const nowItems: NowAtWork[] = nowRaw?.items ?? []
@@ -65,7 +73,7 @@ export default function DashboardPage() {
         right={
           <span className="page-stamp">
             {new Date().toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })} 기준
-            <span className="rf" onClick={() => toast('현황을 새로고침했습니다')}>{I.refresh()}</span>
+            <span className="rf" onClick={handleRefresh}>{I.refresh()}</span>
           </span>
         }
       />
