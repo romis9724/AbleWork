@@ -42,14 +42,14 @@
 | **B-4** | 휴가 | 발생규칙 수정 버튼 없음(BE `PATCH` 존재) | FE-MISSING | MED | ✅ | `LeaveAccrualRulesPanel.tsx`(useUpdateAccrualRule·openEditRule items 역매핑 prefill·edit 겸용 다이얼로그·수정 버튼) | 규칙 수정→반영 (typecheck✅, 동작=E2E #19). (`/run?year`는 별도 잔여) |
 | **B-5** | 요청 | 승인규칙 편집기 6개 유형 누락 + scopeOrgIds/scopePositionIds UI 없음 | FE-MISSING | MED | ✅ | `RequestRulesPanel.tsx`(요청유형 7종 추가 + org/직무 scope 멀티셀렉트·prefill·payload) | 누락 유형 규칙 생성 + 조직/직무 범위 지정 (typecheck✅) |
 | **B-6** | 요청 | me/requests OFFSITE_WORK·CUSTOM 신청 경로 없음(BE 매핑 존재) | FE-MISSING | MED | ✅ | `offsite-custom-request-dialogs.tsx`(신규)+`page.tsx`(union·MENU_GROUPS·렌더) | 외근/출장·기타 신청→document 자동생성 (**동작검증: 201 + 내 요청 목록 반영**) |
-| **C-1** | 전자결재 | 전단계 반려(return-prev) 버튼 없음(BE 완성) | FE-MISSING | HIGH | ✅ | `components/approval/DocModal.tsx`(hasPrevFlowStep+버튼) | 전단계 반려→이전 결재자에 반환, 이후 CANCELLED (typecheck✅, 동작=E2E #19 대기) |
-| **C-2** | 전자결재 | 결재취소(cancel-approval) 버튼 없음(BE 완성) | FE-MISSING | HIGH | ✅ | `DocModal.tsx`(runStepAction stepId 파라미터화·myActedStep·결재취소 버튼) | 본인 처리 단계 취소→이전 단계 복원 (typecheck✅, 동작=E2E #19 대기) |
-| **C-3** | 전자결재 | RECALLED/REJECTED 재상신 경로 없음(view만 열림) | FE-MISSING | HIGH | ✅ | `DocModal.tsx`(isEditableMine·canReDraft·handleResubmit·재상신 버튼) | 회수/반려 문서 수정→재상신→PENDING (typecheck✅, REJECTED는 allowReDraft 게이트, 동작=E2E #19 대기) |
+| **C-1** | 전자결재 | 전단계 반려(return-prev) 버튼 없음(BE 완성) | FE-MISSING | HIGH | ✅ | `components/approval/DocModal.tsx`(hasPrevFlowStep+버튼) | 전단계 반려→이전 결재자에 반환, 이후 CANCELLED (typecheck✅, 동작 E2E ✅) |
+| **C-2** | 전자결재 | 결재취소(cancel-approval) 버튼 없음(BE 완성) | FE-MISSING | HIGH | ✅ | `DocModal.tsx`(runStepAction stepId 파라미터화·myActedStep·결재취소 버튼) | 본인 처리 단계 취소→이전 단계 복원 (typecheck✅, 동작 E2E ✅) |
+| **C-3** | 전자결재 | RECALLED/REJECTED 재상신 경로 없음(view만 열림) | FE-MISSING | HIGH | ✅ | `DocModal.tsx`(isEditableMine·canReDraft·handleResubmit·재상신 버튼) | 회수/반려 문서 수정→재상신→PENDING (typecheck✅, REJECTED는 allowReDraft 게이트, 동작 E2E ✅) |
 | **C-4** | 전자결재 | FormModalNative 핵심 필드 편집 불가(allowZipUpload·allowReDraft·allowPreApproval·fieldsSchema·defaultLineId·formOwnerId) | FE-MISSING | HIGH | ✅ | `FormModalNative.tsx`(3토글 + 기본결재선·양식담당자 select + 동적 양식항목 빌더(key/label/type/required)) | 전결/재기안/zip + 기본결재선·담당자·동적필드 설정→저장 (typecheck✅) |
 | **C-5** | 전자결재 | 공통 관리 5토글 저장 안 됨(.strip()로 무시) | SUPERFICIAL | HIGH | ✅ | `company-settings.controller.ts`(PatchSettingsSchema +5)·`company-settings.service.ts`(MAP+DEFAULTS) | 5토글 PATCH→GET 영속 (curl 검증완료: upperLineChange·allowZipUpload·mobilePush·emailNotify·userDisplay) |
 | **C-6** | 전자결재 | 기안 시 공용 결재선 선택 UI 없음(sharedLineId 미전달) | FE-MISSING | MED | ✅ | `DocModal.tsx`(useSharedApprovalLines + 공용결재선 select·applySharedLine) | 공용결재선 선택→steps prefill (typecheck✅, 동작=E2E #19) |
-| **C-7** | 전자결재 | DEPT_RECEIVER 반송(bounce) 버튼 없음(BE 완성) | FE-MISSING | MED | ✅ | `DocModal.tsx`(canReceive DEPT_RECEIVER 분기 반송 버튼) | 부서수신 반송→BOUNCED (typecheck✅, 동작=E2E #19 대기) |
-| **C-8** | 전자결재 | 공람/참조 추가가 본인 only(BE는 임의 직원 지원) | FE-MISSING | MED | ✅ | `DocModal.tsx`(직원+역할 picker·handleAddCc, useEmployees) | 타 직원 공람/참조 추가→step 생성 (typecheck✅, 동작=E2E #19) |
+| **C-7** | 전자결재 | DEPT_RECEIVER 반송(bounce) 버튼 없음(BE 완성) | FE-MISSING | MED | ✅ | `DocModal.tsx`(canReceive DEPT_RECEIVER 분기 반송 버튼) | 부서수신 반송→BOUNCED (typecheck✅, 동작 E2E ✅) |
+| **C-8** | 전자결재 | 공람/참조 추가가 본인 only(BE는 임의 직원 지원) | FE-MISSING | MED | ✅ | `DocModal.tsx`(직원+역할 picker·handleAddCc, useEmployees) | 타 직원 공람/참조 추가→step 생성 (typecheck✅, 동작 E2E ✅) |
 | **C-9** | 전자결재 | 문서대장 검색 UI 없음 / 공용결재선 결재자·작성자·날짜 필터 표면 only | FE-MISSING/SUPERFICIAL | LOW | 🟡 | `approval/documents/page.tsx`(제목·문서번호 검색 입력+debounce, useDocuments search 지원) | 문서대장 검색→필터 반영 (typecheck✅). **잔여(C-9b): 공용결재선 결재자/작성자/날짜 필터는 BE 미지원** |
 | **C-10** | 전자결재 | 백업 첨부파일 실제 번들 다운로드 미구현(BE 없음) | BE-MISSING | LOW | ⏸ 환경블록 | `approval/backup` + BE export 엔드포인트 | **블록 근거**: 첨부 저장소(S3/MinIO)가 현재 서명 불일치로 비활성. 비활성 서브시스템 위에 zip 번들 엔드포인트를 얹으면 검증 불가·미테스트 코드가 됨. MinIO/S3 환경 정상화 선결 후 별건 처리 |
 | **D-1** | 알림 | 알림 규칙 조회/저장 SUPER_ADMIN 전용 ↔ FE는 GENERAL_ADMIN 진입 → 403 | RBAC | HIGH | ✅ | `notifications.controller.ts`(rules 5라우트 @Roles SUPER_ADMIN→**GENERAL_ADMIN**) | 정책: 회사설정 영역이라 BE를 GENERAL_ADMIN으로 하향. GENERAL_ADMIN 조회/저장 가능 (api typecheck✅·재기동) |
@@ -98,7 +98,23 @@
 
 > 잔여 LOW 메모: A-6(근태 사소)·C-9b(공용결재선 결재자/작성자/날짜 필터 — BE 미지원)는 영향 경미·BE 선행 필요로 보류.
 
-**다음 단계(루프 외 후속):** E2E #19(핵심 흐름 자동화)·me 화면 동작 QA #18 — 환경 의존 작업이라 별도 세션 권장.
+## E2E #19 진행 결과 (2026-06-21)
+
+핵심 결재 흐름을 Playwright E2E로 자동화하고, **포트 이동(modoostudy 공존 → web 4000·api 4001)**과 **UI 통일 개편**으로 깨져 있던 기존 결재 spec을 복구했다. 공통 헬퍼(`apps/web/e2e/helpers.ts`, env 포트 오버라이드)로 통합. 전략: 셋업·검증은 API, 핵심 액션만 UI 클릭(플래키 최소화).
+
+| spec 파일 | 커버 갭 | 검증(API 단언) |
+|---|---|---|
+| `approval_processing.spec.ts` | 승인→APPROVED · 반려→REJECTED | 기존 복구 |
+| `document_flows.spec.ts` | 회수→RECALLED · 참조 확인→VIEWED | 기존 복구 |
+| `approval_state_machine.spec.ts` | **C-1** 전단계반려 · **C-2** 결재취소 · **C-3** 재상신 | 단계 상태 복원/전이 |
+| `approval_cc.spec.ts` | **C-8** 타 직원 공람 추가 | VIEWER step 생성 |
+| `approval_dept_receiver.spec.ts` | **C-7** 부서수신 반송 | DEPT_RECEIVER step BOUNCED |
+
+→ **총 9 케이스 green** (web typecheck✅).
+
+**기존 spec이 깨져 있던 4원인(회귀 교훈)**: ① 포트 `3000/3001` 하드코딩 → env `4000/4001`, ② DocModal 리팩터로 ConfirmDialog 제거(반려/회수 즉시 처리, 의견은 모달 내 textarea), ③ 참조 `확인` → `확인 처리`, ④ 탭 `role=tab`→`button` · 모달 `role=dialog`→`.modal` · 검색 입력은 admin inbox에만 존재.
+
+**미자동화(후속 별도 세션):** 비결재 도메인 UI 동작 — A-2(일정 삭제)·B-2/B-4(휴가)·C-6(공용결재선 prefill)·D-4(근로정보)·E-1/E-5(메시지)는 표에 `동작=E2E #19`로 남김. me 화면 동작 QA #18.
 
 ## 통합테스트 반영 방침
 - 위 "통합테스트 케이스" 열을 BE 통합테스트(`apps/api/**/*.e2e-spec` 또는 기존 e2e 하니스)와 FE Playwright E2E(`apps/web`)로 구현.
