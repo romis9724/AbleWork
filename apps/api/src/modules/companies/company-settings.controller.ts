@@ -30,6 +30,11 @@ const PatchSettingsSchema = z
     shiftBreakEnabled: z.boolean().optional(),
     approvalServiceEnabled: z.boolean().optional(),
     approvalPrevStepReject: z.boolean().optional(),
+    approvalUpperLineChange: z.boolean().optional(),
+    approvalAllowZipUpload: z.boolean().optional(),
+    approvalMobilePush: z.boolean().optional(),
+    approvalEmailNotify: z.boolean().optional(),
+    approvalUserDisplay: z.enum(['name_nick', 'name', 'nick']).optional(),
   })
   .strip()
 

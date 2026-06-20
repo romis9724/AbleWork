@@ -41,7 +41,7 @@ export class NotificationsController {
 
   // NT-01 알림 규칙 목록
   @Get('rules')
-  @Roles(AccessLevel.SUPER_ADMIN)
+  @Roles(AccessLevel.GENERAL_ADMIN)
   @ApiOperation({ summary: '알림 규칙 목록 조회 (SUPER_ADMIN)' })
   getRules(
     @CompanyId() companyId: string,
@@ -52,7 +52,7 @@ export class NotificationsController {
 
   // NT-02 알림 규칙 생성
   @Post('rules')
-  @Roles(AccessLevel.SUPER_ADMIN)
+  @Roles(AccessLevel.GENERAL_ADMIN)
   @ApiOperation({ summary: '알림 규칙 생성 (SUPER_ADMIN)' })
   createRule(
     @CompanyId() companyId: string,
@@ -63,7 +63,7 @@ export class NotificationsController {
 
   // NT-02b 회사 Webhook URL 일괄 설정 (':id' 라우트보다 먼저 선언해야 함)
   @Patch('rules/webhook')
-  @Roles(AccessLevel.SUPER_ADMIN)
+  @Roles(AccessLevel.GENERAL_ADMIN)
   @ApiOperation({ summary: '회사 알림 규칙 Webhook URL 일괄 설정 (SUPER_ADMIN)' })
   updateWebhook(
     @CompanyId() companyId: string,
@@ -74,7 +74,7 @@ export class NotificationsController {
 
   // NT-02c 이벤트별 알림 활성/비활성 (':id' 라우트보다 먼저 선언해야 함)
   @Patch('rules/event')
-  @Roles(AccessLevel.SUPER_ADMIN)
+  @Roles(AccessLevel.GENERAL_ADMIN)
   @ApiOperation({ summary: '이벤트별 알림 규칙 활성/비활성 (SUPER_ADMIN)' })
   updateEventRule(
     @CompanyId() companyId: string,
@@ -85,7 +85,7 @@ export class NotificationsController {
 
   // NT-03 알림 규칙 수정
   @Patch('rules/:id')
-  @Roles(AccessLevel.SUPER_ADMIN)
+  @Roles(AccessLevel.GENERAL_ADMIN)
   @ApiOperation({ summary: '알림 규칙 수정 (SUPER_ADMIN)' })
   @ApiParam({ name: 'id', type: String })
   updateRule(

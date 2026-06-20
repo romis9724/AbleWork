@@ -177,6 +177,12 @@ export default function CompanySettingsPage() {
           timezone: companyForm.timezone,
           ...(companyForm.logoUrl.trim() !== '' && { logoUrl: companyForm.logoUrl.trim() }),
         })
+        // 일반 섹션이 노출하는 company-settings 필드(주 시작요일·시간표시)도 함께 저장한다.
+        // (이전에는 updateCompany만 호출돼 weekStartDay 변경이 소실됐다.)
+        await saveSettings.mutateAsync({
+          weekStartDay: settingsForm.weekStartDay,
+          timeFormat: settingsForm.timeFormat,
+        })
       } else if (section === 'attendance') {
         await saveSettings.mutateAsync({
           noShiftClockPolicy: settingsForm.noShiftClockPolicy,
