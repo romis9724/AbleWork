@@ -15,6 +15,7 @@ import {
   AttendanceDeleteDialog,
 } from './attendance-request-dialogs'
 import { DeviceChangeDialog } from './device-request-dialog'
+import { OffsiteWorkDialog, CustomRequestDialog } from './offsite-custom-request-dialogs'
 
 type TabValue = 'ALL' | 'PENDING' | 'DONE'
 
@@ -29,6 +30,8 @@ type RequestDialogType =
   | 'ATTENDANCE_CREATE'
   | 'ATTENDANCE_DELETE'
   | 'DEVICE_CHANGE'
+  | 'OFFSITE_WORK'
+  | 'CUSTOM'
 
 type DialogMode = null | 'menu' | RequestDialogType
 
@@ -97,7 +100,11 @@ const MENU_GROUPS: MenuGroup[] = [
   {
     title: '기타',
     icon: HRI.settings,
-    items: [{ type: 'DEVICE_CHANGE', label: '기기 변경' }],
+    items: [
+      { type: 'OFFSITE_WORK', label: '외근/출장' },
+      { type: 'DEVICE_CHANGE', label: '기기 변경' },
+      { type: 'CUSTOM', label: '기타 요청' },
+    ],
   },
 ]
 
@@ -252,6 +259,8 @@ export default function RequestsPage() {
       {dialogMode === 'ATTENDANCE_CREATE' && <AttendanceCreateDialog open {...dialogProps} />}
       {dialogMode === 'ATTENDANCE_DELETE' && <AttendanceDeleteDialog open {...dialogProps} />}
       {dialogMode === 'DEVICE_CHANGE' && <DeviceChangeDialog open {...dialogProps} />}
+      {dialogMode === 'OFFSITE_WORK' && <OffsiteWorkDialog open {...dialogProps} />}
+      {dialogMode === 'CUSTOM' && <CustomRequestDialog open {...dialogProps} />}
 
       {/* 신청 취소 확인 */}
       <ConfirmDialog
