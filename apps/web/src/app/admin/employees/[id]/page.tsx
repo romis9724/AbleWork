@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { useForm, Controller, useWatch } from 'react-hook-form'
 import Alert from '@mui/material/Alert'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import EditIcon from '@mui/icons-material/Edit'
+import DeleteIcon from '@mui/icons-material/Delete'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -47,6 +49,8 @@ import {
   useResetPassword,
   useWageInfos,
   useCreateWageInfo,
+  useUpdateWageInfo,
+  useDeleteWageInfo,
 } from '@/lib/query/employees'
 import { useOrganizations, type Organization } from '@/lib/query/organizations'
 import { usePositions } from '@/lib/query/positions'
@@ -137,6 +141,8 @@ export default function EmployeeDetailPage() {
   const [resetPwOpen, setResetPwOpen] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [addWageOpen, setAddWageOpen] = useState(false)
+  const [editingWageId, setEditingWageId] = useState<string | null>(null)
+  const [deleteWageId, setDeleteWageId] = useState<string | null>(null)
   const [wageForm, setWageForm] = useState<WageInfoForm>({
     hourlyWage: '',
     contractedWorkDays: DEFAULT_WORK_DAYS,
@@ -165,6 +171,8 @@ export default function EmployeeDetailPage() {
   const isPasswordValid = newPassword.length >= 8 && /[A-Za-z]/.test(newPassword) && /[0-9]/.test(newPassword)
   const { data: wageInfosRaw } = useWageInfos(id)
   const createWageInfoMutation = useCreateWageInfo(id)
+  const updateWageInfoMutation = useUpdateWageInfo(id)
+  const deleteWageInfoMutation = useDeleteWageInfo(id)
   const { data: orgsRaw = [] } = useOrganizations()
   const { data: positions = [] } = usePositions()
   const orgOptions = flattenOrgs(orgsRaw)
@@ -269,27 +277,67 @@ export default function EmployeeDetailPage() {
     }
   }
 
-  async function handleAddWageInfo() {
+  function resetWageForm() {
+    setEditingWageId(null)
+    setWageForm({
+      hourlyWage: '',
+      contractedWorkDays: DEFAULT_WORK_DAYS,
+      contractedHoursPerWeek: '',
+      maxHoursPerWeek: '',
+      effectiveFrom: '',
+    })
+  }
+
+  function openWageAdd() {
+    resetWageForm()
+    setAddWageOpen(true)
+  }
+
+  function openWageEdit(w: WageInfo) {
+    setEditingWageId(w.id)
+    setWageForm({
+      hourlyWage: String(w.hourlyWage ?? ''),
+      contractedWorkDays: w.contractedWorkDays ? String(w.contractedWorkDays).split(',') : DEFAULT_WORK_DAYS,
+      contractedHoursPerWeek: String(w.contractedHoursPerWeek ?? ''),
+      maxHoursPerWeek: w.maxHoursPerWeek != null && w.maxHoursPerWeek !== '' ? String(w.maxHoursPerWeek) : '',
+      effectiveFrom: w.effectiveFrom ? w.effectiveFrom.slice(0, 10) : '',
+    })
+    setAddWageOpen(true)
+  }
+
+  async function handleSaveWageInfo() {
+    const payload = {
+      hourlyWage: Number(wageForm.hourlyWage),
+      contractedWorkDays: wageForm.contractedWorkDays.join(','),
+      contractedHoursPerWeek: Number(wageForm.contractedHoursPerWeek),
+      // 미입력 시 키 자체를 제외 (BE 기본값 52 적용)
+      ...(wageForm.maxHoursPerWeek ? { maxHoursPerWeek: Number(wageForm.maxHoursPerWeek) } : {}),
+      effectiveFrom: wageForm.effectiveFrom,
+    }
     try {
-      await createWageInfoMutation.mutateAsync({
-        hourlyWage: Number(wageForm.hourlyWage),
-        contractedWorkDays: wageForm.contractedWorkDays.join(','),
-        contractedHoursPerWeek: Number(wageForm.contractedHoursPerWeek),
-        // 미입력 시 키 자체를 제외 (BE 기본값 52 적용)
-        ...(wageForm.maxHoursPerWeek ? { maxHoursPerWeek: Number(wageForm.maxHoursPerWeek) } : {}),
-        effectiveFrom: wageForm.effectiveFrom,
-      })
+      if (editingWageId) {
+        await updateWageInfoMutation.mutateAsync({ wageId: editingWageId, ...payload })
+        setSnack({ open: true, message: '근로정보가 수정되었습니다.', severity: 'success' })
+      } else {
+        await createWageInfoMutation.mutateAsync(payload)
+        setSnack({ open: true, message: '근로정보가 추가되었습니다.', severity: 'success' })
+      }
       setAddWageOpen(false)
-      setWageForm({
-        hourlyWage: '',
-        contractedWorkDays: DEFAULT_WORK_DAYS,
-        contractedHoursPerWeek: '',
-        maxHoursPerWeek: '',
-        effectiveFrom: '',
-      })
-      setSnack({ open: true, message: '근로정보가 추가되었습니다.', severity: 'success' })
+      resetWageForm()
     } catch {
-      setSnack({ open: true, message: '추가에 실패했습니다.', severity: 'error' })
+      setSnack({ open: true, message: '저장에 실패했습니다.', severity: 'error' })
+    }
+  }
+
+  async function handleDeleteWageInfo() {
+    if (!deleteWageId) return
+    try {
+      await deleteWageInfoMutation.mutateAsync(deleteWageId)
+      setDeleteWageId(null)
+      setSnack({ open: true, message: '근로정보가 삭제되었습니다.', severity: 'success' })
+    } catch {
+      setDeleteWageId(null)
+      setSnack({ open: true, message: '삭제에 실패했습니다.', severity: 'error' })
     }
   }
 
@@ -577,7 +625,7 @@ export default function EmployeeDetailPage() {
       {tab === 1 && (
         <>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button variant="outlined" onClick={() => setAddWageOpen(true)}>
+            <Button variant="outlined" onClick={openWageAdd}>
               + 근로정보 추가
             </Button>
           </Box>
@@ -594,12 +642,13 @@ export default function EmployeeDetailPage() {
                   <TableCell>계약 근무요일</TableCell>
                   <TableCell align="right">주 계약시간 (h)</TableCell>
                   <TableCell align="right">주 최대시간 (h)</TableCell>
+                  {canManage && <TableCell align="right" />}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {wageInfos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    <TableCell colSpan={canManage ? 6 : 5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                       근로정보가 없습니다.
                     </TableCell>
                   </TableRow>
@@ -615,6 +664,12 @@ export default function EmployeeDetailPage() {
                       <TableCell>{formatWorkDays(w.contractedWorkDays)}</TableCell>
                       <TableCell align="right">{Number(w.contractedHoursPerWeek)}</TableCell>
                       <TableCell align="right">{Number(w.maxHoursPerWeek)}</TableCell>
+                      {canManage && (
+                        <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                          <IconButton size="small" aria-label="수정" onClick={() => openWageEdit(w)}><EditIcon fontSize="small" /></IconButton>
+                          <IconButton size="small" color="error" aria-label="삭제" onClick={() => setDeleteWageId(w.id)}><DeleteIcon fontSize="small" /></IconButton>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 )}
@@ -727,9 +782,9 @@ export default function EmployeeDetailPage() {
         </DialogActions>
       </Dialog>
 
-      {/* 근로정보 추가 Dialog */}
-      <Dialog open={addWageOpen} onClose={() => setAddWageOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>근로정보 추가</DialogTitle>
+      {/* 근로정보 추가/수정 Dialog */}
+      <Dialog open={addWageOpen} onClose={() => { setAddWageOpen(false); resetWageForm() }} maxWidth="xs" fullWidth>
+        <DialogTitle>{editingWageId ? '근로정보 수정' : '근로정보 추가'}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
           <TextField
             label="시급 (원)"
@@ -789,22 +844,34 @@ export default function EmployeeDetailPage() {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAddWageOpen(false)}>취소</Button>
+          <Button onClick={() => { setAddWageOpen(false); resetWageForm() }}>취소</Button>
           <Button
             variant="contained"
-            onClick={handleAddWageInfo}
+            onClick={handleSaveWageInfo}
             disabled={
               createWageInfoMutation.isPending ||
+              updateWageInfoMutation.isPending ||
               !wageForm.hourlyWage ||
               wageForm.contractedWorkDays.length === 0 ||
               !wageForm.contractedHoursPerWeek ||
               !wageForm.effectiveFrom
             }
           >
-            추가
+            {editingWageId ? '수정' : '추가'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteWageId}
+        title="근로정보 삭제"
+        message="이 근로정보를 삭제하시겠습니까? 되돌릴 수 없습니다."
+        confirmLabel="삭제"
+        confirmColor="error"
+        loading={deleteWageInfoMutation.isPending}
+        onConfirm={handleDeleteWageInfo}
+        onCancel={() => setDeleteWageId(null)}
+      />
 
       <Snackbar
         open={snack.open}

@@ -110,3 +110,20 @@ export const useCreateWageInfo = (employeeId: string) => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['wage-infos', employeeId] }),
   })
 }
+
+export const useUpdateWageInfo = (employeeId: string) => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ wageId, ...data }: { wageId: string } & Record<string, unknown>) =>
+      apiClient.patch(`/employees/${employeeId}/wage-info/${wageId}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wage-infos', employeeId] }),
+  })
+}
+
+export const useDeleteWageInfo = (employeeId: string) => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (wageId: string) => apiClient.delete(`/employees/${employeeId}/wage-info/${wageId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wage-infos', employeeId] }),
+  })
+}

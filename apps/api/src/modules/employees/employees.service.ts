@@ -16,6 +16,7 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto'
 import { EmployeeFilterDto } from './dto/employee-filter.dto'
 import { CreateWageInfoDto } from '../wage-info/dto/create-wage-info.dto'
 import { EVENTS } from '../../events/domain-events'
+import { AuditService } from '../audit/audit.service'
 
 @Injectable()
 export class EmployeesService {
@@ -23,6 +24,7 @@ export class EmployeesService {
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
     private readonly settingsService: CompanySettingsService,
+    private readonly audit: AuditService,
   ) {}
 
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
@@ -107,7 +109,7 @@ export class EmployeesService {
 
   // ── 직원 등록 ───────────────────────────────────────────────────────────────
 
-  async create(companyId: string, dto: CreateEmployeeDto) {
+  async create(companyId: string, dto: CreateEmployeeDto, requester?: JwtPayload) {
     const { email, initialPassword, organizationIds, primaryOrganizationId, positionIds, joinedAt, ...rest } =
       dto
 
@@ -118,7 +120,7 @@ export class EmployeesService {
     // 없으면 비활성 계정으로 생성하고, 추후 비밀번호 재설정으로 활성화한다.
     const passwordHash = initialPassword ? await bcrypt.hash(initialPassword, 10) : ''
 
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const created = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // User 조회 또는 신규 생성
       let user = await tx.user.findUnique({ where: { email } })
       if (!user) {
@@ -171,6 +173,17 @@ export class EmployeesService {
 
       return employee
     })
+
+    await this.audit.record({
+      companyId,
+      actorId: requester?.employeeId ?? null,
+      action: 'EMPLOYEE_CREATE',
+      targetType: 'EMPLOYEE',
+      targetId: created.id,
+      targetLabel: created.name,
+    })
+
+    return created
   }
 
   // ── 직원 수정 ───────────────────────────────────────────────────────────────
@@ -267,7 +280,7 @@ export class EmployeesService {
     }
 
     // isActive=false 설정과 조직 결재자 해제를 하나의 트랜잭션으로 묶는다 (원자성)
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const result = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // 비활성 직원이 조직 결재자로 남지 않도록 approverId를 해제한다
       await tx.organization.updateMany({
         where: { approverId: id, companyId },
@@ -282,6 +295,17 @@ export class EmployeesService {
         },
       })
     })
+
+    await this.audit.record({
+      companyId,
+      actorId: requester.employeeId,
+      action: 'EMPLOYEE_DEACTIVATE',
+      targetType: 'EMPLOYEE',
+      targetId: id,
+      targetLabel: existing.name,
+    })
+
+    return result
   }
 
   // ── 재활성화 ────────────────────────────────────────────────────────────────
@@ -381,6 +405,57 @@ export class EmployeesService {
         effectiveFrom: new Date(dto.effectiveFrom),
       },
     })
+  }
+
+  // ── 근로정보 수정/삭제 ──────────────────────────────────────────────────────
+
+  private async assertWageInfo(employeeId: string, wageId: string) {
+    const wage = await this.prisma.wageInfo.findFirst({ where: { id: wageId, employeeId } })
+    if (!wage) {
+      throw new NotFoundException({
+        code: 'WAGE_INFO_NOT_FOUND',
+        message: '근로정보를 찾을 수 없습니다.',
+      })
+    }
+    return wage
+  }
+
+  async updateWageInfo(
+    companyId: string,
+    employeeId: string,
+    wageId: string,
+    dto: CreateWageInfoDto,
+    requester: JwtPayload,
+  ) {
+    const existing = await this.assertEmployee(companyId, employeeId)
+    await this.guardOrgScope(requester, existing)
+    await this.assertWageInfo(employeeId, wageId)
+
+    return this.prisma.wageInfo.update({
+      where: { id: wageId },
+      data: {
+        hourlyWage: dto.hourlyWage,
+        contractedWorkDays: dto.contractedWorkDays,
+        contractedHoursPerWeek: dto.contractedHoursPerWeek,
+        weeklyPaidHolidayDay: dto.weeklyPaidHolidayDay ?? null,
+        maxHoursPerWeek: dto.maxHoursPerWeek ?? 52,
+        effectiveFrom: new Date(dto.effectiveFrom),
+      },
+    })
+  }
+
+  async deleteWageInfo(
+    companyId: string,
+    employeeId: string,
+    wageId: string,
+    requester: JwtPayload,
+  ) {
+    const existing = await this.assertEmployee(companyId, employeeId)
+    await this.guardOrgScope(requester, existing)
+    await this.assertWageInfo(employeeId, wageId)
+
+    await this.prisma.wageInfo.delete({ where: { id: wageId } })
+    return { success: true }
   }
 
   // ── 내부 헬퍼 ───────────────────────────────────────────────────────────────

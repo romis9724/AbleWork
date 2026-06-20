@@ -6,6 +6,7 @@ import { I, HRI } from '@/components/ab/icons'
 import { ConfirmDialog } from '@/components/ab/Modal'
 import { useToast } from '@/components/ab/Toast'
 import { useDebounce } from '@/hooks/useDebounce'
+import apiClient from '@/lib/api-client'
 import {
   useEmployees,
   useCreateEmployee,
@@ -195,6 +196,25 @@ export default function EmployeesPanel() {
     toast('엑셀로 내보냈습니다')
   }
 
+  // 전체 직원 export: 현재 필터를 유지한 채 전체를 조회해 내보낸다(현재 페이지 한정 문제 해소)
+  async function handleExportAll() {
+    try {
+      const res = (await apiClient.get('/employees', {
+        params: {
+          search: debouncedSearch || undefined,
+          organizationId: organizationId || undefined,
+          positionId: positionId || undefined,
+          isActive: !showInactive,
+          limit: 10000,
+        },
+      })) as unknown as { items?: Employee[] }
+      handleExport(res.items?.length ? res.items : employees)
+    } catch {
+      handleExport(employees)
+      toast('전체 조회에 실패해 현재 페이지만 내보냈습니다')
+    }
+  }
+
   const colCount = tab === 'work' ? 8 : 8
 
   return (
@@ -207,12 +227,7 @@ export default function EmployeesPanel() {
         <div className="head-actions">
           <button
             className="btn btn-line btn-sm"
-            onClick={() => {
-              handleExport(employees)
-              if (total > employees.length) {
-                toast(`현재 페이지 ${employees.length}건만 내보냈습니다. 전체 ${total}건은 페이지를 이동하며 내보내세요`)
-              }
-            }}
+            onClick={handleExportAll}
           >
             {I.down({ style: { marginRight: 7 } })}다운로드
           </button>

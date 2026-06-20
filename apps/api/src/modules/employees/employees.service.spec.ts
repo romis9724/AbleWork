@@ -8,6 +8,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { EmployeesService } from './employees.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
+import { AuditService } from '../audit/audit.service'
 import { AccessLevel } from '@ablework/shared-constants'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 
@@ -97,6 +98,7 @@ describe('EmployeesService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
         { provide: CompanySettingsService, useValue: mockSettings },
+        { provide: AuditService, useValue: { record: jest.fn() } },
       ],
     }).compile()
 
