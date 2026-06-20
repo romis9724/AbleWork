@@ -60,12 +60,12 @@
 | **D-6** | 인사 | 직원 CSV export 현재 페이지(≤20)만 | DATAFLOW | LOW | ✅ | `EmployeesPanel.tsx`(handleExportAll — 필터 유지 전체 조회 후 export) | 20건 초과 시 전체 export (typecheck✅) |
 | **E-1** | 메시지 | admin 발송내역 탭이 본인 수신만 노출(회사 발송이력 API 없음) | BE-MISSING | HIGH | ✅ | BE `GET /messages/sent`(ORG_ADMIN, 회사 전체 + 수신/읽음 집계)·service findSentMessages; FE `useSentMessages`+발송내역 탭 전환(제목·수신·읽음·발송일시) | 발송 후 admin 발송이력에 표시 (api typecheck✅·재기동, GET sent 200, 동작=E2E #19) |
 | **E-2** | 메시지 | 템플릿 변수 문법 불일치(FE 안내 `#{}` ↔ BE `{{}}`) | DATAFLOW | HIGH | ✅ | `message-automation.processor.ts`(renderTemplate 양델리미터+employee/month) · `messages/page.tsx` 안내 정정 | `#{이름}`·`#{month}` 치환 (단위테스트 21/21, `#{}` 5건 추가) |
-| **E-3** | 감사 | 감사로그 기록 3개 도메인만(결재·직원·확정 등 미기록) | BE-MISSING | MED | 🟡 | `employees.module`(AuditModule)·`employees.service`(create→EMPLOYEE_CREATE·deactivate→EMPLOYEE_DEACTIVATE)·`audit-logs/page.tsx`(라벨 2종) | 직원 등록/퇴사 audit 기록·표시 (api typecheck✅·spec 33/33). **잔여(E-3b): 결재 승인/반려 등 approval 도메인 audit** |
+| **E-3** | 감사 | 감사로그 기록 3개 도메인만(결재·직원·확정 등 미기록) | BE-MISSING | MED | ✅ | 직원: `employees.service`(create/deactivate); 결재: `approval-actions.service`(approve/reject→DOCUMENT_APPROVED·APPROVE_STEP·REJECT, AuditModule import); FE 라벨 5종 | 직원 등록/퇴사 + 결재 승인/반려 audit 기록·표시 (api typecheck✅·spec employees 33/33·approval 32/32) |
 | **E-4** | 메시지 | 자동화규칙 헤더 버튼 toast only(존재하는 `/automations` 라우트 미이동) | SUPERFICIAL | MED | ✅ | `app/admin/messages/page.tsx`(router.push) | 버튼 클릭→/admin/messages/automations 이동 (브라우저 검증완료) |
 | **E-5** | 메시지 | 자동화 규칙 수정/삭제 FE 없음(BE 완성) | FE-MISSING | MED | ✅ | `app/admin/messages/automations/page.tsx`(edit 겸용 다이얼로그+update/delete mutation·삭제 확인) | 수정→반영, 삭제→제거 (typecheck✅, 동작=E2E #19) |
 | **E-6** | 대시보드 | admin 새로고침 버튼 toast only(invalidateQueries 없음) | SUPERFICIAL | MED | ✅ | `app/admin/dashboard/page.tsx`(handleRefresh→invalidateQueries) | 새 출퇴근 생성→새로고침→KPI 갱신 (코드연결, TanStack 무효화) |
 | **E-7** | 리포트 | 지각/조퇴 범위 필터 BE 묵살(TODO 주석) | BE-MISSING | MED | ✅ | `reports.service.ts`(shift 시작/종료와 clockIn/Out 분 비교로 lateThreshold·earlyLeaveThreshold 재판정, TODO 제거) | 임계 분 지정→집계 반영 (API typecheck✅·재기동, diffMinutes 방향 확인) |
-| **E-8** | 리포트 | 스냅샷 행 조회 API/FE 없음(마감 후 열람 불가) | BE-MISSING | MED | 🔲 | `reports.controller.ts`·`reports/snapshots/page.tsx` | 스냅샷 생성→행 조회 |
+| **E-8** | 리포트 | 스냅샷 행 조회 API/FE 없음(마감 후 열람 불가) | BE-MISSING | MED | ✅ | `reports.controller`(GET snapshots/:id/rows)·`reports.service`(findSnapshotRows)·`snapshots/page.tsx`(행 보기 모달) | 스냅샷 생성→행 조회 (api·web typecheck✅·재기동) |
 | **E-9** | 리포트 | 커스텀 열 FE 전무(BE 완성) | FE-MISSING | LOW | 🔲 | `reports/*` | 커스텀 열 생성→리포트 반영 |
 | **E-10** | 메시지 | 발송내역 행 클릭 상세 없음(toast) / in_app type 불일치('auto' vs 'automated') | SUPERFICIAL/DATAFLOW | LOW | 🟡 | `messages/page.tsx`(행 클릭 시 제목+내용 스니펫 toast — sent API가 content 포함) | 클릭 시 내용 표시 (typecheck✅). **잔여(E-10b): 풀 상세 모달, in_app type 통일** |
 
