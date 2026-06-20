@@ -15,6 +15,7 @@ export const API_URL = process.env.E2E_API_URL ?? 'http://localhost:4001/api/v1'
 /** 시드 계정 (apps/api/prisma/seed.ts와 동기) */
 export const ACCOUNTS = {
   admin: { email: 'admin@ablework.io', password: 'admin1234!' }, // SUPER_ADMIN · 개발팀
+  genAdmin: { email: 'genadmin@ablework.io', password: 'genadmin1234!' }, // GENERAL_ADMIN · 개발팀
   employee: { email: 'employee@ablework.io', password: 'employee1234!' }, // EMPLOYEE · 개발팀
   orgAdmin: { email: 'orgadmin@ablework.io', password: 'orgadmin1234!' }, // ORG_ADMIN · 개발팀
   sales: { email: 'sales@ablework.io', password: 'sales1234!' }, // EMPLOYEE · 영업팀
