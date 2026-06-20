@@ -40,7 +40,7 @@
 | **B-2** | 휴가 | 수동발생·보상휴가 폼에 `year`·`expiresAt` 없음(BE DTO엔 존재) | DATAFLOW | HIGH | ✅ | `LeaveStatusPanel.tsx`·`LeaveCompensationPanel.tsx`(발생연도·만료일 입력 추가) | year/expiresAt 지정 발생→잔액 만료일 반영 (typecheck✅, 동작=E2E #19) |
 | **B-3** | 휴가 | "예약 부여" 라디오 더미(grantMode 무시) | SUPERFICIAL | MED | ✅ | `LeaveStatusPanel.tsx`(더미 라디오 제거→발생연도·만료일 필드로 대체) | 더미 제거, 실제 입력 필드로 교체 |
 | **B-4** | 휴가 | 발생규칙 수정 버튼 없음(BE `PATCH` 존재) | FE-MISSING | MED | ✅ | `LeaveAccrualRulesPanel.tsx`(useUpdateAccrualRule·openEditRule items 역매핑 prefill·edit 겸용 다이얼로그·수정 버튼) | 규칙 수정→반영 (typecheck✅, 동작=E2E #19). (`/run?year`는 별도 잔여) |
-| **B-5** | 요청 | 승인규칙 편집기 6개 유형 누락 + scopeOrgIds/scopePositionIds UI 없음 | FE-MISSING | MED | ✅ | `RequestRulesPanel.tsx`(REQUEST_TYPES에 LEAVE_MODIFY·LEAVE_DELETE·SHIFT_MODIFY·SHIFT_DELETE·ATTENDANCE_CREATE·ATTENDANCE_DELETE·CUSTOM 추가) | 누락 유형 규칙 생성 가능 (typecheck✅). **scope UI는 별도 잔여(B-5b)** |
+| **B-5** | 요청 | 승인규칙 편집기 6개 유형 누락 + scopeOrgIds/scopePositionIds UI 없음 | FE-MISSING | MED | ✅ | `RequestRulesPanel.tsx`(요청유형 7종 추가 + org/직무 scope 멀티셀렉트·prefill·payload) | 누락 유형 규칙 생성 + 조직/직무 범위 지정 (typecheck✅) |
 | **B-6** | 요청 | me/requests OFFSITE_WORK·CUSTOM 신청 경로 없음(BE 매핑 존재) | FE-MISSING | MED | ✅ | `offsite-custom-request-dialogs.tsx`(신규)+`page.tsx`(union·MENU_GROUPS·렌더) | 외근/출장·기타 신청→document 자동생성 (**동작검증: 201 + 내 요청 목록 반영**) |
 | **C-1** | 전자결재 | 전단계 반려(return-prev) 버튼 없음(BE 완성) | FE-MISSING | HIGH | ✅ | `components/approval/DocModal.tsx`(hasPrevFlowStep+버튼) | 전단계 반려→이전 결재자에 반환, 이후 CANCELLED (typecheck✅, 동작=E2E #19 대기) |
 | **C-2** | 전자결재 | 결재취소(cancel-approval) 버튼 없음(BE 완성) | FE-MISSING | HIGH | ✅ | `DocModal.tsx`(runStepAction stepId 파라미터화·myActedStep·결재취소 버튼) | 본인 처리 단계 취소→이전 단계 복원 (typecheck✅, 동작=E2E #19 대기) |

@@ -39,6 +39,12 @@ import {
   type ApprovalRule,
 } from '@/lib/query/requests'
 import { usePositions } from '@/lib/query/positions'
+import { useOrganizations, type Organization } from '@/lib/query/organizations'
+
+/** 조직 트리를 평탄화(하위 부서까지 선택 노출) */
+function flattenOrgs(orgs: Organization[]): Organization[] {
+  return orgs.flatMap((o) => [o, ...flattenOrgs(o.children ?? [])])
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -75,6 +81,8 @@ interface RuleForm {
   maxApprovalRounds: string
   isAutoApprove: boolean
   details: RuleDetailForm[]
+  scopeOrgIds: string[]
+  scopePositionIds: string[]
 }
 
 const defaultRuleForm: RuleForm = {
@@ -82,6 +90,8 @@ const defaultRuleForm: RuleForm = {
   requestType: '',
   maxApprovalRounds: '1',
   isAutoApprove: false,
+  scopeOrgIds: [],
+  scopePositionIds: [],
   details: [],
 }
 
@@ -95,6 +105,8 @@ const defaultRuleForm: RuleForm = {
 export default function RequestRulesPanel() {
   const { data: rules = [], isLoading } = useApprovalRules()
   const { data: positions = [] } = usePositions()
+  const { data: orgsRaw = [] } = useOrganizations()
+  const orgs = flattenOrgs(orgsRaw as Organization[])
   const createMutation = useCreateApprovalRule()
   const updateMutation = useUpdateApprovalRule()
   const deleteMutation = useDeleteApprovalRule()
@@ -133,6 +145,8 @@ export default function RequestRulesPanel() {
         requiredCount: d.requiredCount,
         approverPositionId: d.approverPositionId ?? '',
       })),
+      scopeOrgIds: rule.scopeOrgIds ?? [],
+      scopePositionIds: rule.scopePositionIds ?? [],
     })
     setDialogOpen(true)
   }
@@ -150,6 +164,8 @@ export default function RequestRulesPanel() {
         requiredCount: d.requiredCount,
         ...(d.approverPositionId ? { approverPositionId: d.approverPositionId } : {}),
       })),
+      ...(form.scopeOrgIds.length ? { scopeOrgIds: form.scopeOrgIds } : {}),
+      ...(form.scopePositionIds.length ? { scopePositionIds: form.scopePositionIds } : {}),
     }
     try {
       if (editingRule) {
@@ -294,6 +310,34 @@ export default function RequestRulesPanel() {
                 <MenuItem key={t.value} value={t.value}>
                   {t.label}
                 </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth>
+            <InputLabel>적용 조직 (미선택 시 전체)</InputLabel>
+            <Select
+              multiple
+              value={form.scopeOrgIds}
+              label="적용 조직 (미선택 시 전체)"
+              onChange={(e) => setForm((f) => ({ ...f, scopeOrgIds: e.target.value as string[] }))}
+              renderValue={(sel) => (sel.length === 0 ? '전체' : `${sel.length}개 조직`)}
+            >
+              {orgs.map((o) => (
+                <MenuItem key={o.id} value={o.id}>{o.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth>
+            <InputLabel>적용 직무 (미선택 시 전체)</InputLabel>
+            <Select
+              multiple
+              value={form.scopePositionIds}
+              label="적용 직무 (미선택 시 전체)"
+              onChange={(e) => setForm((f) => ({ ...f, scopePositionIds: e.target.value as string[] }))}
+              renderValue={(sel) => (sel.length === 0 ? '전체' : `${sel.length}개 직무`)}
+            >
+              {positions.map((p) => (
+                <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
               ))}
             </Select>
           </FormControl>
