@@ -130,7 +130,8 @@ export class NotificationListener implements OnApplicationBootstrap {
       await this.prisma.message.create({
         data: {
           companyId,
-          type: 'auto',
+          // 자동 생성 메시지 타입은 'automated'로 통일(message-automation.processor와 일치, 'manual'과 구분) — E-10b
+          type: 'automated',
           title,
           content,
           recipients: { create: [{ recipientId }] },

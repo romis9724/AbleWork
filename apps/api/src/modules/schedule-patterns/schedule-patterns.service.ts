@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
+import { ShiftsService } from '../shifts/shifts.service'
 import {
   CreateSchedulePatternDto,
   UpdateSchedulePatternDto,
@@ -12,7 +13,10 @@ import {
 
 @Injectable()
 export class SchedulePatternsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly shiftsService: ShiftsService,
+  ) {}
 
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
 
@@ -213,7 +217,12 @@ export class SchedulePatternsService {
       skipDuplicates: true,
     })
 
-    return { created: result.count }
+    // 생성 직후 직원×주 단위 주52시간 초과 경고 수집 (저장은 허용, warning만 — shifts와 동일 정책)
+    const warnings = await this.shiftsService.collectWeeklyWarnings(
+      shiftsToCreate.map((s) => ({ employeeId: s.employeeId, startAt: s.startAt })),
+    )
+
+    return { created: result.count, warnings: warnings.length > 0 ? warnings : undefined }
   }
 
   // ── 내부 헬퍼 ───────────────────────────────────────────────────────────────

@@ -358,6 +358,27 @@ export class ShiftsService {
     return null
   }
 
+  /**
+   * 여러 (직원·시작시각) 근무 묶음에 대해 직원×주 단위로 주52h 경고를 일괄 수집한다.
+   * 동일 직원의 같은 주는 한 번만 검사한다. 근무일정 패턴 적용 등 대량 생성 "직후"에 호출해
+   * 방금 생성된 근무까지 합산된 주간 시간 기준으로 경고한다.
+   */
+  async collectWeeklyWarnings(
+    items: { employeeId: string; startAt: Date }[],
+  ): Promise<string[]> {
+    const seen = new Set<string>()
+    const warnings: string[] = []
+    for (const { employeeId, startAt } of items) {
+      const { weekStart } = getWeekBounds(startAt.getTime())
+      const key = `${employeeId}:${weekStart.getTime()}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const warning = await this.checkWeeklyHours(employeeId, startAt)
+      if (warning) warnings.push(`${employeeId}: ${warning}`)
+    }
+    return warnings
+  }
+
   private async validateRelations(
     companyId: string,
     organizationId: string,

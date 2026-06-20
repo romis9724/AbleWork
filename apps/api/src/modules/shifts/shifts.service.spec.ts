@@ -215,6 +215,36 @@ describe('ShiftsService', () => {
     })
   })
 
+  // ── collectWeeklyWarnings (A-8: 패턴 적용 등 대량 생성 시 주52h 경고 일괄 수집) ──
+
+  describe('collectWeeklyWarnings', () => {
+    it('같은 직원·같은 주 항목은 한 번만 검사한다(중복 제거)', async () => {
+      mockPrisma.shift.findMany.mockResolvedValue([]) // 경고 없음
+      const items = [
+        { employeeId: 'e1', startAt: new Date('2024-06-10T09:00:00.000Z') }, // 같은 주
+        { employeeId: 'e1', startAt: new Date('2024-06-11T09:00:00.000Z') }, // 같은 주
+        { employeeId: 'e1', startAt: new Date('2024-06-18T09:00:00.000Z') }, // 다음 주
+      ]
+      const warnings = await service.collectWeeklyWarnings(items)
+      expect(warnings).toEqual([])
+      // e1의 고유 주 2개 → 주간 합계 조회(findMany) 2회만
+      expect(mockPrisma.shift.findMany).toHaveBeenCalledTimes(2)
+    })
+
+    it('52시간 초과 주는 "직원ID: 메시지" 형태로 경고를 모은다', async () => {
+      // 55시간(2024-06-10 00:00 ~ 06-12 07:00) 분량 한 건
+      mockPrisma.shift.findMany.mockResolvedValue([
+        { startAt: new Date('2024-06-10T00:00:00.000Z'), endAt: new Date('2024-06-12T07:00:00.000Z') },
+      ])
+      const warnings = await service.collectWeeklyWarnings([
+        { employeeId: 'e1', startAt: new Date('2024-06-10T09:00:00.000Z') },
+      ])
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toMatch(/^e1: /)
+      expect(warnings[0]).toContain('52시간을 초과')
+    })
+  })
+
   // ── update ───────────────────────────────────────────────────────────────────
 
   describe('update', () => {
