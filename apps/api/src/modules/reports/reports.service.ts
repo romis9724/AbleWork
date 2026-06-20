@@ -488,6 +488,31 @@ export class ReportsService {
     return snapshot
   }
 
+  // ── 스냅샷 행(직원별 집계) 조회 ──────────────────────────────────────────────
+
+  async findSnapshotRows(companyId: string, snapshotId: string) {
+    const snapshot = await this.prisma.reportSnapshot.findFirst({
+      where: { id: snapshotId, companyId },
+    })
+    if (!snapshot) {
+      throw new NotFoundException({
+        code: 'SNAPSHOT_NOT_FOUND',
+        message: '스냅샷을 찾을 수 없습니다.',
+      })
+    }
+    const rows = await this.prisma.reportSnapshotRow.findMany({
+      where: { snapshotId },
+      orderBy: { id: 'asc' },
+    })
+    return {
+      snapshot: { id: snapshot.id, name: snapshot.name, isLocked: snapshot.isLocked },
+      rows: rows.map((r) => ({
+        employeeId: r.employeeId,
+        ...((r.values ?? {}) as Record<string, unknown>),
+      })),
+    }
+  }
+
   // ── 스냅샷 잠금 ───────────────────────────────────────────────────────────
 
   async lockSnapshot(companyId: string, snapshotId: string) {
