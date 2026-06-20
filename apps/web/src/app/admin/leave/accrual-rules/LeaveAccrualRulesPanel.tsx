@@ -28,16 +28,19 @@ import Typography from '@mui/material/Typography'
 import Autocomplete from '@mui/material/Autocomplete'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
+import EditIcon from '@mui/icons-material/Edit'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import EmptyState from '@/components/common/EmptyState'
 import {
   useAccrualRules,
   useCreateAccrualRule,
+  useUpdateAccrualRule,
   useDeleteAccrualRule,
   useRunAccrualRule,
   useLeaveGroups,
   type AccrualRule,
+  type AccrualRuleItem,
   type LeaveGroup,
 } from '@/lib/query/leaves'
 import { useEmployees } from '@/lib/query/employees'
@@ -104,15 +107,51 @@ export default function LeaveAccrualRulesPanel() {
   const employees = employeeData?.items ?? []
 
   const createRuleMutation = useCreateAccrualRule()
+  const updateRuleMutation = useUpdateAccrualRule()
   const deleteRuleMutation = useDeleteAccrualRule()
   const runRuleMutation = useRunAccrualRule()
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<AccrualRule | null>(null)
 
-  // Add rule dialog
+  // Add/Edit rule dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [editingRule, setEditingRule] = useState<AccrualRule | null>(null)
   const [ruleForm, setRuleForm] = useState<RuleForm>(defaultRuleForm)
+
+  function openAddRule() {
+    setEditingRule(null)
+    setRuleForm(defaultRuleForm)
+    setAddDialogOpen(true)
+  }
+
+  function openEditRule(rule: AccrualRule) {
+    setEditingRule(rule)
+    const items = rule.items ?? []
+    const monthlyRows = items
+      .filter((it: AccrualRuleItem) => it.accrualBasis === 'monthly')
+      .map((it) => ({
+        tenureMonths: String(it.tenureMonths ?? ''),
+        days: String(it.accrualDays ?? ''),
+        validMonths: it.validMonths != null ? String(it.validMonths) : '',
+      }))
+    const yearlyRows = items
+      .filter((it: AccrualRuleItem) => it.accrualBasis === 'yearly')
+      .map((it) => ({
+        tenureYears: String(it.tenureYears ?? ''),
+        days: String(it.accrualDays ?? ''),
+        periodStartMd: it.periodStartMd ?? '',
+        periodEndMd: it.periodEndMd ?? '',
+      }))
+    setRuleForm({
+      name: rule.name,
+      note: rule.memo ?? '',
+      groupId: rule.leaveGroup?.id ?? '',
+      monthlyRows: monthlyRows.length > 0 ? monthlyRows : [{ ...defaultMonthlyRow }],
+      yearlyRows: yearlyRows.length > 0 ? yearlyRows : [{ ...defaultYearlyRow }],
+    })
+    setAddDialogOpen(true)
+  }
 
   // Run rule dialog
   const [runDialogOpen, setRunDialogOpen] = useState(false)
@@ -206,10 +245,15 @@ export default function LeaveAccrualRulesPanel() {
       items,
     }
     try {
-      await createRuleMutation.mutateAsync(payload)
+      if (editingRule) {
+        await updateRuleMutation.mutateAsync({ id: editingRule.id, ...payload })
+      } else {
+        await createRuleMutation.mutateAsync(payload)
+      }
       setAddDialogOpen(false)
+      setEditingRule(null)
       setRuleForm(defaultRuleForm)
-      showSnack('발생 규칙이 추가되었습니다.')
+      showSnack(editingRule ? '발생 규칙이 수정되었습니다.' : '발생 규칙이 추가되었습니다.')
     } catch {
       showSnack('저장에 실패했습니다.', 'error')
     }
@@ -263,10 +307,7 @@ export default function LeaveAccrualRulesPanel() {
         <Button
           variant="contained"
           startIcon={<AddIcon />}
-          onClick={() => {
-            setRuleForm(defaultRuleForm)
-            setAddDialogOpen(true)
-          }}
+          onClick={openAddRule}
         >
           규칙 추가
         </Button>
@@ -280,14 +321,7 @@ export default function LeaveAccrualRulesPanel() {
         <EmptyState
           message="등록된 발생 규칙이 없습니다."
           action={
-            <Button
-              variant="outlined"
-              startIcon={<AddIcon />}
-              onClick={() => {
-                setRuleForm(defaultRuleForm)
-                setAddDialogOpen(true)
-              }}
-            >
+            <Button variant="outlined" startIcon={<AddIcon />} onClick={openAddRule}>
               규칙 추가
             </Button>
           }
@@ -323,6 +357,9 @@ export default function LeaveAccrualRulesPanel() {
                     />
                   </TableCell>
                   <TableCell align="right">
+                    <IconButton size="small" aria-label="수정" onClick={() => openEditRule(rule)}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
                     <IconButton size="small" color="error" onClick={() => setDeleteTarget(rule)}>
                       <DeleteIcon fontSize="small" />
                     </IconButton>
@@ -337,12 +374,12 @@ export default function LeaveAccrualRulesPanel() {
       {/* ── Add Rule Dialog ─────────────────────────────────────────────────────── */}
       <Dialog
         open={addDialogOpen}
-        onClose={() => setAddDialogOpen(false)}
+        onClose={() => { setAddDialogOpen(false); setEditingRule(null) }}
         maxWidth="md"
         fullWidth
         PaperProps={{ sx: { maxHeight: '90vh' } }}
       >
-        <DialogTitle>발생 규칙 추가</DialogTitle>
+        <DialogTitle>{editingRule ? '발생 규칙 수정' : '발생 규칙 추가'}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
           <TextField
             label="규칙명"
@@ -488,13 +525,13 @@ export default function LeaveAccrualRulesPanel() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAddDialogOpen(false)}>취소</Button>
+          <Button onClick={() => { setAddDialogOpen(false); setEditingRule(null) }}>취소</Button>
           <Button
             variant="contained"
             onClick={handleSaveRule}
-            disabled={createRuleMutation.isPending || !ruleForm.name.trim() || !ruleForm.groupId}
+            disabled={createRuleMutation.isPending || updateRuleMutation.isPending || !ruleForm.name.trim() || !ruleForm.groupId}
           >
-            추가
+            {editingRule ? '수정' : '추가'}
           </Button>
         </DialogActions>
       </Dialog>
