@@ -55,10 +55,13 @@ export const useAttendances = (params?: Record<string, string | undefined>) =>
     staleTime: 30_000,
   })
 
-export const useNowAtWork = () =>
+export const useNowAtWork = (organizationId?: string) =>
   useQuery({
-    queryKey: [...QUERY_KEY, 'now'],
-    queryFn: () => apiClient.get('/attendances/now-at-work') as Promise<NowAtWorkResponse>,
+    queryKey: [...QUERY_KEY, 'now', organizationId ?? 'all'],
+    queryFn: () =>
+      apiClient.get('/attendances/now-at-work', {
+        params: organizationId ? { organizationId } : {},
+      }) as Promise<NowAtWorkResponse>,
     staleTime: 30_000,
     refetchInterval: 30_000,
   })
@@ -91,7 +94,9 @@ export const useMyTodayAttendance = () =>
 export const useBreakStart = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => apiClient.post('/attendances/break-start'),
+    // breakType 미전달 시 BE 기본값('rest'). 식사/기타 휴게 구분을 위해 명시 전달 가능.
+    mutationFn: (breakType?: 'rest' | 'meal' | 'other') =>
+      apiClient.post('/attendances/break-start', breakType ? { breakType } : {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }

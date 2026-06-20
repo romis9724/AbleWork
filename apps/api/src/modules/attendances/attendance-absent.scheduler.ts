@@ -41,6 +41,8 @@ export class AttendanceAbsentScheduler {
         endAt: { lte: endedBefore, gte: lookbackStart },
         status: { in: [ShiftStatus.DRAFT, ShiftStatus.CONFIRMED] },
         attendance: null, // shiftId unique — 같은 Shift로 이미 기록이 있으면 스킵 (멱등성 1차)
+        // 출퇴근 기록이 불필요한 근무유형(재택/외근 등)은 결근 자동 판정에서 제외
+        shiftType: { noClockInRequired: false },
       },
       select: { id: true, employeeId: true, startAt: true, endAt: true },
     })

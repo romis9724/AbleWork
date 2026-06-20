@@ -122,10 +122,10 @@ export default function HomePage() {
     }
   }
 
-  const handleBreakStart = async () => {
+  const handleBreakStart = async (breakType: 'rest' | 'meal' = 'rest') => {
     try {
-      await breakStartMutation.mutateAsync()
-      toast('휴게 시간이 시작됐습니다')
+      await breakStartMutation.mutateAsync(breakType)
+      toast(breakType === 'meal' ? '식사 시간이 시작됐습니다' : '휴게 시간이 시작됐습니다')
     } catch (err) {
       toast(err instanceof Error ? err.message : '휴게 처리 중 오류가 발생했습니다')
     }
@@ -176,8 +176,11 @@ export default function HomePage() {
 
           {clockedIn && !onBreak && (
             <>
-              <button className="btn btn-line btn-lg" disabled={busy} onClick={handleBreakStart}>
+              <button className="btn btn-line btn-lg" disabled={busy} onClick={() => handleBreakStart('rest')}>
                 {breakStartMutation.isPending ? '처리 중…' : '휴게 시작'}
+              </button>
+              <button className="btn btn-line btn-lg" disabled={busy} onClick={() => handleBreakStart('meal')}>
+                식사 시작
               </button>
               <button className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockOut}>
                 {clockOutMutation.isPending ? '처리 중…' : '퇴근하기'}

@@ -96,18 +96,15 @@ function toArray<T>(raw: RawList<T> | null | undefined): T[] {
 }
 
 export default function NowAtWorkPage() {
+  // 조직 필터는 서버에서 처리(주 소속 기준) — orgFilter는 조직 id를 보관
   const [orgFilter, setOrgFilter] = useState<string | undefined>(undefined)
-  const { data: rawEmployees, isLoading, refetch, isFetching } = useNowAtWork()
+  const { data: rawEmployees, isLoading, refetch, isFetching } = useNowAtWork(orgFilter)
   const { data: rawOrgs } = useOrganizations()
 
   const employees = toArray<NowAtWork>(rawEmployees as RawList<NowAtWork>)
   const orgs = toArray<Organization>(rawOrgs as RawList<Organization>)
 
-  const filtered: NowAtWork[] = orgFilter
-    ? employees.filter(
-        (e) => e.organization?.name === orgFilter || e.organization?.name?.includes(orgFilter),
-      )
-    : employees
+  const filtered: NowAtWork[] = employees
 
   const working = filtered.filter((e) =>
     ['WORKING', 'LATE', 'REMOTE', 'DEEMED_WORK'].includes(e.workingStatus),
@@ -158,8 +155,8 @@ export default function NowAtWorkPage() {
         <Autocomplete
           options={orgs}
           getOptionLabel={(o) => o.name}
-          value={orgs.find((o) => o.name === orgFilter || o.id === orgFilter) ?? null}
-          onChange={(_, v) => setOrgFilter(v?.name)}
+          value={orgs.find((o) => o.id === orgFilter) ?? null}
+          onChange={(_, v) => setOrgFilter(v?.id)}
           size="small"
           renderInput={(params) => <TextField {...params} label="조직 필터 (전체)" />}
         />

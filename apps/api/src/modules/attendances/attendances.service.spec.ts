@@ -138,6 +138,19 @@ describe('AttendancesService', () => {
       expect(result.isOncall).toBe(false)
     })
 
+    it('간주근로(isDeemedWork) 유형이면 출근 시각과 무관하게 deemed_work로 판정한다', async () => {
+      // 지각 시각이어도 간주근로면 deemed_work
+      const shift = {
+        startAt: new Date('2024-06-10T09:00:00.000Z'),
+        shiftType: { isDeemedWork: true, noClockInRequired: false },
+      }
+      const clockInAt = new Date('2024-06-10T11:00:00.000Z')
+
+      const result = await service.determineStatus(COMPANY_ID, EMPLOYEE_ID, clockInAt, shift)
+      expect(result.status).toBe('deemed_work')
+      expect(result.isOncall).toBe(false)
+    })
+
     it('출근 시각이 Shift 시작 + 유예시간 초과면 late로 판정한다', async () => {
       // Shift 09:00, clockIn 09:11 (유예 10분 초과)
       const shift = { startAt: new Date('2024-06-10T09:00:00.000Z') }
