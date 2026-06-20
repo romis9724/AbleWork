@@ -199,6 +199,7 @@ describe('NotificationListener', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             companyId: 'company-1',
+            type: 'automated', // E-10b: 자동 메시지 타입 통일('auto'→'automated')
             recipients: { create: [{ recipientId: 'approver-9' }] },
           }),
         }),

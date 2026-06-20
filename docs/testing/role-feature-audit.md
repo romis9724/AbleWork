@@ -35,7 +35,7 @@
 | **A-5** | 근태 | me/attendances 페이지네이션 미전달(월 20건 초과 누락) | DATAFLOW | MED | ✅ | `app/me/attendances/page.tsx`(limit:'100') | 한 달 전체 조회 (typecheck✅) |
 | **A-6** | 근태 | 템플릿 `autoBreak` 토글 저장 무효(BE DTO·컬럼 없음) | DATAFLOW | LOW | ✅ | `app/admin/shifts/templates/page.tsx`(무효 토글·schema·미사용 import 제거) | 오해 유발 토글 제거 (typecheck✅). BE 미지원이라 제거 선택 — 회사설정 auto_break_enabled로 대체 |
 | **A-7** | 근태 | 표준화규칙 삭제 버튼 누락(BE DELETE 존재) | FE-MISSING | LOW | ✅ | `app/admin/reports/standardization/page.tsx`(삭제 mutation+버튼+확인) | 삭제→목록 제거 (typecheck✅). (근무유형 활성토글은 별도 잔여) |
-| **A-8** | 근태 | 패턴 적용 시 주52h 경고 미호출(`createdBy` 하드코딩) | BE-MISSING | LOW | 🔲 | `schedule-patterns` applyPattern | 패턴 적용 시 주52h 초과→warning |
+| **A-8** | 근태 | 패턴 적용 시 주52h 경고 미호출 | BE-MISSING | LOW | ✅ | `shifts.service`(public `collectWeeklyWarnings` — 직원×주 dedup 후 checkWeeklyHours 위임)·`schedule-patterns.service`(ShiftsService 주입, applyPattern createMany 직후 호출→`{created,warnings}`)·`SchedulePatternsModule` imports ShiftsModule | 패턴 적용 시 주52h 초과→warnings 반환 (단위 +4: collectWeeklyWarnings dedup·초과수집, applyPattern warnings 유무. api 단위 702 green) |
 | **B-1** | 요청 | ~~me/requests scope 미전달로 타인 요청 노출~~ | RBAC | — | ✓N/A | — | **오탐**: `RequestFilterSchema.scope.default('mine')` + 컨트롤러 파이프 적용으로 EMPLOYEE는 본인만. 검증완료 |
 | **B-2** | 휴가 | 수동발생·보상휴가 폼에 `year`·`expiresAt` 없음(BE DTO엔 존재) | DATAFLOW | HIGH | ✅ | `LeaveStatusPanel.tsx`·`LeaveCompensationPanel.tsx`(발생연도·만료일 입력 추가) | year/expiresAt 지정 발생→잔액 만료일 반영 (typecheck✅, 동작=E2E #19) |
 | **B-3** | 휴가 | "예약 부여" 라디오 더미(grantMode 무시) | SUPERFICIAL | MED | ✅ | `LeaveStatusPanel.tsx`(더미 라디오 제거→발생연도·만료일 필드로 대체) | 더미 제거, 실제 입력 필드로 교체 |
@@ -67,7 +67,7 @@
 | **E-7** | 리포트 | 지각/조퇴 범위 필터 BE 묵살(TODO 주석) | BE-MISSING | MED | ✅ | `reports.service.ts`(shift 시작/종료와 clockIn/Out 분 비교로 lateThreshold·earlyLeaveThreshold 재판정, TODO 제거) | 임계 분 지정→집계 반영 (API typecheck✅·재기동, diffMinutes 방향 확인) |
 | **E-8** | 리포트 | 스냅샷 행 조회 API/FE 없음(마감 후 열람 불가) | BE-MISSING | MED | ✅ | `reports.controller`(GET snapshots/:id/rows)·`reports.service`(findSnapshotRows)·`snapshots/page.tsx`(행 보기 모달) | 스냅샷 생성→행 조회 (api·web typecheck✅·재기동) |
 | **E-9** | 리포트 | 커스텀 열 FE 전무(BE는 {label,formula} 저장만) | FE-MISSING | LOW | ⏸ 보류 | — | **보류 근거**: BE에 수식 평가/리포트 반영 엔진이 없음(저장만). CRUD UI만 붙이면 "정의해도 리포트 미반영" 표면적 기능이 되어 품질기준 위배. 안전한 수식엔진+리포트통합 = 별도 서브시스템 규모 → 별건으로 분리 |
-| **E-10** | 메시지 | 발송내역 행 클릭 상세 없음(toast) / in_app type 불일치('auto' vs 'automated') | SUPERFICIAL/DATAFLOW | LOW | 🟡 | `messages/page.tsx`(행 클릭 시 제목+내용 스니펫 toast — sent API가 content 포함) | 클릭 시 내용 표시 (typecheck✅). **잔여(E-10b): 풀 상세 모달, in_app type 통일** |
+| **E-10** | 메시지 | 발송내역 행 클릭 상세 없음(toast) / in_app type 불일치('auto' vs 'automated') | SUPERFICIAL/DATAFLOW | LOW | ✅ | `messages/page.tsx`(행 클릭 시 제목+내용 스니펫 toast) + `notification.listener`(in_app `type:'auto'`→**`'automated'`** 통일, message-automation과 일치·'manual'과 구분) | 내용 표시 + 자동 메시지 타입 통일 (listener spec에 type 검증 추가, notification 59 green) |
 
 ---
 
@@ -88,15 +88,17 @@
 
 **구현 가능 갭 전수 완료.** 표면적/RBAC/데이터흐름/FE-MISSING/BE 누락 갭을 도메인별 묶음 커밋으로 모두 해소.
 
-남은 미해소 3건은 모두 **코드 단독으로 깔끔히 닫히지 않아** 근거와 함께 보류 — 표면적 기능 양산(이번 작업의 핵심 시정 대상)을 피하기 위한 의도적 결정:
+**A-8(주52h 경고)·E-10b(자동 메시지 타입 통일)는 2026-06-21 해소** — `ShiftService.collectWeeklyWarnings` 추가가 깔끔히 들어가(순환의존 없음) "과대 작업" 우려가 해소됐고, 타입 통일은 한 줄 + 테스트로 닫힘.
+
+남은 미해소 2건은 **코드 단독으로 깔끔히 닫히지 않아** 근거와 함께 보류 — 표면적 기능 양산(이 작업의 핵심 시정 대상)을 피하기 위한 의도적 결정:
 
 | ID | 상태 | 보류 사유 | 닫는 조건 |
 |---|---|---|---|
-| **A-8** | 보류(LOW) | 패턴 적용 시 주52h 경고 — `SchedulePatternsService`에 `ShiftService` 주입 필요, LOW 대비 과대 작업 | 근무일정 도메인 리팩터 시 동반 |
 | **C-10** | 환경블록 | 첨부 저장소(S3/MinIO) 서명 불일치로 비활성 — 비활성 서브시스템 위 zip 엔드포인트는 미테스트 코드 | MinIO/S3 환경 정상화 선결 |
 | **E-9** | 보류(LOW) | BE가 `{label,formula}` 저장만 — 수식 평가/리포트 통합 엔진 부재. CRUD UI만 붙이면 "정의해도 미반영" 표면적 기능 | 안전 수식엔진 + 리포트 통합 별건 |
 
-> 잔여 LOW 메모: A-6(근태 사소)·C-9b(공용결재선 결재자/작성자/날짜 필터 — BE 미지원)는 영향 경미·BE 선행 필요로 보류.
+> 잔여 LOW 메모: A-6(근태 사소)·C-9b(공용결재선 결재자/작성자/날짜 필터 — **BE 미지원 + 편의 필터**, 제목·문서번호 검색은 C-9로 제공됨)는 영향 경미·BE 선행 필요로 보류.
+> Phase 2 P1 wage-info 독립 모듈화도 보안 가드(guardOrgScope) 중복 위험으로 의도적 보류(PHASE2_GAP_ANALYSIS).
 
 ## E2E #19 진행 결과 (2026-06-21)
 

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing'
 import { NotFoundException, BadRequestException } from '@nestjs/common'
 import { SchedulePatternsService } from './schedule-patterns.service'
 import { PrismaService } from '../../prisma/prisma.service'
+import { ShiftsService } from '../shifts/shifts.service'
 
 // ── 픽스처 ───────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,11 @@ const mockPrisma = {
   $transaction: jest.fn(),
 }
 
+// 주52h 경고 일괄 수집은 ShiftsService에 위임 — 기본은 경고 없음([]) 으로 둔다.
+const mockShiftsService = {
+  collectWeeklyWarnings: jest.fn().mockResolvedValue([]),
+}
+
 // ── 테스트 ───────────────────────────────────────────────────────────────────
 
 describe('SchedulePatternsService', () => {
@@ -72,6 +78,7 @@ describe('SchedulePatternsService', () => {
       providers: [
         SchedulePatternsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: ShiftsService, useValue: mockShiftsService },
       ],
     }).compile()
 
@@ -220,6 +227,22 @@ describe('SchedulePatternsService', () => {
 
       const result = await service.applyPattern(COMPANY_ID, PATTERN_ID, dto)
       expect(result.created).toBe(4)
+    })
+
+    it('주52시간 초과 시 warnings를 함께 반환한다 (A-8)', async () => {
+      mockShiftsService.collectWeeklyWarnings.mockResolvedValueOnce([
+        'emp-1: 이번 주 예정 근무시간이 55시간으로 52시간을 초과합니다.',
+      ])
+      const result = await service.applyPattern(COMPANY_ID, PATTERN_ID, dto)
+      expect(result.warnings).toHaveLength(1)
+      expect(result.warnings?.[0]).toContain('52시간을 초과')
+      // 생성된 근무 묶음으로 직원×주 경고를 조회했는지 확인
+      expect(mockShiftsService.collectWeeklyWarnings).toHaveBeenCalled()
+    })
+
+    it('경고가 없으면 warnings를 반환하지 않는다 (A-8)', async () => {
+      const result = await service.applyPattern(COMPANY_ID, PATTERN_ID, dto)
+      expect(result.warnings).toBeUndefined()
     })
   })
 })
