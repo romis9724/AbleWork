@@ -191,6 +191,43 @@ async function main() {
   })
   console.log('✅ Sales employee:', salesUser.email)
 
+  // 4-4. 일반관리자 (GENERAL_ADMIN) — 회사 전체 관리 (권한 4단계 전수 점검용)
+  const genAdminHash = await bcrypt.hash('genadmin1234!', 10)
+  const genAdminUser = await prisma.user.upsert({
+    where: { email: 'genadmin@ablework.io' },
+    update: {},
+    create: {
+      id: 'seed-user-genadmin',
+      email: 'genadmin@ablework.io',
+      passwordHash: genAdminHash,
+      name: '이총무',
+      timezone: 'Asia/Seoul',
+    },
+  })
+
+  await prisma.employee.upsert({
+    where: { userId: genAdminUser.id },
+    update: {},
+    create: {
+      id: 'seed-emp-genadmin',
+      companyId: company.id,
+      userId: genAdminUser.id,
+      name: '이총무',
+      joinedAt: new Date('2024-01-15'),
+      employmentType: 'regular',
+      accessLevel: 'GENERAL_ADMIN',
+    },
+  })
+
+  await prisma.employeeOrganization.upsert({
+    where: {
+      employeeId_organizationId: { employeeId: 'seed-emp-genadmin', organizationId: org.id },
+    },
+    update: { isPrimary: true },
+    create: { employeeId: 'seed-emp-genadmin', organizationId: org.id, isPrimary: true },
+  })
+  console.log('✅ General admin user:', genAdminUser.email)
+
   // 5. 기본 근무일정 유형
   const shiftType = await prisma.shiftType.upsert({
     where: { id: 'seed-shift-type-regular' },
@@ -571,10 +608,11 @@ async function main() {
 
   console.log('\n✅ Seed completed!')
   console.log('─────────────────────────────────')
-  console.log('관리자:     admin@ablework.io / admin1234!')
-  console.log('직원:       employee@ablework.io / employee1234!')
-  console.log('조직관리자: orgadmin@ablework.io / orgadmin1234! (개발팀)')
-  console.log('영업팀원:   sales@ablework.io / sales1234! (영업팀)')
+  console.log('관리자:     admin@ablework.io / admin1234! (SUPER_ADMIN)')
+  console.log('일반관리자: genadmin@ablework.io / genadmin1234! (GENERAL_ADMIN)')
+  console.log('조직관리자: orgadmin@ablework.io / orgadmin1234! (ORG_ADMIN·개발팀)')
+  console.log('직원:       employee@ablework.io / employee1234! (EMPLOYEE)')
+  console.log('영업팀원:   sales@ablework.io / sales1234! (EMPLOYEE·영업팀)')
 }
 
 main()

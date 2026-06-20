@@ -206,7 +206,7 @@ export default function EmployeesPanel() {
           organizationId: organizationId || undefined,
           positionId: positionId || undefined,
           isActive: !showInactive,
-          limit: 10000,
+          limit: 1000, // 서버 employees limit 상한(1000)에 맞춤 — 중소기업 규모 전 직원 수용
         },
       })) as unknown as { items?: Employee[] }
       handleExport(res.items?.length ? res.items : employees)

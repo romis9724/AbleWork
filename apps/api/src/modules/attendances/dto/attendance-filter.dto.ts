@@ -9,8 +9,9 @@ export const AttendanceFilterSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD 형식으로 입력하세요.')
     .optional(),
-  organizationId: z.string().uuid().optional(),
-  employeeId: z.string().uuid().optional(),
+  // 조회 필터 FK는 형식(uuid) 강제 대신 서비스의 companyId 스코프 존재 검증에 맡긴다.
+  organizationId: z.string().min(1).optional(),
+  employeeId: z.string().min(1).optional(),
   status: z.string().optional(),
   // 퇴근 누락(clockOutAt null) 기록만 조회 — 쿼리스트링 'true'/'false' 모두 수용
   missingClockOut: z

@@ -77,15 +77,27 @@ describe('S5. 무결성·권한 (integrity-security.e2e)', () => {
   // ── 자기결재 방지 ───────────────────────────────────────────────────────────
 
   it('5-2. 결재 가능한 외부 관리자가 없으면 요청 생성이 거부된다 (자기결재 방지)', async () => {
-    // admin(유일한 GENERAL_ADMIN↑)이 휴가를 신청 → 본인 외 결재자 없음 → 거부
-    const res = await authedRequest(ctx.app, adminToken)
-      .post('/requests')
-      .send({
-        type: 'LEAVE_CREATE',
-        payload: { leaveTypeId: LEAVE_TYPE, startDate: '2026-09-20', endDate: '2026-09-20' },
+    // admin을 유일한 GENERAL_ADMIN↑로 격리 — genadmin(GENERAL_ADMIN) 시드를 임시 비활성화.
+    // (admin이 휴가를 신청 → 본인 외 결재 가능한 관리자 없음 → 거부)
+    await ctx.prisma.employee.update({
+      where: { id: 'seed-emp-genadmin' },
+      data: { isActive: false },
+    })
+    try {
+      const res = await authedRequest(ctx.app, adminToken)
+        .post('/requests')
+        .send({
+          type: 'LEAVE_CREATE',
+          payload: { leaveTypeId: LEAVE_TYPE, startDate: '2026-09-20', endDate: '2026-09-20' },
+        })
+      expect(res.status).toBe(400)
+      expect(res.body.error?.code).toBe('REQUEST_NO_APPROVER')
+    } finally {
+      await ctx.prisma.employee.update({
+        where: { id: 'seed-emp-genadmin' },
+        data: { isActive: true },
       })
-    expect(res.status).toBe(400)
-    expect(res.body.error?.code).toBe('REQUEST_NO_APPROVER')
+    }
   })
 
   // ── 휴가 잔액 조회 권한 ───────────────────────────────────────────────────────

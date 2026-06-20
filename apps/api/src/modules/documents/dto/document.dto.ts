@@ -109,7 +109,8 @@ export const DocumentBoxFilterSchema = z.object({
   dateFrom: z.string().optional(), // 상신일 시작 (YYYY-MM-DD)
   dateTo: z.string().optional(), // 상신일 종료 (YYYY-MM-DD)
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  // 백업 화면은 기간 내 전체 문서를 한 번에 조회한다(zip 번들 대상 목록). 상한을 1000으로 둔다.
+  limit: z.coerce.number().int().min(1).max(1000).default(20),
 })
 
 export type StepInput = z.infer<typeof StepInputSchema>
