@@ -53,24 +53,27 @@ export function MeShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="me-main">{children}</main>
+      {/* 모바일: 본문만 흐르고 네비는 fixed bottom. PC: .me-body가 [사이드바 | 본문] 행이 된다 */}
+      <div className="me-body">
+        <main className="me-main">{children}</main>
 
-      <nav className="me-nav">
-        {ME_NAV.map((n) => {
-          const on = pathname === n.path || pathname.startsWith(n.path + '/')
-          return (
-            <button
-              key={n.path}
-              type="button"
-              className={'me-nav-item' + (on ? ' on' : '')}
-              onClick={() => router.push(n.path)}
-            >
-              <span className="ic">{n.icon()}</span>
-              {n.label}
-            </button>
-          )
-        })}
-      </nav>
+        <nav className="me-nav">
+          {ME_NAV.map((n) => {
+            const on = pathname === n.path || pathname.startsWith(n.path + '/')
+            return (
+              <button
+                key={n.path}
+                type="button"
+                className={'me-nav-item' + (on ? ' on' : '')}
+                onClick={() => router.push(n.path)}
+              >
+                <span className="ic">{n.icon()}</span>
+                {n.label}
+              </button>
+            )
+          })}
+        </nav>
+      </div>
     </div>
   )
 }
