@@ -10,7 +10,7 @@ export const AuthMethod = {
 
 export const CreateTimeclockAreaSchema = z
   .object({
-    organizationId: z.string().uuid('유효한 조직 ID를 입력하세요.'),
+    organizationId: z.string().min(1, '유효한 조직 ID를 입력하세요.'),
     name: z.string().min(1, '장소 이름을 입력하세요.').max(100),
     authMethod: z.enum(['gps', 'wifi', 'gps_or_wifi', 'gps_and_wifi', 'none'], {
       errorMap: () => ({ message: '인증 방식이 올바르지 않습니다.' }),

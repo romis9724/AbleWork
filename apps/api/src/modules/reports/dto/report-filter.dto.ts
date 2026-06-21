@@ -3,8 +3,8 @@ import { z } from 'zod'
 export const ReportFilterSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '날짜 형식은 YYYY-MM-DD 이어야 합니다.'),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '날짜 형식은 YYYY-MM-DD 이어야 합니다.'),
-  organizationId: z.string().uuid('올바른 UUID 형식이 아닙니다.').optional(),
-  employeeId: z.string().uuid('올바른 UUID 형식이 아닙니다.').optional(),
+  organizationId: z.string().min(1, '올바른 UUID 형식이 아닙니다.').optional(),
+  employeeId: z.string().min(1, '올바른 UUID 형식이 아닙니다.').optional(),
   // 지각/조퇴 표시 최소 임곗값(분). FE 필터 바에서 전달.
   lateThresholdMinutes: z.coerce.number().int().min(0).optional(),
   earlyLeaveThresholdMinutes: z.coerce.number().int().min(0).optional(),

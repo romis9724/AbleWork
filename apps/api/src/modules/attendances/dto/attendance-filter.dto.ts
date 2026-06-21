@@ -37,11 +37,11 @@ export const ConfirmPeriodSchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD 형식으로 입력하세요.')
       .optional(),
     employeeIds: z
-      .array(z.string().uuid())
+      .array(z.string().min(1))
       .min(1, '확정할 직원을 한 명 이상 선택하세요.')
       .optional(),
     attendanceIds: z
-      .array(z.string().uuid())
+      .array(z.string().min(1))
       .min(1, '확정할 기록을 하나 이상 선택하세요.')
       .optional(),
   })
@@ -56,7 +56,7 @@ export type ConfirmPeriodDto = z.infer<typeof ConfirmPeriodSchema>
 
 export const UnconfirmAttendancesSchema = z
   .object({
-    attendanceIds: z.array(z.string().uuid()).min(1).optional(),
+    attendanceIds: z.array(z.string().min(1)).min(1).optional(),
     startDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD 형식으로 입력하세요.')

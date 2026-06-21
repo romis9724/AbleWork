@@ -2,8 +2,8 @@ import { z } from 'zod'
 
 export const EmployeeFilterSchema = z.object({
   search: z.string().optional(),
-  organizationId: z.string().uuid().optional(),
-  positionId: z.string().uuid().optional(),
+  organizationId: z.string().min(1).optional(),
+  positionId: z.string().min(1).optional(),
   isActive: z
     .string()
     .optional()

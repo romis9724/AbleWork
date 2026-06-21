@@ -18,7 +18,7 @@ export const CreateNotificationRuleSchema = z.object({
   webhookUrl: z.string().url().optional(),
   triggerCondition: z.record(z.unknown()).optional(),
   embedTemplate: z.record(z.unknown()).optional(),
-  messageTemplateId: z.string().uuid().optional(),
+  messageTemplateId: z.string().min(1).optional(),
   cronExpression: z.string().optional(),
   isActive: z.boolean().default(true),
 })
@@ -53,7 +53,7 @@ export type UpdateEventRuleDto = z.infer<typeof UpdateEventRuleSchema>
 // ─── Query: list rules ────────────────────────────────────────────────────
 
 export const ListNotificationRulesQuerySchema = PaginationSchema.extend({
-  companyId: z.string().uuid().optional(),
+  companyId: z.string().min(1).optional(),
 })
 
 export type ListNotificationRulesQueryDto = z.infer<typeof ListNotificationRulesQuerySchema>
@@ -61,7 +61,7 @@ export type ListNotificationRulesQueryDto = z.infer<typeof ListNotificationRules
 // ─── Query: list logs ─────────────────────────────────────────────────────
 
 export const ListNotificationLogsQuerySchema = PaginationSchema.extend({
-  ruleId: z.string().uuid().optional(),
+  ruleId: z.string().min(1).optional(),
   status: z.enum(['success', 'failed']).optional(),
   startDate: z.string().datetime({ offset: true }).optional(),
   endDate: z.string().datetime({ offset: true }).optional(),

@@ -46,11 +46,11 @@ export type UpdateTemplateDto = z.infer<typeof UpdateTemplateSchema>
 // ── 메시지 발송 ───────────────────────────────────────────────────────────────
 
 export const SendMessageSchema = z.object({
-  templateId: z.string().uuid('유효한 UUID를 입력하세요.').optional(),
+  templateId: z.string().min(1, '유효한 UUID를 입력하세요.').optional(),
   title: z.string().min(1, '제목을 입력하세요.').max(200),
   content: z.string().min(1, '내용을 입력하세요.'),
   recipientEmployeeIds: z
-    .array(z.string().uuid('유효한 UUID를 입력하세요.'))
+    .array(z.string().min(1, '유효한 UUID를 입력하세요.'))
     .min(1, '수신자를 한 명 이상 선택하세요.'),
   sendEmail: z.boolean().optional().default(false),
 })
@@ -77,8 +77,8 @@ export const CreateAutomationSchema = z.object({
     .regex(timeRegex, '발송 시간은 HH:mm 형식으로 입력하세요.'),
   sendEmail: z.boolean().default(false),
   startsAt: z.string().datetime({ message: 'ISO 8601 형식으로 입력하세요.' }).optional(),
-  leaveTypeId: z.string().uuid('유효한 UUID를 입력하세요.').optional(),
-  templateId: z.string().uuid('유효한 UUID를 입력하세요.'),
+  leaveTypeId: z.string().min(1, '유효한 UUID를 입력하세요.').optional(),
+  templateId: z.string().min(1, '유효한 UUID를 입력하세요.'),
   isActive: z.boolean().default(true),
 })
 
@@ -97,8 +97,8 @@ export const UpdateAutomationSchema = z.object({
     .optional(),
   sendEmail: z.boolean().optional(),
   startsAt: z.string().datetime({ message: 'ISO 8601 형식으로 입력하세요.' }).optional(),
-  leaveTypeId: z.string().uuid('유효한 UUID를 입력하세요.').nullable().optional(),
-  templateId: z.string().uuid('유효한 UUID를 입력하세요.').optional(),
+  leaveTypeId: z.string().min(1, '유효한 UUID를 입력하세요.').nullable().optional(),
+  templateId: z.string().min(1, '유효한 UUID를 입력하세요.').optional(),
   isActive: z.boolean().optional(),
 })
 

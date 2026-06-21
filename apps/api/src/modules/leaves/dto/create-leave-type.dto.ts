@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 export const CreateLeaveTypeSchema = z.object({
-  groupId: z.string().uuid('유효한 UUID를 입력하세요.'),
+  groupId: z.string().min(1, '유효한 UUID를 입력하세요.'),
   name: z.string().min(1, '유형명을 입력하세요.').max(100),
   displayName: z.string().max(100).optional(),
   code: z.string().max(20).optional(),
@@ -17,8 +17,8 @@ export const CreateLeaveTypeSchema = z.object({
   baseHours: z.number().min(0).optional(),
   reasonDisplay: z.boolean().default(false),
   deleteEnclosedShifts: z.boolean().default(false),
-  orgScopeIds: z.array(z.string().uuid()).optional(),
-  positionScopeIds: z.array(z.string().uuid()).optional(),
+  orgScopeIds: z.array(z.string().min(1)).optional(),
+  positionScopeIds: z.array(z.string().min(1)).optional(),
   isActive: z.boolean().default(true),
 })
 

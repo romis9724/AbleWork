@@ -9,7 +9,7 @@ export const CreateSchedulePatternSchema = z.object({
     .min(1, '반복 주기는 1일 이상이어야 합니다.')
     .max(365, '반복 주기는 365일 이하여야 합니다.'),
   patternDefinition: z
-    .record(z.string(), z.string().uuid())
+    .record(z.string(), z.string().min(1))
     .describe('날짜 인덱스(0-based 문자열) → templateId JSONB'),
   holidayHandling: z.enum(['skip_and_shift', 'skip_and_keep', 'no_skip'], {
     errorMap: () => ({ message: '공휴일 처리 방식이 올바르지 않습니다.' }),
@@ -20,7 +20,7 @@ export const UpdateSchedulePatternSchema = CreateSchedulePatternSchema.partial()
 
 export const ApplySchedulePatternSchema = z.object({
   employeeIds: z
-    .array(z.string().uuid('유효한 UUID를 입력하세요.'))
+    .array(z.string().min(1, '유효한 UUID를 입력하세요.'))
     .min(1, '적용할 직원을 한 명 이상 선택하세요.'),
   startDate: z
     .string()

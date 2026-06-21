@@ -5,7 +5,7 @@ export const CreateStandardizationRuleSchema = z.object({
   calculationBasis: z.enum(['attendance', 'shift']),
   startTimeRule: z.string().min(1).max(20),
   endTimeRule: z.string().min(1).max(20),
-  positionId: z.string().uuid('올바른 UUID 형식이 아닙니다.').nullish(),
+  positionId: z.string().min(1, '올바른 UUID 형식이 아닙니다.').nullish(),
   excludeNoCheckin: z.boolean().optional(),
   includeManualBreak: z.boolean().optional(),
   isDefault: z.boolean().optional(),

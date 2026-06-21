@@ -16,8 +16,8 @@ export type CreateSnapshotDto = z.infer<typeof CreateSnapshotSchema>
 export const CreateCustomColumnSchema = z.object({
   name: z.string().min(1, '열 이름을 입력해주세요.').max(100),
   formula: z.string().min(1, '수식을 입력해주세요.'),
-  leaveTypeId: z.string().uuid('올바른 UUID 형식이 아닙니다.').optional(),
-  shiftTypeId: z.string().uuid('올바른 UUID 형식이 아닙니다.').optional(),
+  leaveTypeId: z.string().min(1, '올바른 UUID 형식이 아닙니다.').optional(),
+  shiftTypeId: z.string().min(1, '올바른 UUID 형식이 아닙니다.').optional(),
 })
 
 export type CreateCustomColumnDto = z.infer<typeof CreateCustomColumnSchema>

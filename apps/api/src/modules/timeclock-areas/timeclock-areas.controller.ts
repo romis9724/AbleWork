@@ -29,7 +29,7 @@ import {
 import { z } from 'zod'
 
 const OrganizationFilterSchema = z.object({
-  organizationId: z.string().uuid().optional(),
+  organizationId: z.string().min(1).optional(),
 })
 
 @ApiTags('timeclock-areas')
