@@ -18,7 +18,7 @@ export const AccrualRuleItemSchema = z.object({
 })
 
 export const CreateAccrualRuleSchema = z.object({
-  leaveGroupId: z.string().uuid('유효한 UUID를 입력하세요.'),
+  leaveGroupId: z.string().min(1, '유효한 UUID를 입력하세요.'),
   name: z.string().min(1, '규칙명을 입력하세요.').max(100),
   memo: z.string().optional(),
   isActive: z.boolean().default(true),
@@ -28,8 +28,8 @@ export const CreateAccrualRuleSchema = z.object({
 export const UpdateAccrualRuleSchema = CreateAccrualRuleSchema.partial()
 
 export const RunAccrualRuleSchema = z.object({
-  employeeId: z.string().uuid().optional(),
-  employeeIds: z.array(z.string().uuid()).optional(),
+  employeeId: z.string().min(1).optional(),
+  employeeIds: z.array(z.string().min(1)).optional(),
   year: z.number().int().min(2000).max(2100).default(new Date().getFullYear()),
 })
 

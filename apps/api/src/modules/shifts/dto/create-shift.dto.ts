@@ -1,10 +1,10 @@
 import { z } from 'zod'
 
 export const CreateShiftSchema = z.object({
-  employeeId: z.string().uuid('유효한 직원 ID를 입력하세요.'),
-  organizationId: z.string().uuid('유효한 조직 ID를 입력하세요.'),
-  shiftTypeId: z.string().uuid('유효한 근무유형 ID를 입력하세요.'),
-  templateId: z.string().uuid().optional(),
+  employeeId: z.string().min(1, '유효한 직원 ID를 입력하세요.'),
+  organizationId: z.string().min(1, '유효한 조직 ID를 입력하세요.'),
+  shiftTypeId: z.string().min(1, '유효한 근무유형 ID를 입력하세요.'),
+  templateId: z.string().min(1).optional(),
   startAt: z.string().datetime({ message: 'ISO 8601 형식으로 입력하세요.' }),
   endAt: z.string().datetime({ message: 'ISO 8601 형식으로 입력하세요.' }),
   isOffsite: z.boolean().optional().default(false),
@@ -14,8 +14,8 @@ export const CreateShiftSchema = z.object({
 })
 
 export const UpdateShiftSchema = z.object({
-  shiftTypeId: z.string().uuid().optional(),
-  templateId: z.string().uuid().optional(),
+  shiftTypeId: z.string().min(1).optional(),
+  templateId: z.string().min(1).optional(),
   startAt: z.string().datetime().optional(),
   endAt: z.string().datetime().optional(),
   isOffsite: z.boolean().optional(),

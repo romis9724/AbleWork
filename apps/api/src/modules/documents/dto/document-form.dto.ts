@@ -8,7 +8,7 @@ export const CreateDocumentFormSchema = z.object({
   name: z.string().min(1, '양식명을 입력하세요.').max(200),
   category: z.string().max(100).optional(),
   // AP-01 양식함 분류 id (미지정 가능)
-  categoryId: z.string().uuid().nullable().optional(),
+  categoryId: z.string().min(1).nullable().optional(),
   fieldsSchema: z.record(z.unknown()).default({}),
   // AP-01 양식 메타
   visibilityScope: z.enum(FormVisibilityScope).default('PUBLIC'),
@@ -16,9 +16,9 @@ export const CreateDocumentFormSchema = z.object({
   abbreviation: z.string().max(20).nullable().optional(),
   description: z.string().max(1000).nullable().optional(),
   // AP-01-03 양식별 기본 결재선 (공용 결재선 id, 미지정 가능)
-  defaultLineId: z.string().uuid().nullable().optional(),
+  defaultLineId: z.string().min(1).nullable().optional(),
   // AP-01-07 양식 담당자(직원 id, 미지정 가능)
-  formOwnerId: z.string().uuid().nullable().optional(),
+  formOwnerId: z.string().min(1).nullable().optional(),
   // AP-01-06 ZIP 첨부 허용
   allowZipUpload: z.boolean().default(false),
   sortOrder: z.number().int().min(0).default(0),
@@ -30,14 +30,14 @@ export const UpdateDocumentFormSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
     category: z.string().max(100).optional(),
-    categoryId: z.string().uuid().nullable().optional(),
+    categoryId: z.string().min(1).nullable().optional(),
     fieldsSchema: z.record(z.unknown()).optional(),
     visibilityScope: z.enum(FormVisibilityScope).optional(),
     retentionYears: z.number().int().min(0).max(100).nullable().optional(),
     abbreviation: z.string().max(20).nullable().optional(),
     description: z.string().max(1000).nullable().optional(),
-    defaultLineId: z.string().uuid().nullable().optional(),
-    formOwnerId: z.string().uuid().nullable().optional(),
+    defaultLineId: z.string().min(1).nullable().optional(),
+    formOwnerId: z.string().min(1).nullable().optional(),
     allowZipUpload: z.boolean().optional(),
     sortOrder: z.number().int().min(0).optional(),
     allowReDraft: z.boolean().optional(),

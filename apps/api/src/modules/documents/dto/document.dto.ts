@@ -105,7 +105,7 @@ export const DocumentBoxFilterSchema = z.object({
   box: z.enum(DOCUMENT_BOXES).default('draft'),
   search: z.string().optional(),
   status: z.string().optional(), // ledger/status 박스 필터 (status: ''/SUBMITTED/IN_PROGRESS/REJECTED)
-  formId: z.string().uuid().optional(), // 기안양식 필터 (status 박스)
+  formId: z.string().min(1).optional(), // 기안양식 필터 (status 박스)
   dateFrom: z.string().optional(), // 상신일 시작 (YYYY-MM-DD)
   dateTo: z.string().optional(), // 상신일 종료 (YYYY-MM-DD)
   page: z.coerce.number().int().min(1).default(1),
