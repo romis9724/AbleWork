@@ -14,7 +14,7 @@ ENV_FILE="${AWS_DIR}/.env.prod"
 [ -f "${ENV_FILE}" ] || die ".env.prod 가 없습니다. '${AWS_DIR}/.env.prod.example' 를 복사해 값을 채우세요."
 
 # 비밀로 분류할 키(SecureString)
-SECURE_KEYS=" DATABASE_URL REDIS_URL JWT_SECRET MAIL_USER MAIL_PASS DISCORD_BOT_TOKEN "
+SECURE_KEYS=" DATABASE_URL REDIS_URL JWT_SECRET MAIL_USER MAIL_PASS DISCORD_BOT_TOKEN DISCORD_ALERT_WEBHOOK_URL DISCORD_REPORT_WEBHOOK_URL "
 
 put_param() {
   local key="$1" val="$2" type="String"
