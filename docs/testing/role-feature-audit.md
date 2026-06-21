@@ -126,3 +126,11 @@
 ## 검증 메모(오탐 방지)
 - **B-1 오탐**: 정적 감사가 `RequestFilterSchema.scope.default('mine')`를 놓쳐 "누출"로 보고했으나, 컨트롤러가 `ZodValidationPipe(RequestFilterSchema)`를 적용해 scope 기본 'mine' → EMPLOYEE 본인 스코핑 정상. **갭 아님**.
 - 교훈: 정적 에이전트 보고는 구현 전 반드시 코드/경험적으로 재검증한다.
+
+## 프로세스별 크롬 E2E 통합테스트 (2026-06-21 추가)
+
+전 10개 업무 프로세스를 크롬(Chromium) Playwright로 다옵션 통합테스트 → **91/91 PASS**. 상세·매트릭스: `docs/testing/process-integration-test-matrix.md`.
+이 과정에서 정적 감사가 놓친 **런타임 결함 3건**을 추가 발견·수정:
+- **SFT-1b**(MED): SFT-1 수정이 로스터 화면에만 적용되고 근무일정 **템플릿 관리 페이지**(`shifts/templates/page.tsx`)엔 누락 → 시간 ISO epoch 노출 + 수정 prefill 깨짐. `toHHMM()` 적용으로 수정.
+- **MSG-SEND-500**(HIGH): `POST /messages/send`가 `senderId=user.sub`(User.id)로 FK(employees.id) 위반 → 항상 500. `messages.controller.ts` `user.employeeId`로 수정(타 메서드와 일치).
+- **FE-AUTOMATION-SENDTIME**(MED): 메시지 자동화 규칙 수정 시 `sendTime` 파싱 오류(`slice(0,5)`→`slice(11,16)`).

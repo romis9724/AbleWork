@@ -44,6 +44,14 @@ import {
 
 const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/
 
+/** ISO/datetime 또는 HH:MM 입력을 HH:MM 로 정규화 (BE가 근무 시간을 epoch datetime 으로 저장). 로스터(shifts/page.tsx)와 동일 패턴. */
+function toHHMM(value: string): string {
+  if (TIME_REGEX.test(value)) return value
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return value
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 const schema = z.object({
   code: z.string().optional(),
   name: z.string().min(1, '이름을 입력해주세요'),
@@ -93,8 +101,8 @@ export default function ShiftTemplatesPage() {
       code: template.code ?? '',
       name: template.name,
       shiftTypeId: template.shiftTypeId,
-      startTime: template.startTime,
-      endTime: template.endTime,    })
+      startTime: toHHMM(template.startTime),
+      endTime: toHHMM(template.endTime),    })
     setDialog({ open: true, editing: template })
   }
 
@@ -191,7 +199,7 @@ export default function ShiftTemplatesPage() {
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{template.name}</TableCell>
                   <TableCell>
-                    {template.startTime} — {template.endTime}
+                    {toHHMM(template.startTime)} — {toHHMM(template.endTime)}
                   </TableCell>
                   <TableCell>
                     {template.shiftType ? (
