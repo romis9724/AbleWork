@@ -2,9 +2,11 @@ import { BadRequestException } from '@nestjs/common'
 import { LlmService } from './llm.service'
 import { AiSettingsService } from './ai-settings.service'
 import { OpenAiCompatibleProvider } from './openai-compatible.provider'
+import { OllamaProvider } from './ollama.provider'
 
 const aiSettings = { getConfig: jest.fn() }
-const provider = { type: 'openai-compatible', chat: jest.fn() }
+const openAi = { type: 'openai-compatible', chat: jest.fn() }
+const ollama = { type: 'ollama', chat: jest.fn() }
 
 const enabledCfg = {
   enabled: true,
@@ -23,31 +25,50 @@ describe('LlmService', () => {
     jest.clearAllMocks()
     service = new LlmService(
       aiSettings as unknown as AiSettingsService,
-      provider as unknown as OpenAiCompatibleProvider,
+      openAi as unknown as OpenAiCompatibleProvider,
+      ollama as unknown as OllamaProvider,
     )
   })
 
-  it('chat — 설정(baseUrl·model·maxTokens)을 적용해 provider.chat을 호출한다', async () => {
+  it('chat — vLLM/OpenAI는 OpenAI 호환 provider로 라우팅한다', async () => {
     aiSettings.getConfig.mockResolvedValue(enabledCfg)
-    provider.chat.mockResolvedValue('응답')
+    openAi.chat.mockResolvedValue('응답')
 
     const out = await service.chat('c1', [{ role: 'user', content: 'hi' }])
 
     expect(out).toBe('응답')
-    expect(provider.chat).toHaveBeenCalledWith(
+    expect(openAi.chat).toHaveBeenCalledWith(
       expect.objectContaining({ baseUrl: 'http://vllm:8000/v1', model: 'qwen2.5', maxTokens: 512 }),
     )
+    expect(ollama.chat).not.toHaveBeenCalled()
+  })
+
+  it('chat — provider=ollama면 OllamaProvider로 라우팅한다', async () => {
+    aiSettings.getConfig.mockResolvedValue({
+      ...enabledCfg,
+      provider: 'ollama',
+      baseUrl: 'http://oll:23076',
+      model: 'qwen3:8b',
+    })
+    ollama.chat.mockResolvedValue('올라마 응답')
+
+    const out = await service.chat('c1', [{ role: 'user', content: 'hi' }])
+
+    expect(out).toBe('올라마 응답')
+    expect(ollama.chat).toHaveBeenCalled()
+    expect(openAi.chat).not.toHaveBeenCalled()
   })
 
   it('chat — 비활성이면 AI_DISABLED로 막고 provider를 호출하지 않는다', async () => {
     aiSettings.getConfig.mockResolvedValue({ ...enabledCfg, enabled: false })
     await expect(service.chat('c1', [])).rejects.toThrow(BadRequestException)
-    expect(provider.chat).not.toHaveBeenCalled()
+    expect(openAi.chat).not.toHaveBeenCalled()
+    expect(ollama.chat).not.toHaveBeenCalled()
   })
 
   it('testConnection — 성공 시 ok=true·model 반환', async () => {
     aiSettings.getConfig.mockResolvedValue(enabledCfg)
-    provider.chat.mockResolvedValue('pong')
+    openAi.chat.mockResolvedValue('pong')
     const r = await service.testConnection('c1')
     expect(r.ok).toBe(true)
     expect(r.model).toBe('qwen2.5')
@@ -55,7 +76,7 @@ describe('LlmService', () => {
 
   it('testConnection — 호출 실패(예외)도 throw 없이 ok=false로 흡수', async () => {
     aiSettings.getConfig.mockResolvedValue(enabledCfg)
-    provider.chat.mockRejectedValue({ code: 'ECONNREFUSED' })
+    openAi.chat.mockRejectedValue({ code: 'ECONNREFUSED' })
     const r = await service.testConnection('c1')
     expect(r.ok).toBe(false)
     expect(r.message).toContain('ECONNREFUSED')
@@ -63,8 +84,7 @@ describe('LlmService', () => {
 
   it('testConnection — baseUrl 미설정이면 ok=false', async () => {
     aiSettings.getConfig.mockResolvedValue({ ...enabledCfg, baseUrl: '' })
-    const r = await service.testConnection('c1')
-    expect(r.ok).toBe(false)
+    expect((await service.testConnection('c1')).ok).toBe(false)
   })
 
   it('isEnabled — enabled·baseUrl·model이 모두 있어야 true', async () => {
@@ -75,7 +95,7 @@ describe('LlmService', () => {
     expect(await service.isEnabled('c1')).toBe(false)
   })
 
-  it('chat — 지원하지 않는 provider면 AI_PROVIDER_UNSUPPORTED', async () => {
+  it('chat — 아직 미지원 provider(anthropic)는 AI_PROVIDER_UNSUPPORTED', async () => {
     aiSettings.getConfig.mockResolvedValue({ ...enabledCfg, provider: 'anthropic' })
     await expect(service.chat('c1', [])).rejects.toThrow(BadRequestException)
   })

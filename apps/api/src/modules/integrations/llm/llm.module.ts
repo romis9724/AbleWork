@@ -4,6 +4,7 @@ import { AiSettingsController } from './ai-settings.controller'
 import { AiSettingsService } from './ai-settings.service'
 import { LlmService } from './llm.service'
 import { OpenAiCompatibleProvider } from './openai-compatible.provider'
+import { OllamaProvider } from './ollama.provider'
 
 /**
  * LLM 연동 — AI 설정(company_settings section='ai') + provider 추상화 + 연결 테스트.
@@ -13,7 +14,7 @@ import { OpenAiCompatibleProvider } from './openai-compatible.provider'
 @Module({
   imports: [CompaniesModule],
   controllers: [AiSettingsController],
-  providers: [AiSettingsService, LlmService, OpenAiCompatibleProvider],
+  providers: [AiSettingsService, LlmService, OpenAiCompatibleProvider, OllamaProvider],
   exports: [LlmService, AiSettingsService],
 })
 export class LlmModule {}

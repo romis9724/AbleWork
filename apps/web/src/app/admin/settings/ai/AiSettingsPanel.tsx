@@ -6,7 +6,7 @@ import { useToast } from '@/components/ab/Toast'
 import apiClient from '@/lib/api-client'
 import { getApiErrorMessage } from '@/lib/api-error'
 
-type AiProvider = 'vllm' | 'openai' | 'anthropic'
+type AiProvider = 'ollama' | 'vllm' | 'openai' | 'anthropic'
 
 interface AiSettings {
   enabled: boolean
@@ -26,13 +26,15 @@ interface TestResult {
 }
 
 const PROVIDERS = [
+  { value: 'ollama', label: 'Ollama (자체 호스팅)' },
   { value: 'vllm', label: 'vLLM (자체 호스팅)' },
   { value: 'openai', label: 'OpenAI 호환' },
   { value: 'anthropic', label: 'Anthropic (준비 중)' },
 ]
 
-/** provider별 입력 힌트 */
+/** provider별 입력 힌트. Ollama는 native API라 baseUrl에 /v1을 붙이지 않는다. */
 const PLACEHOLDERS: Record<AiProvider, { baseUrl: string; model: string }> = {
+  ollama: { baseUrl: 'http://59.29.231.14:23076', model: 'qwen3:8b' },
   vllm: { baseUrl: 'http://10.0.0.5:8000/v1', model: 'Qwen/Qwen2.5-7B-Instruct' },
   openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   anthropic: { baseUrl: '(향후 지원)', model: 'claude-...' },

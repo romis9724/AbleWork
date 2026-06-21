@@ -19,7 +19,7 @@ const FIELDS = {
 
 const DEFAULTS = {
   enabled: false,
-  provider: 'vllm' as AiProvider,
+  provider: 'ollama' as AiProvider,
   baseUrl: '',
   model: '',
   apiKey: '',
