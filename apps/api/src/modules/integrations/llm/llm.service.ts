@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import { AiConfig, AiSettingsService } from './ai-settings.service'
 import { OpenAiCompatibleProvider } from './openai-compatible.provider'
+import { OllamaProvider } from './ollama.provider'
 import { LlmMessage, LlmProvider } from './llm-provider.interface'
 
 /** 연결 테스트 결과 */
@@ -19,6 +20,7 @@ export class LlmService {
   constructor(
     private readonly aiSettings: AiSettingsService,
     private readonly openAiCompatible: OpenAiCompatibleProvider,
+    private readonly ollama: OllamaProvider,
   ) {}
 
   /** 활성화·설정 검증 후 채팅 완성 호출 */
@@ -72,9 +74,11 @@ export class LlmService {
     }
   }
 
-  /** provider type → 구현체 (vLLM·OpenAI는 OpenAI 호환 공유) */
+  /** provider type → 구현체 (Ollama는 native, vLLM·OpenAI는 OpenAI 호환 공유) */
   private selectProvider(provider: string): LlmProvider {
     switch (provider) {
+      case 'ollama':
+        return this.ollama
       case 'vllm':
       case 'openai':
         return this.openAiCompatible

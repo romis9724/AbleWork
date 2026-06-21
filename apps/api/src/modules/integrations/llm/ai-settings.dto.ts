@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
-/** 지원 provider — vLLM(우선)·OpenAI는 OpenAI 호환, anthropic은 향후 */
-export const AI_PROVIDERS = ['vllm', 'openai', 'anthropic'] as const
+/** 지원 provider — Ollama(native, think 제어)·vLLM/OpenAI(OpenAI 호환), anthropic은 향후 */
+export const AI_PROVIDERS = ['ollama', 'vllm', 'openai', 'anthropic'] as const
 export type AiProvider = (typeof AI_PROVIDERS)[number]
 
 /** AI 설정 수정 — 알려진 필드만 허용, 알 수 없는 키는 strip */
