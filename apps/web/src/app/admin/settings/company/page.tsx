@@ -12,6 +12,7 @@ import OrganizationsPanel from '@/app/admin/organizations/OrganizationsPanel'
 import ApprovalCommonPanel from '@/app/admin/approval/common/ApprovalCommonPanel'
 import PermissionsPanel from '@/app/admin/settings/permissions/PermissionsPanel'
 import NotificationsPanel from '@/app/admin/settings/notifications/NotificationsPanel'
+import AiSettingsPanel from '@/app/admin/settings/ai/AiSettingsPanel'
 import LeaveSettingsPanel from '@/components/admin/LeaveSettingsPanel'
 import RequestSettingsPanel from '@/components/admin/RequestSettingsPanel'
 import ClosingPanel from '@/components/admin/ClosingPanel'
@@ -67,6 +68,7 @@ const SECTIONS = [
   { key: 'leave', label: '휴가' },
   { key: 'request', label: '요청' },
   { key: 'closing', label: '마감' },
+  { key: 'ai', label: 'AI' },
   { key: 'advanced', label: '고급 옵션' },
 ] as const
 type SectionKey = (typeof SECTIONS)[number]['key']
@@ -620,6 +622,9 @@ export default function CompanySettingsPage() {
 
           {/* ── 마감 (임베드 패널: 근태 기간 확정/해제) ────────── */}
           {section === 'closing' && <ClosingPanel />}
+
+          {/* ── AI (임베드 패널: vLLM·외부 LLM 설정 + 연결 테스트) ─ */}
+          {section === 'ai' && <AiSettingsPanel />}
 
           {/* ── 고급 옵션 (임베드 패널) ──────────────────────── */}
           {section === 'advanced' && <AdvancedSettingsPanel />}
