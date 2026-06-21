@@ -56,6 +56,7 @@ model Company {
   formCategories       FormCategory[]
   auditLogs            AuditLog[]
   messengerAccounts    MessengerAccount[]
+  errorAnalysisLogs    ErrorAnalysisLog[]
 
   @@map("companies")
 }
@@ -1189,6 +1190,44 @@ model AuditLog {
 
   @@index([companyId, createdAt(sort: Desc)])
   @@map("audit_logs")
+}
+
+/// API 에러 분석 로그 — GlobalExceptionFilter가 잡은 에러를 회사 AI로 분석한 결과를 보관.
+/// 이메일/Discord 발송과 별개로 영속화하여 관리자 화면(부가기능 > AI 에러 분석)에서 조회한다.
+model ErrorAnalysisLog {
+  id              String   @id @default(uuid())
+  companyId       String   @map("company_id")
+  /// HTTP 상태 코드 (400·500 등)
+  status          Int
+  /// 에러 코드 (VALIDATION_ERROR·INTERNAL_SERVER_ERROR 등)
+  code            String   @db.VarChar(80)
+  /// 사용자 표시 메시지
+  message         String   @db.Text
+  /// 요청 메서드 (GET·POST 등)
+  method          String   @db.VarChar(10)
+  /// 요청 경로
+  path            String   @db.VarChar(500)
+  /// 인증된 요청이면 사용자 ID(JWT sub)
+  userId          String?  @map("user_id")
+  /// 검증 실패 등 상세(4xx)
+  detail          Json?
+  /// 서버 오류 스택(5xx)
+  stack           String?  @db.Text
+  /// 회사 AI가 생성한 원인/조치 분석 (미설정/실패 시 null)
+  aiAnalysis      String?  @map("ai_analysis") @db.Text
+  /// 분석 시점 회사 AI 활성 여부
+  aiEnabled       Boolean  @default(false) @map("ai_enabled")
+  /// 이메일 발송 성공 여부
+  notifiedEmail   Boolean  @default(false) @map("notified_email")
+  /// Discord 경고 발송 성공 여부
+  notifiedDiscord Boolean  @default(false) @map("notified_discord")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, createdAt(sort: Desc)])
+  @@index([companyId, status])
+  @@map("error_analysis_logs")
 }
 
 /// 메신저 계정 연동 — 직원 ↔ 메신저(Discord 등) 사용자 매핑 (메신저 양방향 결재 PoC).

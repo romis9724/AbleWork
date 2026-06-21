@@ -66,6 +66,7 @@ export const ADMIN_NAV: AbNavSection[] = [
 ]
 
 export const ADMIN_FOOT: AbNavItem[] = [
+  { id: 'errorAnalysis', label: 'AI 에러 분석', icon: HRI.alert, path: '/admin/ai-error-analysis' },
   { id: 'audit', label: '감사 로그', icon: HRI.report, path: '/admin/audit-logs' },
 ]
 

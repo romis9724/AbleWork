@@ -15,7 +15,15 @@ const makeEvent = (over: Partial<ApiErrorEvent> = {}): ApiErrorEvent => ({
 describe('ErrorAnalysisService', () => {
   let svc: ErrorAnalysisService
   let config: { get: jest.Mock }
-  let prisma: { company: { findFirst: jest.Mock } }
+  let prisma: {
+    company: { findFirst: jest.Mock }
+    errorAnalysisLog: {
+      create: jest.Mock
+      findMany: jest.Mock
+      count: jest.Mock
+      findFirst: jest.Mock
+    }
+  }
   let llm: { isEnabled: jest.Mock; chat: jest.Mock }
   let mail: { sendMessageMail: jest.Mock }
   let discord: { send: jest.Mock }
@@ -39,7 +47,15 @@ describe('ErrorAnalysisService', () => {
             : undefined,
       ),
     }
-    prisma = { company: { findFirst: jest.fn().mockResolvedValue({ id: 'default-co' }) } }
+    prisma = {
+      company: { findFirst: jest.fn().mockResolvedValue({ id: 'default-co' }) },
+      errorAnalysisLog: {
+        create: jest.fn().mockResolvedValue({ id: 'log1' }),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    }
     llm = {
       isEnabled: jest.fn().mockResolvedValue(true),
       chat: jest.fn().mockResolvedValue('추정 원인: 검증 실패\n조치: 스키마 정합'),
@@ -61,6 +77,39 @@ describe('ErrorAnalysisService', () => {
       'https://discord/wh',
       expect.objectContaining({ title: expect.stringContaining('API 에러 500') }),
     )
+    // 분석 결과 영속화(관리자 조회용)
+    expect(prisma.errorAnalysisLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          companyId: 'c1',
+          status: 500,
+          code: 'INTERNAL_SERVER_ERROR',
+          aiEnabled: true,
+          notifiedEmail: true,
+          notifiedDiscord: true,
+          aiAnalysis: expect.stringContaining('추정 원인'),
+        }),
+      }),
+    )
+  })
+
+  it('findAll: 회사 스코프 목록·총계 반환', async () => {
+    prisma.errorAnalysisLog.findMany.mockResolvedValue([{ id: 'a' }])
+    prisma.errorAnalysisLog.count.mockResolvedValue(1)
+    const res = await svc.findAll('c1', { page: 1, limit: 25 } as never)
+    expect(res).toEqual({ items: [{ id: 'a' }], total: 1, page: 1, limit: 25 })
+    expect(prisma.errorAnalysisLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ companyId: 'c1' }) }),
+    )
+  })
+
+  it('findOne: 회사 스코프 단건 조회', async () => {
+    prisma.errorAnalysisLog.findFirst.mockResolvedValue({ id: 'x' })
+    const res = await svc.findOne('c1', 'x')
+    expect(res).toEqual({ id: 'x' })
+    expect(prisma.errorAnalysisLog.findFirst).toHaveBeenCalledWith({
+      where: { id: 'x', companyId: 'c1' },
+    })
   })
 
   it('같은 시그니처 중복은 1회만 처리(디둡)', async () => {
