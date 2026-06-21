@@ -5,6 +5,7 @@ import { MessengerApprovalListener } from './messenger-approval.listener'
 import { DiscordProvider } from './discord/discord.provider'
 import { MESSENGER_PROVIDER } from './messenger-provider.interface'
 import { PrismaService } from '../../../prisma/prisma.service'
+import { LlmService } from '../llm/llm.service'
 
 jest.mock('axios')
 const mockedAxios = axios as jest.Mocked<typeof axios>
@@ -37,6 +38,7 @@ describe('메신저 결재 흐름 통합 (이벤트 emit → 리스너 → Disco
         DiscordProvider,
         { provide: MESSENGER_PROVIDER, useExisting: DiscordProvider },
         { provide: PrismaService, useValue: prismaMock },
+        { provide: LlmService, useValue: { isEnabled: jest.fn().mockResolvedValue(false), chat: jest.fn() } },
       ],
     }).compile()
     // onApplicationBootstrap 실행 → 리스너가 *_REQUESTED 이벤트를 실제 구독

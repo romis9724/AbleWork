@@ -2,6 +2,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { MessengerApprovalListener } from './messenger-approval.listener'
 import { PrismaService } from '../../../prisma/prisma.service'
 import { MessengerProvider } from './messenger-provider.interface'
+import { LlmService } from '../llm/llm.service'
 
 const prisma = {
   approvalStep: { findMany: jest.fn() },
@@ -14,6 +15,7 @@ const messenger = {
   sendApprovalRequestToUser: jest.fn(),
 }
 const eventEmitter = { on: jest.fn() }
+const llm = { isEnabled: jest.fn(), chat: jest.fn() }
 
 describe('MessengerApprovalListener', () => {
   let listener: MessengerApprovalListener
@@ -21,10 +23,12 @@ describe('MessengerApprovalListener', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
+    llm.isEnabled.mockResolvedValue(false) // 기본 비활성(요약 없음) — 개별 테스트에서 활성화
     listener = new MessengerApprovalListener(
       eventEmitter as unknown as EventEmitter2,
       prisma as unknown as PrismaService,
       messenger as unknown as MessengerProvider,
+      llm as unknown as LlmService,
     )
   })
 
@@ -153,5 +157,43 @@ describe('MessengerApprovalListener', () => {
     // 에러를 흡수하므로 throw하지 않는다
     await expect(listener.handleRequested('shift.requested', base)).resolves.toBeUndefined()
     expect(messenger.sendApprovalRequestToUser).toHaveBeenCalledTimes(2)
+  })
+
+  it('AI 활성 시 신청 내용을 요약해 summary로 담는다', async () => {
+    prisma.approvalStep.findMany.mockResolvedValue([{ assigneeId: 'a' }])
+    prisma.document.findFirst.mockResolvedValue({
+      title: 't',
+      docNumber: null,
+      content: { reason: '가족 여행', days: 2 },
+      drafter: { name: '홍길동' },
+    })
+    prisma.messengerAccount.findFirst.mockResolvedValue({ externalUserId: 'd' })
+    llm.isEnabled.mockResolvedValue(true)
+    llm.chat.mockResolvedValue('연차 2일, 가족 여행 — 특이사항 없음')
+
+    await listener.handleRequested('leave.requested', base)
+
+    expect(messenger.sendApprovalRequestToUser.mock.calls[0][1].summary).toBe(
+      '연차 2일, 가족 여행 — 특이사항 없음',
+    )
+  })
+
+  it('AI 요약이 실패해도 DM은 요약 없이 정상 발송한다', async () => {
+    prisma.approvalStep.findMany.mockResolvedValue([{ assigneeId: 'a' }])
+    prisma.document.findFirst.mockResolvedValue({
+      title: 't',
+      docNumber: null,
+      content: { reason: 'x' },
+      drafter: { name: '홍' },
+    })
+    prisma.messengerAccount.findFirst.mockResolvedValue({ externalUserId: 'd' })
+    llm.isEnabled.mockResolvedValue(true)
+    llm.chat.mockRejectedValue(new Error('timeout'))
+
+    await listener.handleRequested('leave.requested', base)
+
+    const sent = messenger.sendApprovalRequestToUser.mock.calls[0][1]
+    expect(sent.summary).toBeUndefined()
+    expect(messenger.sendApprovalRequestToUser).toHaveBeenCalled()
   })
 })

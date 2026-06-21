@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { NOTIFIABLE_EVENTS } from '@ablework/shared-constants'
 import { EVENTS } from '../../../events/domain-events'
 import { PrismaService } from '../../../prisma/prisma.service'
+import { LlmService } from '../llm/llm.service'
 import {
   ApprovalField,
   ApprovalMessagePayload,
@@ -93,6 +94,7 @@ export class MessengerApprovalListener implements OnApplicationBootstrap {
     private readonly eventEmitter: EventEmitter2,
     private readonly prisma: PrismaService,
     @Inject(MESSENGER_PROVIDER) private readonly messenger: MessengerProvider,
+    private readonly llm: LlmService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -128,12 +130,19 @@ export class MessengerApprovalListener implements OnApplicationBootstrap {
         },
       })
 
+      const requesterName = doc?.drafter?.name ?? undefined
+      const fields = doc?.content ? buildContentFields(doc.content) : []
+      const eventLabel = `${EVENT_LABEL[event] ?? '결재'} 결재 요청`
+      // AI 요약(활성 시) — 실패해도 DM은 그대로 발송
+      const summary = await this.buildSummary(companyId, eventLabel, requesterName, fields)
+
       const messagePayload: ApprovalMessagePayload = {
-        eventLabel: `${EVENT_LABEL[event] ?? '결재'} 결재 요청`,
+        eventLabel,
         title: doc?.title ?? '결재 요청',
-        ...(doc?.drafter?.name ? { requesterName: doc.drafter.name } : {}),
+        ...(requesterName ? { requesterName } : {}),
         ...(doc?.docNumber ? { docNumber: doc.docNumber } : {}),
-        ...(doc?.content ? { fields: buildContentFields(doc.content) } : {}),
+        ...(fields.length ? { fields } : {}),
+        ...(summary ? { summary } : {}),
         action: { kind: 'request', requestId },
       }
 
@@ -150,6 +159,39 @@ export class MessengerApprovalListener implements OnApplicationBootstrap {
       this.logger.warn(
         `메신저 결재 DM 처리 실패 — event=${event}: ${err instanceof Error ? err.message : String(err)}`,
       )
+    }
+  }
+
+  /**
+   * AI 요약 — AI 활성 시 신청 내용을 한국어 한 문장으로 요약한다.
+   * 미설정·미활성·실패 시 undefined를 반환해 DM은 요약 없이 정상 발송된다(graceful).
+   */
+  private async buildSummary(
+    companyId: string,
+    eventLabel: string,
+    requesterName: string | undefined,
+    fields: ApprovalField[],
+  ): Promise<string | undefined> {
+    try {
+      if (fields.length === 0 || !(await this.llm.isEnabled(companyId))) return undefined
+      const lines = [
+        requesterName ? `신청자: ${requesterName}` : '',
+        ...fields.map((f) => `${f.name}: ${f.value}`),
+      ]
+        .filter(Boolean)
+        .join('\n')
+      const text = await this.llm.chat(companyId, [
+        {
+          role: 'system',
+          content:
+            '너는 전자결재 요약 비서다. 결재자가 한눈에 판단하도록 신청 내용을 한국어 한 문장으로 간결히 요약하라. 인사말·추측 없이 핵심(기간·일수·사유)만 담아라.',
+        },
+        { role: 'user', content: `다음 "${eventLabel}" 내용을 한 문장으로 요약:\n${lines}` },
+      ])
+      return text.trim() || undefined
+    } catch (err) {
+      this.logger.warn(`AI 요약 실패 — ${err instanceof Error ? err.message : String(err)}`)
+      return undefined
     }
   }
 
