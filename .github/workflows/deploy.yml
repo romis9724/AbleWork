@@ -29,10 +29,10 @@ jobs:
     # x86 러너 + QEMU 에뮬레이션은 빌드가 5~20배 느렸다 → 네이티브 arm64로 에뮬레이션 제거.
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -41,7 +41,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # 네이티브 arm64 러너라 QEMU 불필요(setup-qemu-action 제거). buildx만 설정.
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build & push images (linux/arm64)
         env:
