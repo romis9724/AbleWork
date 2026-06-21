@@ -11,6 +11,10 @@ aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR
 
 bash fetch-env.sh
 
+# 디스크 누적 방지 — pull 전에 미사용 이미지 정리(실행 중 컨테이너 이미지는 유지).
+# 매 배포마다 새 api/web 이미지가 쌓여 디스크가 가득 차면 pull이 실패하므로 선제 정리한다.
+docker image prune -af >/dev/null 2>&1 || true
+
 docker compose -f docker-compose.aws.yml pull
 docker compose -f docker-compose.aws.yml up -d
 
