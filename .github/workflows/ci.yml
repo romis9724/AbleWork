@@ -14,13 +14,13 @@ jobs:
     name: TypeCheck & Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # pnpm 버전은 package.json의 packageManager(pnpm@9.15.9)에서 자동 감지한다.
       # version 입력과 중복 지정 시 ERR_PNPM_BAD_PM_VERSION으로 설치가 실패한다.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -43,13 +43,13 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # pnpm 버전은 package.json의 packageManager(pnpm@9.15.9)에서 자동 감지한다.
       # version 입력과 중복 지정 시 ERR_PNPM_BAD_PM_VERSION으로 설치가 실패한다.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -68,7 +68,7 @@ jobs:
           NODE_ENV: test
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-report
@@ -102,13 +102,13 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # pnpm 버전은 package.json의 packageManager(pnpm@9.15.9)에서 자동 감지한다.
       # version 입력과 중복 지정 시 ERR_PNPM_BAD_PM_VERSION으로 설치가 실패한다.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
