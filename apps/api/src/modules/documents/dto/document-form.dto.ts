@@ -97,8 +97,33 @@ export const UpdateSharedLineSchema = z
     message: '수정할 항목을 하나 이상 입력하세요.',
   })
 
+// AP-01-07 공용 결재선 목록 필터 (C-9b) — 결재선명·작성자·결재자·작성일
+const SHARED_LINE_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
+// 빈 문자열 쿼리 파라미터(?dateFrom=)는 undefined로 정규화 — 미입력 필드 방어
+const optionalDate = z.preprocess(
+  (v) => (v === '' ? undefined : v),
+  z.string().regex(SHARED_LINE_DATE_REGEX, 'YYYY-MM-DD 형식으로 입력하세요.').optional(),
+)
+export const SharedLineFilterSchema = z
+  .object({
+    // 결재선명 부분검색 (기존 호환: search)
+    search: z.string().trim().max(100).optional(),
+    // 작성자명/사번 부분검색 (createdBy)
+    author: z.string().trim().max(50).optional(),
+    // 결재자명/사번 부분검색 (steps 내 assignee)
+    approver: z.string().trim().max(50).optional(),
+    // 작성일 범위 (YYYY-MM-DD, KST 기준)
+    dateFrom: optionalDate,
+    dateTo: optionalDate,
+  })
+  .refine((d) => !d.dateFrom || !d.dateTo || d.dateFrom <= d.dateTo, {
+    message: '시작일은 종료일보다 늦을 수 없습니다.',
+    path: ['dateTo'],
+  })
+
 export type CreateDocumentFormDto = z.infer<typeof CreateDocumentFormSchema>
 export type UpdateDocumentFormDto = z.infer<typeof UpdateDocumentFormSchema>
 export type UpsertNumberRuleDto = z.infer<typeof UpsertNumberRuleSchema>
 export type CreateSharedLineDto = z.infer<typeof CreateSharedLineSchema>
 export type UpdateSharedLineDto = z.infer<typeof UpdateSharedLineSchema>
+export type SharedLineFilterDto = z.infer<typeof SharedLineFilterSchema>

@@ -338,15 +338,34 @@ export const useSaveDocumentNumberRule = () => {
 
 // ---------- 공용 결재선 ----------
 
-export const useSharedApprovalLines = (search?: string) =>
-  useQuery({
-    queryKey: search ? [...LINES_KEY, { search }] : LINES_KEY,
+/** 공용 결재선 목록 필터 (C-9b) — 결재선명·작성자·결재자·작성일 */
+export interface SharedLineFilter {
+  search?: string
+  author?: string
+  approver?: string
+  dateFrom?: string
+  dateTo?: string
+}
+
+export const useSharedApprovalLines = (filter?: SharedLineFilter) => {
+  // 빈 값 제거 — 미입력 필드는 미전송(쿼리키 안정 + 빈 날짜 400 방어)
+  const params: Record<string, string> = {}
+  if (filter) {
+    for (const [k, v] of Object.entries(filter)) {
+      const trimmed = v?.trim()
+      if (trimmed) params[k] = trimmed
+    }
+  }
+  const hasParams = Object.keys(params).length > 0
+  return useQuery({
+    queryKey: hasParams ? [...LINES_KEY, params] : LINES_KEY,
     queryFn: () =>
       apiClient.get('/shared-approval-lines', {
-        params: search ? { search } : undefined,
+        params: hasParams ? params : undefined,
       }) as Promise<SharedApprovalLine[]>,
     staleTime: 60_000,
   })
+}
 
 export const useCreateSharedApprovalLine = () => {
   const qc = useQueryClient()

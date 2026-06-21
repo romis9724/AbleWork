@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
-import { CreateSharedLineDto, UpdateSharedLineDto } from './dto/document-form.dto'
+import {
+  CreateSharedLineDto,
+  UpdateSharedLineDto,
+  SharedLineFilterDto,
+} from './dto/document-form.dto'
 import { StepInput } from './dto/document.dto'
 import { StepRole } from './documents.constants'
 
@@ -15,12 +19,67 @@ const COLLAB_ROLES: string[] = [StepRole.AGREEMENT, StepRole.DEPT_COLLABORATOR]
 export class SharedApprovalLinesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(companyId: string, search?: string) {
-    return this.prisma.sharedApprovalLine.findMany({
-      where: { companyId, ...(search ? { name: { contains: search } } : {}) },
+  /**
+   * 공용 결재선 목록 — 결재선명(name)·작성자(createdBy)·작성일(createdAt)은 DB where로,
+   * 결재자(approver)는 steps Json 내부라 직접 필터가 불가하여 후처리(in-memory)로 거른다.
+   * 공용 결재선은 회사당 소수이므로 후처리 비용은 무시할 수준이다.
+   */
+  async findAll(companyId: string, filter: SharedLineFilterDto = {}) {
+    const { search, author, approver, dateFrom, dateTo } = filter
+
+    // 결재자명/사번 → 자사 직원 id 집합 (steps 후처리용)
+    let approverIds: Set<string> | undefined
+    if (approver) {
+      const emps = await this.prisma.employee.findMany({
+        where: {
+          companyId,
+          OR: [{ name: { contains: approver } }, { employeeNumber: { contains: approver } }],
+        },
+        select: { id: true },
+      })
+      // 매칭되는 직원이 없으면 결재자 조건을 만족하는 결재선도 없음
+      if (emps.length === 0) return []
+      approverIds = new Set(emps.map((e) => e.id))
+    }
+
+    const lines = await this.prisma.sharedApprovalLine.findMany({
+      where: {
+        companyId,
+        ...(search ? { name: { contains: search } } : {}),
+        ...(author
+          ? {
+              createdBy: {
+                is: {
+                  OR: [
+                    { name: { contains: author } },
+                    { employeeNumber: { contains: author } },
+                  ],
+                },
+              },
+            }
+          : {}),
+        ...this.buildCreatedAtRange(dateFrom, dateTo),
+      },
       orderBy: { name: 'asc' },
       include: { createdBy: { select: { id: true, name: true } } },
     })
+
+    if (!approverIds) return lines
+
+    // 결재자 필터: steps Json의 assigneeId가 매칭 직원 집합에 포함된 결재선만
+    return lines.filter((line) => {
+      const steps = (line.steps as Array<{ assigneeId?: string | null }>) ?? []
+      return steps.some((s) => s.assigneeId != null && approverIds.has(s.assigneeId))
+    })
+  }
+
+  /** 작성일(createdAt) 범위 where 절 — KST 기준, dateTo는 그날 끝까지 포함 */
+  private buildCreatedAtRange(dateFrom?: string, dateTo?: string) {
+    if (!dateFrom && !dateTo) return {}
+    const createdAt: { gte?: Date; lte?: Date } = {}
+    if (dateFrom) createdAt.gte = new Date(`${dateFrom}T00:00:00.000+09:00`)
+    if (dateTo) createdAt.lte = new Date(`${dateTo}T23:59:59.999+09:00`)
+    return { createdAt }
   }
 
   async create(companyId: string, dto: CreateSharedLineDto, createdById: string) {

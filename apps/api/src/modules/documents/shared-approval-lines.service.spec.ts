@@ -37,6 +37,7 @@ const mockPrisma = {
   },
   employee: {
     count: jest.fn(),
+    findMany: jest.fn(),
   },
 }
 
@@ -79,7 +80,7 @@ describe('SharedApprovalLinesService', () => {
 
     it('search 필터 시 name contains 조건을 적용한다', async () => {
       mockPrisma.sharedApprovalLine.findMany.mockResolvedValue([])
-      await service.findAll(COMPANY_ID, '표준')
+      await service.findAll(COMPANY_ID, { search: '표준' })
       expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { companyId: COMPANY_ID, name: { contains: '표준' } } }),
       )
@@ -93,6 +94,74 @@ describe('SharedApprovalLinesService', () => {
       expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { companyId: OTHER_COMPANY_ID } }),
       )
+    })
+
+    // ── C-9b: 작성자/결재자/작성일 필터 ──────────────────────────────────────────
+    it('[C-9b] author 필터 시 createdBy(이름/사번) 조건을 적용한다', async () => {
+      mockPrisma.sharedApprovalLine.findMany.mockResolvedValue([])
+      await service.findAll(COMPANY_ID, { author: '홍길동' })
+      expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            companyId: COMPANY_ID,
+            createdBy: {
+              is: {
+                OR: [
+                  { name: { contains: '홍길동' } },
+                  { employeeNumber: { contains: '홍길동' } },
+                ],
+              },
+            },
+          },
+        }),
+      )
+    })
+
+    it('[C-9b] dateFrom/dateTo 필터 시 createdAt 범위(KST) 조건을 적용한다', async () => {
+      mockPrisma.sharedApprovalLine.findMany.mockResolvedValue([])
+      await service.findAll(COMPANY_ID, { dateFrom: '2026-01-01', dateTo: '2026-01-31' })
+      expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            companyId: COMPANY_ID,
+            createdAt: {
+              gte: new Date('2026-01-01T00:00:00.000+09:00'),
+              lte: new Date('2026-01-31T23:59:59.999+09:00'),
+            },
+          },
+        }),
+      )
+    })
+
+    it('[C-9b] approver 필터 시 매칭 직원이 결재선 steps에 포함된 라인만 반환한다', async () => {
+      // 결재자명으로 emp-1이 조회됨
+      mockPrisma.employee.findMany.mockResolvedValue([{ id: 'emp-1' }])
+      mockPrisma.sharedApprovalLine.findMany.mockResolvedValue([
+        { ...baseLine, id: 'match', steps: [{ role: 'APPROVER', assigneeId: 'emp-1', stepOrder: 0 }] },
+        { ...baseLine, id: 'nomatch', steps: [{ role: 'APPROVER', assigneeId: 'emp-9', stepOrder: 0 }] },
+      ])
+
+      const result = await service.findAll(COMPANY_ID, { approver: '김결재' })
+
+      // 매칭 직원 조회 — companyId 스코프 + 이름/사번 OR
+      expect(mockPrisma.employee.findMany).toHaveBeenCalledWith({
+        where: {
+          companyId: COMPANY_ID,
+          OR: [{ name: { contains: '김결재' } }, { employeeNumber: { contains: '김결재' } }],
+        },
+        select: { id: true },
+      })
+      // steps에 emp-1을 포함한 라인만 남음
+      expect(result.map((l: { id: string }) => l.id)).toEqual(['match'])
+    })
+
+    it('[C-9b] approver 매칭 직원이 없으면 결재선 조회 없이 빈 배열을 반환한다', async () => {
+      mockPrisma.employee.findMany.mockResolvedValue([])
+
+      const result = await service.findAll(COMPANY_ID, { approver: '없는사람' })
+
+      expect(result).toEqual([])
+      expect(mockPrisma.sharedApprovalLine.findMany).not.toHaveBeenCalled()
     })
   })
 

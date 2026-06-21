@@ -50,7 +50,7 @@
 | **C-6** | 전자결재 | 기안 시 공용 결재선 선택 UI 없음(sharedLineId 미전달) | FE-MISSING | MED | ✅ | `DocModal.tsx`(useSharedApprovalLines + 공용결재선 select·applySharedLine) | 공용결재선 선택→steps prefill (typecheck✅, 동작=E2E #19) |
 | **C-7** | 전자결재 | DEPT_RECEIVER 반송(bounce) 버튼 없음(BE 완성) | FE-MISSING | MED | ✅ | `DocModal.tsx`(canReceive DEPT_RECEIVER 분기 반송 버튼) | 부서수신 반송→BOUNCED (typecheck✅, 동작 E2E ✅) |
 | **C-8** | 전자결재 | 공람/참조 추가가 본인 only(BE는 임의 직원 지원) | FE-MISSING | MED | ✅ | `DocModal.tsx`(직원+역할 picker·handleAddCc, useEmployees) | 타 직원 공람/참조 추가→step 생성 (typecheck✅, 동작 E2E ✅) |
-| **C-9** | 전자결재 | 문서대장 검색 UI 없음 / 공용결재선 결재자·작성자·날짜 필터 표면 only | FE-MISSING/SUPERFICIAL | LOW | 🟡 | `approval/documents/page.tsx`(제목·문서번호 검색 입력+debounce, useDocuments search 지원) | 문서대장 검색→필터 반영 (typecheck✅). **잔여(C-9b): 공용결재선 결재자/작성자/날짜 필터는 BE 미지원** |
+| **C-9** | 전자결재 | 문서대장 검색 UI 없음 / 공용결재선 결재자·작성자·날짜 필터 표면 only | FE-MISSING/SUPERFICIAL | LOW | ✅ | `approval/documents/page.tsx`(제목·문서번호 검색)·`shared-approval-lines.service.ts`(author/approver/dateFrom/dateTo)·`lines/page.tsx`(handleQuery 4필터 적용) | 문서대장 검색→필터 반영. **C-9b 해소(2026-06-21)**: 공용결재선 작성자(createdBy)·결재자(steps 후처리)·작성일(createdAt KST) BE 필터 + FE [조회] 배선. 단위 27/27·E2E 7/7 |
 | **C-10** | 전자결재 | 백업 첨부파일 실제 번들 다운로드 미구현(BE 없음) | BE-MISSING | LOW | ⏸ 환경블록 | `approval/backup` + BE export 엔드포인트 | **블록 근거**: 첨부 저장소(S3/MinIO)가 현재 서명 불일치로 비활성. 비활성 서브시스템 위에 zip 번들 엔드포인트를 얹으면 검증 불가·미테스트 코드가 됨. MinIO/S3 환경 정상화 선결 후 별건 처리 |
 | **D-1** | 알림 | 알림 규칙 조회/저장 SUPER_ADMIN 전용 ↔ FE는 GENERAL_ADMIN 진입 → 403 | RBAC | HIGH | ✅ | `notifications.controller.ts`(rules 5라우트 @Roles SUPER_ADMIN→**GENERAL_ADMIN**) | 정책: 회사설정 영역이라 BE를 GENERAL_ADMIN으로 하향. GENERAL_ADMIN 조회/저장 가능 (api typecheck✅·재기동) |
 | **D-2** | 권한 | permission-settings PATCH SUPER_ADMIN 전용 ↔ FE GENERAL_ADMIN 저장버튼 활성 → 403 | RBAC | HIGH | ✅ | `permissions.ts`(PERMISSIONS_MANAGE GENERAL_ADMIN→**SUPER_ADMIN**) | 정책: 권한 변경은 권한상승 표면이라 BE SUPER_ADMIN 유지·FE를 상향해 일치. GENERAL_ADMIN엔 저장버튼 비활성 |
@@ -82,7 +82,7 @@
 5. **근태 BE 로직 묶음**: A-1(HIGH), A-2, A-3, A-4, A-5
 6. **메시지·리포트·감사 묶음**: E-1, E-3, E-5, E-7, E-8, E-9, E-10
 7. **인사 묶음**: D-4, D-5, D-6
-8. **LOW 잔여**: A-6, A-7, A-8, C-9, C-10
+8. **LOW 잔여**: A-6, A-7, A-8, C-10 (C-9/C-9b는 2026-06-21 해소)
 
 ## 루프 완료 요약 (2026-06-20)
 
@@ -97,7 +97,7 @@
 | **C-10** | 환경블록 | 첨부 저장소(S3/MinIO) 서명 불일치로 비활성 — 비활성 서브시스템 위 zip 엔드포인트는 미테스트 코드 | MinIO/S3 환경 정상화 선결 |
 | **E-9** | 보류(LOW) | BE가 `{label,formula}` 저장만 — 수식 평가/리포트 통합 엔진 부재. CRUD UI만 붙이면 "정의해도 미반영" 표면적 기능 | 안전 수식엔진 + 리포트 통합 별건 |
 
-> 잔여 LOW 메모: A-6(근태 사소)·C-9b(공용결재선 결재자/작성자/날짜 필터 — **BE 미지원 + 편의 필터**, 제목·문서번호 검색은 C-9로 제공됨)는 영향 경미·BE 선행 필요로 보류.
+> 잔여 LOW 메모: A-6(근태 사소)는 영향 경미로 보류. ~~C-9b~~ **해소(2026-06-21)** — 공용결재선 작성자/결재자/작성일 필터를 BE(`shared-approval-lines.service.findAll`: author=createdBy 이름·사번, approver=steps Json 후처리, 작성일=createdAt KST 범위) + FE([조회]가 4필터 일괄 적용)로 연결. 검증: 단위 27/27·신규 E2E 7/7(`approval_shared_line_filters.spec.ts`)·회귀 8/8.
 > Phase 2 P1 wage-info 독립 모듈화도 보안 가드(guardOrgScope) 중복 위험으로 의도적 보류(PHASE2_GAP_ANALYSIS).
 
 ## E2E #19 진행 결과 (2026-06-21)

@@ -27,6 +27,8 @@ import {
   CreateSharedLineSchema,
   UpdateSharedLineDto,
   UpdateSharedLineSchema,
+  SharedLineFilterDto,
+  SharedLineFilterSchema,
 } from './dto/document-form.dto'
 
 @ApiTags('shared-approval-lines')
@@ -36,12 +38,19 @@ import {
 export class SharedApprovalLinesController {
   constructor(private readonly sharedApprovalLinesService: SharedApprovalLinesService) {}
 
-  // AP-01-07 공용 결재선 목록 (전 직원) — name 부분검색 필터
+  // AP-01-07 공용 결재선 목록 (전 직원) — 결재선명·작성자·결재자·작성일 필터 (C-9b)
   @Get()
-  @ApiOperation({ summary: '공용 결재선 목록 조회 (search 필터)' })
-  @ApiQuery({ name: 'search', required: false, type: String })
-  findAll(@CompanyId() companyId: string, @Query('search') search?: string) {
-    return this.sharedApprovalLinesService.findAll(companyId, search?.trim() || undefined)
+  @ApiOperation({ summary: '공용 결재선 목록 조회 (결재선명·작성자·결재자·작성일 필터)' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: '결재선명' })
+  @ApiQuery({ name: 'author', required: false, type: String, description: '작성자명/사번' })
+  @ApiQuery({ name: 'approver', required: false, type: String, description: '결재자명/사번' })
+  @ApiQuery({ name: 'dateFrom', required: false, type: String, description: '작성일 시작(YYYY-MM-DD)' })
+  @ApiQuery({ name: 'dateTo', required: false, type: String, description: '작성일 종료(YYYY-MM-DD)' })
+  findAll(
+    @CompanyId() companyId: string,
+    @Query(new ZodValidationPipe(SharedLineFilterSchema)) filter: SharedLineFilterDto,
+  ) {
+    return this.sharedApprovalLinesService.findAll(companyId, filter)
   }
 
   // AP-01-08 공용 결재선 생성
