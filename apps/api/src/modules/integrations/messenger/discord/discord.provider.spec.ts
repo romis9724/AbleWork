@@ -52,6 +52,31 @@ describe('DiscordProvider', () => {
     expect(JSON.stringify(mockedAxios.post.mock.calls[0][1])).toContain('AI 요약')
   })
 
+  it('사용자에게 DM 채널을 개설하고 버튼 메시지를 전송한다', async () => {
+    mockedAxios.post
+      .mockResolvedValueOnce({ data: { id: 'dm-chan-1' } }) // 1) DM 채널 개설
+      .mockResolvedValueOnce({ data: { id: 'msg-9' } }) // 2) 메시지 전송
+
+    const ref = await provider.sendApprovalRequestToUser('discord-user-1', {
+      eventLabel: '휴가 신청 결재 요청',
+      title: '홍길동 연차 2일',
+      action: { kind: 'request', requestId: 'req-7' },
+    })
+
+    expect(ref).toBe('msg-9')
+
+    // 1) DM 채널 개설 — recipient_id 전달
+    const [openUrl, openBody] = mockedAxios.post.mock.calls[0]
+    expect(openUrl).toContain('/users/@me/channels')
+    expect((openBody as { recipient_id: string }).recipient_id).toBe('discord-user-1')
+
+    // 2) 개설된 DM 채널로 승인/반려 버튼 메시지
+    const [sendUrl, sendBody] = mockedAxios.post.mock.calls[1]
+    expect(sendUrl).toContain('/channels/dm-chan-1/messages')
+    expect(JSON.stringify(sendBody)).toContain('ablework:approve:request:req-7')
+    expect(JSON.stringify(sendBody)).toContain('ablework:reject:request:req-7')
+  })
+
   it('토큰이 없으면 에러를 던진다', async () => {
     delete process.env.DISCORD_BOT_TOKEN
     const p = new DiscordProvider()
