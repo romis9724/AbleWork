@@ -74,13 +74,31 @@ describe('MessengerApprovalListener', () => {
 
     const sent = messenger.sendApprovalRequestToUser.mock.calls[0][1]
     expect(sent.requesterName).toBe('홍길동')
-    // 한국어 라벨 매핑 + ID성 필드(leaveTypeId) 제외
+    // 라벨 매핑 + ID성 필드(leaveTypeId) 제외 + 정의 순서로 정렬 + 날짜·수량 inline
     expect(sent.fields).toEqual([
-      { name: '시작일', value: '2026-06-23' },
-      { name: '종료일', value: '2026-06-24' },
-      { name: '일수', value: '2' },
+      { name: '시작일', value: '2026-06-23', inline: true },
+      { name: '종료일', value: '2026-06-24', inline: true },
+      { name: '일수', value: '2', inline: true },
       { name: '사유', value: '개인 사정' },
     ])
+  })
+
+  it('JSONB 키 순서가 뒤섞여 들어와도 정의된 표시 순서로 정렬한다', async () => {
+    prisma.approvalStep.findMany.mockResolvedValue([{ assigneeId: 'emp-approver' }])
+    // 실제 JSONB처럼 비논리적 순서로 도착
+    prisma.document.findFirst.mockResolvedValue({
+      title: 't',
+      docNumber: null,
+      content: { days: 2, reason: '가족 여행', endDate: '2026-06-24', startDate: '2026-06-23', content: '하계 휴가' },
+      drafter: { name: '홍길동' },
+    })
+    prisma.messengerAccount.findFirst.mockResolvedValue({ externalUserId: 'discord-1' })
+
+    await listener.handleRequested('custom.requested', base)
+
+    // 내용 → 시작일 → 종료일 → 일수 → 사유 (PAYLOAD_LABELS 정의 순)
+    const names = messenger.sendApprovalRequestToUser.mock.calls[0][1].fields.map((f: { name: string }) => f.name)
+    expect(names).toEqual(['내용', '시작일', '종료일', '일수', '사유'])
   })
 
   it('결재자가 메신저 미연동이면 발송하지 않는다', async () => {
