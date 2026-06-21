@@ -74,11 +74,11 @@ describe('MessengerApprovalListener', () => {
 
     const sent = messenger.sendApprovalRequestToUser.mock.calls[0][1]
     expect(sent.requesterName).toBe('홍길동')
-    // 라벨 매핑 + ID성 필드(leaveTypeId) 제외 + 정의 순서로 정렬 + 날짜·수량 inline
+    // 라벨 매핑 + ID성 필드(leaveTypeId) 제외 + 정의 순서로 정렬
     expect(sent.fields).toEqual([
-      { name: '시작일', value: '2026-06-23', inline: true },
-      { name: '종료일', value: '2026-06-24', inline: true },
-      { name: '일수', value: '2', inline: true },
+      { name: '시작일', value: '2026-06-23' },
+      { name: '종료일', value: '2026-06-24' },
+      { name: '일수', value: '2' },
       { name: '사유', value: '개인 사정' },
     ])
   })

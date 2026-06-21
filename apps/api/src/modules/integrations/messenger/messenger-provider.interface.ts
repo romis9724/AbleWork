@@ -12,8 +12,6 @@ export type ApprovalAction = { kind: 'request'; requestId: string }
 export interface ApprovalField {
   name: string
   value: string
-  /** 짧은 값(날짜·수량 등)을 가로로 배치 — Discord embed inline */
-  inline?: boolean
 }
 
 /** 결재 요청 메시지 페이로드 — 알림 + 신청 내용 + 승인/반려 버튼 구성용 */
