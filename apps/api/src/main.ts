@@ -5,7 +5,8 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor'
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule)
+  // rawBody: Discord Interactions 서명검증이 원문 바이트를 요구한다(IntegrationsController)
+  const app = await NestFactory.create(AppModule, { rawBody: true })
 
   app.setGlobalPrefix('api/v1')
 
