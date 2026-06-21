@@ -50,6 +50,7 @@ export const ADMIN_NAV_MIN_LEVEL: Record<string, AccessLevel> = {
   // 관리
   settings: AccessLevel.GENERAL_ADMIN,
   // 푸터
+  errorAnalysis: AccessLevel.GENERAL_ADMIN,
   audit: AccessLevel.GENERAL_ADMIN,
 }
 
@@ -118,6 +119,7 @@ export const ADMIN_ROUTE_GUARDS: ReadonlyArray<{ prefix: string; minLevel: Acces
   { prefix: '/admin/messages', minLevel: AccessLevel.GENERAL_ADMIN },
   { prefix: '/admin/settings', minLevel: AccessLevel.GENERAL_ADMIN },
   { prefix: '/admin/audit-logs', minLevel: AccessLevel.GENERAL_ADMIN },
+  { prefix: '/admin/ai-error-analysis', minLevel: AccessLevel.GENERAL_ADMIN },
 ]
 
 /** 경로에 대해 요구되는 최소 레벨을 반환 (없으면 ORG_ADMIN = /admin 공통) */

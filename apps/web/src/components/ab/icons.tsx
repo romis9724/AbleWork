@@ -61,4 +61,5 @@ export const HRI: Record<string, IconFn> = {
   dots: (p) => <svg width="14" height="14" viewBox="0 0 16 16" fill="none" {...p}><circle cx="3" cy="8" r="1.2" fill="currentColor" /><circle cx="8" cy="8" r="1.2" fill="currentColor" /><circle cx="13" cy="8" r="1.2" fill="currentColor" /></svg>,
   pin: (p) => <svg width="13" height="13" viewBox="0 0 16 16" fill="none" {...p}><path d="M8 14.5s5-4.5 5-8a5 5 0 1 0-10 0c0 3.5 5 8 5 8z" stroke="currentColor" strokeWidth="1.1" /><circle cx="8" cy="6.5" r="1.7" stroke="currentColor" strokeWidth="1.1" /></svg>,
   profile: (p) => <svg width="16" height="16" viewBox="0 0 18 18" fill="none" {...p}><circle cx="9" cy="6" r="3" stroke="currentColor" strokeWidth="1.2" /><path d="M3 16c0-3.3 2.7-5 6-5s6 1.7 6 5" stroke="currentColor" strokeWidth="1.2" /></svg>,
+  alert: (p) => <svg width="16" height="16" viewBox="0 0 18 18" fill="none" {...p}><path d="M9 2.4 16.2 15H1.8z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /><path d="M9 7v3.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /><circle cx="9" cy="12.6" r="0.75" fill="currentColor" /></svg>,
 }

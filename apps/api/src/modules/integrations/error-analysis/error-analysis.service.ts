@@ -1,12 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { OnEvent } from '@nestjs/event-emitter'
+import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../../prisma/prisma.service'
 import { MailService } from '../../mail/mail.service'
 import { DiscordWebhookService } from '../../notifications/discord-webhook.service'
 import { LlmService } from '../llm/llm.service'
 import { EVENTS } from '../../../events/domain-events'
 import { ApiErrorEvent } from '../../../common/filters/api-error-event'
+import { ErrorAnalysisFilterDto } from './dto/error-analysis-filter.dto'
+
+/** 알림(이메일·Discord) 발송 성공 여부 */
+interface NotifyResult {
+  email: boolean
+  discord: boolean
+}
 
 /** 같은 에러 시그니처는 이 시간 내 1회만 분석(중복 폭주 방지) */
 const DEDUP_WINDOW_MS = 10 * 60 * 1000
@@ -40,8 +48,11 @@ export class ErrorAnalysisService {
     try {
       if (!this.shouldProcess(e)) return
       const companyId = e.companyId ?? (await this.defaultCompanyId())
-      const analysis = companyId ? await this.analyze(companyId, e) : null
-      await this.notify(e, analysis)
+      const aiEnabled = companyId ? await this.llm.isEnabled(companyId) : false
+      const analysis = aiEnabled && companyId ? await this.analyze(companyId, e) : null
+      const notified = await this.notify(e, analysis)
+      // 회사 컨텍스트가 있을 때만 영속화(관리자 조회는 회사 스코프)
+      if (companyId) await this.persist(companyId, e, analysis, aiEnabled, notified)
     } catch (err) {
       this.logger.warn(`error-analysis 실패: ${this.msg(err)}`)
     }
@@ -80,10 +91,9 @@ export class ErrorAnalysisService {
     return c?.id
   }
 
-  /** 회사 AI가 활성일 때만 분석 문자열 반환, 아니면 null */
+  /** 회사 AI로 원인/조치 분석 문자열 반환(실패 시 null). 활성 여부는 호출 측에서 판단. */
   private async analyze(companyId: string, e: ApiErrorEvent): Promise<string | null> {
     try {
-      if (!(await this.llm.isEnabled(companyId))) return null
       const ctx = [
         `HTTP ${e.status} ${e.code}`,
         `${e.method} ${e.path}`,
@@ -111,10 +121,11 @@ export class ErrorAnalysisService {
     }
   }
 
-  /** 상세 → 이메일, 경고 → Discord */
-  private async notify(e: ApiErrorEvent, analysis: string | null): Promise<void> {
+  /** 상세 → 이메일, 경고 → Discord. 각 채널 발송 성공 여부를 반환. */
+  private async notify(e: ApiErrorEvent, analysis: string | null): Promise<NotifyResult> {
     const title = `에러 ${e.status} ${e.code} — ${e.method} ${e.path}`
     const email = this.config.get<string>('ERROR_REPORT_EMAIL') || DEFAULT_REPORT_EMAIL
+    const result: NotifyResult = { email: false, discord: false }
 
     const detail = [
       `발생시각: ${e.at}`,
@@ -135,12 +146,13 @@ export class ErrorAnalysisService {
 
     try {
       await this.mail.sendMessageMail(email, title, detail)
+      result.email = true
     } catch (err) {
       this.logger.warn(`에러 메일 발송 실패: ${this.msg(err)}`)
     }
 
     const webhook = this.config.get<string>('DISCORD_ALERT_WEBHOOK_URL')
-    if (!webhook) return
+    if (!webhook) return result
     const oneLine = analysis
       ? (analysis.split('\n').find((l) => l.trim()) ?? '').slice(0, 300)
       : '(AI 미설정 — 상세는 이메일 참조)'
@@ -156,9 +168,95 @@ export class ErrorAnalysisService {
     }
     try {
       await this.discord.send(webhook, embed)
+      result.discord = true
     } catch (err) {
       this.logger.warn(`에러 Discord 발송 실패: ${this.msg(err)}`)
     }
+    return result
+  }
+
+  /** 분석 결과를 영속화(관리자 조회용). 저장 실패가 알림을 깨지 않도록 예외를 삼킨다. */
+  private async persist(
+    companyId: string,
+    e: ApiErrorEvent,
+    analysis: string | null,
+    aiEnabled: boolean,
+    notified: NotifyResult,
+  ): Promise<void> {
+    try {
+      await this.prisma.errorAnalysisLog.create({
+        data: {
+          companyId,
+          status: e.status,
+          code: e.code,
+          message: e.message,
+          method: e.method,
+          path: e.path,
+          userId: e.userId ?? null,
+          detail:
+            e.details === undefined || e.details === null
+              ? Prisma.JsonNull
+              : (e.details as Prisma.InputJsonValue),
+          stack: e.stack ?? null,
+          aiAnalysis: analysis,
+          aiEnabled,
+          notifiedEmail: notified.email,
+          notifiedDiscord: notified.discord,
+        },
+      })
+    } catch (err) {
+      this.logger.warn(`에러 분석 로그 저장 실패: ${this.msg(err)}`)
+    }
+  }
+
+  // ── 조회 (관리자: 부가기능 > AI 에러 분석) ──────────────────────────────────
+
+  async findAll(companyId: string, filter: ErrorAnalysisFilterDto) {
+    const { startDate, endDate, status, method, search, page, limit } = filter
+    const skip = (page - 1) * limit
+
+    const where: Prisma.ErrorAnalysisLogWhereInput = {
+      companyId,
+      ...(status !== undefined && { status }),
+      ...(method && { method }),
+      ...(this.buildDateRange(startDate, endDate) && {
+        createdAt: this.buildDateRange(startDate, endDate),
+      }),
+      ...(search && {
+        OR: [
+          { code: { contains: search, mode: 'insensitive' } },
+          { message: { contains: search, mode: 'insensitive' } },
+          { path: { contains: search, mode: 'insensitive' } },
+        ],
+      }),
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.errorAnalysisLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.errorAnalysisLog.count({ where }),
+    ])
+
+    return { items, total, page, limit }
+  }
+
+  async findOne(companyId: string, id: string) {
+    return this.prisma.errorAnalysisLog.findFirst({ where: { id, companyId } })
+  }
+
+  private buildDateRange(
+    startDate?: string,
+    endDate?: string,
+  ): Prisma.DateTimeFilter | undefined {
+    if (!startDate && !endDate) return undefined
+    const range: Prisma.DateTimeFilter = {}
+    if (startDate) range.gte = new Date(`${startDate}T00:00:00.000Z`)
+    if (endDate) range.lte = new Date(`${endDate}T23:59:59.999Z`)
+    return range
   }
 
   private msg(err: unknown): string {
