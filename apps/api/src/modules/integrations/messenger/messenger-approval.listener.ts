@@ -4,6 +4,7 @@ import { NOTIFIABLE_EVENTS } from '@ablework/shared-constants'
 import { EVENTS } from '../../../events/domain-events'
 import { PrismaService } from '../../../prisma/prisma.service'
 import {
+  ApprovalField,
   ApprovalMessagePayload,
   MESSENGER_PROVIDER,
   MessengerProvider,
@@ -18,6 +19,42 @@ const REQUEST_EVENTS: string[] = Object.entries(EVENTS)
 const EVENT_LABEL: Record<string, string> = Object.fromEntries(
   NOTIFIABLE_EVENTS.map((e) => [e.event, e.label]),
 )
+
+/** 신청 payload 필드 → 한국어 라벨 (매핑 없으면 키 그대로) */
+const PAYLOAD_LABELS: Record<string, string> = {
+  title: '제목',
+  content: '내용',
+  reason: '사유',
+  memo: '메모',
+  note: '비고',
+  startDate: '시작일',
+  endDate: '종료일',
+  startAt: '시작',
+  endAt: '종료',
+  date: '일자',
+  days: '일수',
+  hours: '시간',
+}
+
+/** 결재 내용 본문에 표시할 최대 항목 수 (Discord embed 가독성) */
+const MAX_CONTENT_FIELDS = 6
+
+/**
+ * 신청 내용(JSON payload)에서 사람이 읽을 항목만 추출한다.
+ * ID성 필드는 이름 해석이 안 돼 의미가 없으므로 제외(2순위 AI 요약이 자연어로 정리),
+ * 중첩 객체/배열도 제외. 최대 MAX_CONTENT_FIELDS개.
+ */
+function buildContentFields(content: unknown): ApprovalField[] {
+  if (!content || typeof content !== 'object' || Array.isArray(content)) return []
+  const fields: ApprovalField[] = []
+  for (const [key, value] of Object.entries(content as Record<string, unknown>)) {
+    if (value == null || typeof value === 'object') continue
+    if (/id$/i.test(key)) continue
+    fields.push({ name: PAYLOAD_LABELS[key] ?? key, value: String(value).slice(0, 1024) })
+    if (fields.length >= MAX_CONTENT_FIELDS) break
+  }
+  return fields
+}
 
 /** 상신 이벤트 payload (requests.service가 emit하는 형태) */
 interface RequestedPayload {
@@ -70,13 +107,20 @@ export class MessengerApprovalListener implements OnApplicationBootstrap {
 
       const doc = await this.prisma.document.findFirst({
         where: { id: documentId, companyId },
-        select: { title: true, docNumber: true },
+        select: {
+          title: true,
+          docNumber: true,
+          content: true,
+          drafter: { select: { name: true } },
+        },
       })
 
       const messagePayload: ApprovalMessagePayload = {
         eventLabel: `${EVENT_LABEL[event] ?? '결재'} 결재 요청`,
         title: doc?.title ?? '결재 요청',
+        ...(doc?.drafter?.name ? { requesterName: doc.drafter.name } : {}),
         ...(doc?.docNumber ? { docNumber: doc.docNumber } : {}),
+        ...(doc?.content ? { fields: buildContentFields(doc.content) } : {}),
         action: { kind: 'request', requestId },
       }
 

@@ -32,7 +32,12 @@ export class DiscordProvider implements MessengerProvider {
 
   async sendApprovalRequest(channelId: string, payload: ApprovalMessagePayload): Promise<string> {
     const fields: Array<{ name: string; value: string; inline?: boolean }> = []
+    if (payload.requesterName) fields.push({ name: '신청자', value: payload.requesterName, inline: true })
     if (payload.docNumber) fields.push({ name: '문서번호', value: payload.docNumber, inline: true })
+    // 신청 내용(기간/사유/내용 등) — 결재자가 무엇을 승인하는지 본문에 표시
+    for (const field of payload.fields ?? []) {
+      fields.push({ name: field.name, value: field.value })
+    }
     if (payload.summary) fields.push({ name: '🤖 AI 요약', value: payload.summary })
 
     const body = {

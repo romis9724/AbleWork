@@ -54,6 +54,35 @@ describe('MessengerApprovalListener', () => {
     expect(messenger.sendApprovalRequestToUser.mock.calls[0][1].eventLabel).toContain('휴가 신청')
   })
 
+  it('신청자명과 신청 내용(라벨 적용·ID성 필드 제외)을 메시지에 담는다', async () => {
+    prisma.approvalStep.findMany.mockResolvedValue([{ assigneeId: 'emp-approver' }])
+    prisma.document.findFirst.mockResolvedValue({
+      title: '홍길동 연차 신청',
+      docNumber: null,
+      content: {
+        leaveTypeId: 'lt-1', // ID성 → 제외돼야 함
+        startDate: '2026-06-23',
+        endDate: '2026-06-24',
+        days: 2,
+        reason: '개인 사정',
+      },
+      drafter: { name: '홍길동' },
+    })
+    prisma.messengerAccount.findFirst.mockResolvedValue({ externalUserId: 'discord-1' })
+
+    await listener.handleRequested('leave.requested', base)
+
+    const sent = messenger.sendApprovalRequestToUser.mock.calls[0][1]
+    expect(sent.requesterName).toBe('홍길동')
+    // 한국어 라벨 매핑 + ID성 필드(leaveTypeId) 제외
+    expect(sent.fields).toEqual([
+      { name: '시작일', value: '2026-06-23' },
+      { name: '종료일', value: '2026-06-24' },
+      { name: '일수', value: '2' },
+      { name: '사유', value: '개인 사정' },
+    ])
+  })
+
   it('결재자가 메신저 미연동이면 발송하지 않는다', async () => {
     prisma.approvalStep.findMany.mockResolvedValue([{ assigneeId: 'emp-x' }])
     prisma.document.findFirst.mockResolvedValue({ title: 'x', docNumber: null })
