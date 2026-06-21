@@ -33,6 +33,11 @@ aws iam attach-role-policy --role-name "${EC2_ROLE_NAME}" \
   --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore >/dev/null
 ok "관리형 정책 연결: AmazonSSMManagedInstanceCore"
 
+# CloudWatch 에이전트(메모리·디스크 지표 PutMetricData + 설정 조회) — 모니터링용
+aws iam attach-role-policy --role-name "${EC2_ROLE_NAME}" \
+  --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy >/dev/null
+ok "관리형 정책 연결: CloudWatchAgentServerPolicy"
+
 # 인라인 정책: SSM 읽기 + KMS Decrypt(SSM 경유 한정) + ECR pull + S3 + Logs
 cat > "${TMP}/ec2-policy.json" <<JSON
 {

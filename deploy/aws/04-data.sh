@@ -87,6 +87,25 @@ else
   ok "Redis 생성 요청 완료: ${REDIS_ID}"
 fi
 
+# Redis maxmemory-policy=noeviction — BullMQ 큐 작업 유실 방지(기본 volatile-lru는 부적합).
+REDIS_PG="${NAME}-redis7"
+if ! aws elasticache describe-cache-parameter-groups --cache-parameter-group-name "${REDIS_PG}" >/dev/null 2>&1; then
+  aws elasticache create-cache-parameter-group --cache-parameter-group-name "${REDIS_PG}" \
+    --cache-parameter-group-family "${REDIS_PG_FAMILY:-redis7}" \
+    --description "AbleWork - noeviction for BullMQ" >/dev/null
+  ok "Redis 파라미터그룹 생성: ${REDIS_PG}"
+fi
+aws elasticache modify-cache-parameter-group --cache-parameter-group-name "${REDIS_PG}" \
+  --parameter-name-values "ParameterName=maxmemory-policy,ParameterValue=noeviction" >/dev/null
+CUR_PG="$(none_to_empty "$(aws elasticache describe-cache-clusters --cache-cluster-id "${REDIS_ID}" --query 'CacheClusters[0].CacheParameterGroup.CacheParameterGroupName' --output text 2>/dev/null || true)")"
+if [ "${CUR_PG}" != "${REDIS_PG}" ]; then
+  aws elasticache modify-cache-cluster --cache-cluster-id "${REDIS_ID}" \
+    --cache-parameter-group-name "${REDIS_PG}" --apply-immediately >/dev/null 2>&1 || true
+  ok "Redis 파라미터그룹 연결: ${REDIS_PG} (maxmemory-policy=noeviction)"
+else
+  ok "Redis 파라미터그룹 연결 확인: ${REDIS_PG}"
+fi
+
 # =============== 가용 시 SSM 기록 (멱등) ===============
 echo "----------------------------------------------------------------"
 DB_STATUS="$(none_to_empty "$(aws rds describe-db-instances --db-instance-identifier "${DB_ID}" --query 'DBInstances[0].DBInstanceStatus' --output text 2>/dev/null || true)")"
