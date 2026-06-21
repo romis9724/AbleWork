@@ -26,8 +26,10 @@ export class MailService implements IMailService {
   constructor(private readonly config: ConfigService) {
     this.transporter = nodemailer.createTransport({
       host: this.config.get<string>('MAIL_HOST', 'smtp.gmail.com'),
-      port: this.config.get<number>('MAIL_PORT', 587),
-      secure: this.config.get<boolean>('MAIL_SECURE', false),
+      // env 값은 문자열로 들어오므로 Number/명시 비교로 강제 — 특히 secure는 "false"(문자열)가
+      // truthy라 implicit TLS를 켜버려 587(STARTTLS)에서 'wrong version number'로 실패한다.
+      port: Number(this.config.get('MAIL_PORT', 587)),
+      secure: String(this.config.get('MAIL_SECURE', 'false')) === 'true',
       auth: {
         user: this.config.get<string>('MAIL_USER', ''),
         pass: this.config.get<string>('MAIL_PASS', ''),
