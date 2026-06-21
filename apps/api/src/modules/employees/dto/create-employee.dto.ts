@@ -21,11 +21,13 @@ export const CreateEmployeeSchema = z.object({
   accessLevel: z.enum(['GENERAL_ADMIN', 'ORG_ADMIN', 'EMPLOYEE'], {
     errorMap: () => ({ message: '접근 레벨이 올바르지 않습니다.' }),
   }),
+  // ID는 DB 기본값(uuid)이지만 시드·임포트 등 비-UUID ID도 존재할 수 있어 형식 강제 대신 비어있지 않음만 검증
+  // (실재 여부는 companyId 스코프 DB 조회로 검증). 프론트(EmployeeCreateDialog)와도 정합.
   organizationIds: z
-    .array(z.string().uuid())
+    .array(z.string().min(1))
     .min(1, '소속 조직을 하나 이상 선택하세요.'),
-  primaryOrganizationId: z.string().uuid('유효한 UUID를 입력하세요.'),
-  positionIds: z.array(z.string().uuid()).optional().default([]),
+  primaryOrganizationId: z.string().min(1, '본조직을 선택하세요.'),
+  positionIds: z.array(z.string().min(1)).optional().default([]),
 })
 
 export type CreateEmployeeDto = z.infer<typeof CreateEmployeeSchema>
