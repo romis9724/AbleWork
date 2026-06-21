@@ -48,6 +48,26 @@ const FIELD_PRIORITY = Object.keys(PAYLOAD_LABELS)
 const MAX_CONTENT_FIELDS = 6
 
 /**
+ * AI 요약 호출에 허용하는 최대 대기 시간(ms).
+ * 요약은 부가기능이므로, LLM이 느리거나 멈춰도 핵심인 [승인][반려] DM 발송이
+ * provider 기본 타임아웃(30~60초)만큼 지연되지 않도록 짧게 캡한다(초과 시 요약 없이 발송).
+ */
+const SUMMARY_TIMEOUT_MS = 12_000
+
+/**
+ * 추론 모델이 본문에 남긴 사고 과정(`<think>…</think>`)을 제거한다.
+ * Ollama는 think:false로 억제하지만, vLLM 등 OpenAI 호환 경로에는 억제 수단이 없어
+ * 요약에 사고 과정이 섞일 수 있으므로 방어적으로 걷어낸다.
+ */
+function stripReasoning(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '') // 정상적으로 닫힌 블록
+    .replace(/<think>[\s\S]*$/i, '') // 토큰 한도로 잘려 닫히지 않은 블록
+    .replace(/<\/?think>/gi, '') // 잔여 태그
+    .trim()
+}
+
+/**
  * 신청 내용(JSON payload)에서 사람이 읽을 항목만 추출한다.
  * - ID성 필드·중첩값 제외(2순위 AI 요약이 자연어로 정리)
  * - JSONB 키 순서가 비결정적이므로 라벨 정의 순서로 정렬(미지 키는 뒤)
@@ -180,15 +200,19 @@ export class MessengerApprovalListener implements OnApplicationBootstrap {
       ]
         .filter(Boolean)
         .join('\n')
-      const text = await this.llm.chat(companyId, [
-        {
-          role: 'system',
-          content:
-            '너는 전자결재 요약 비서다. 결재자가 한눈에 판단하도록 신청 내용을 한국어 한 문장으로 간결히 요약하라. 인사말·추측 없이 핵심(기간·일수·사유)만 담아라.',
-        },
-        { role: 'user', content: `다음 "${eventLabel}" 내용을 한 문장으로 요약:\n${lines}` },
-      ])
-      return text.trim() || undefined
+      const text = await this.llm.chat(
+        companyId,
+        [
+          {
+            role: 'system',
+            content:
+              '너는 전자결재 요약 비서다. 결재자가 한눈에 판단하도록 신청 내용을 한국어 한 문장으로 간결히 요약하라. 인사말·추측 없이 핵심(기간·일수·사유)만 담아라.',
+          },
+          { role: 'user', content: `다음 "${eventLabel}" 내용을 한 문장으로 요약:\n${lines}` },
+        ],
+        { timeoutMs: SUMMARY_TIMEOUT_MS },
+      )
+      return stripReasoning(text) || undefined
     } catch (err) {
       this.logger.warn(`AI 요약 실패 — ${err instanceof Error ? err.message : String(err)}`)
       return undefined

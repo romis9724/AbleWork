@@ -43,6 +43,24 @@ describe('LlmService', () => {
     expect(ollama.chat).not.toHaveBeenCalled()
   })
 
+  it('chat — opts.timeoutMs를 provider 호출에 그대로 전달한다', async () => {
+    aiSettings.getConfig.mockResolvedValue(enabledCfg)
+    openAi.chat.mockResolvedValue('응답')
+
+    await service.chat('c1', [{ role: 'user', content: 'hi' }], { timeoutMs: 12_000 })
+
+    expect(openAi.chat).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 12_000 }))
+  })
+
+  it('chat — opts 미지정이면 timeoutMs를 넣지 않아 provider 기본값을 쓰게 둔다', async () => {
+    aiSettings.getConfig.mockResolvedValue(enabledCfg)
+    openAi.chat.mockResolvedValue('응답')
+
+    await service.chat('c1', [{ role: 'user', content: 'hi' }])
+
+    expect(openAi.chat.mock.calls[0][0]).not.toHaveProperty('timeoutMs')
+  })
+
   it('chat — provider=ollama면 OllamaProvider로 라우팅한다', async () => {
     aiSettings.getConfig.mockResolvedValue({
       ...enabledCfg,

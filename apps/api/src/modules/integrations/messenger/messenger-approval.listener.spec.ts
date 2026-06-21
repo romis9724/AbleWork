@@ -196,4 +196,63 @@ describe('MessengerApprovalListener', () => {
     expect(sent.summary).toBeUndefined()
     expect(messenger.sendApprovalRequestToUser).toHaveBeenCalled()
   })
+
+  it('요약 호출은 짧은 타임아웃 예산을 넘겨 핵심 DM이 오래 막히지 않게 한다', async () => {
+    prisma.approvalStep.findMany.mockResolvedValue([{ assigneeId: 'a' }])
+    prisma.document.findFirst.mockResolvedValue({
+      title: 't',
+      docNumber: null,
+      content: { reason: '연수' },
+      drafter: { name: '홍' },
+    })
+    prisma.messengerAccount.findFirst.mockResolvedValue({ externalUserId: 'd' })
+    llm.isEnabled.mockResolvedValue(true)
+    llm.chat.mockResolvedValue('요약')
+
+    await listener.handleRequested('leave.requested', base)
+
+    // 세 번째 인자 opts.timeoutMs가 짧은(<30s provider 기본보다 작은) 예산으로 전달됨
+    const opts = llm.chat.mock.calls[0][2] as { timeoutMs?: number } | undefined
+    expect(opts?.timeoutMs).toBeGreaterThan(0)
+    expect(opts?.timeoutMs).toBeLessThan(30_000)
+  })
+
+  it('추론 모델이 남긴 <think> 블록은 요약에서 제거한다(닫힌 블록)', async () => {
+    prisma.approvalStep.findMany.mockResolvedValue([{ assigneeId: 'a' }])
+    prisma.document.findFirst.mockResolvedValue({
+      title: 't',
+      docNumber: null,
+      content: { reason: '가족 여행', days: 2 },
+      drafter: { name: '홍길동' },
+    })
+    prisma.messengerAccount.findFirst.mockResolvedValue({ externalUserId: 'd' })
+    llm.isEnabled.mockResolvedValue(true)
+    llm.chat.mockResolvedValue(
+      '<think>사용자가 휴가를 신청했다. 핵심은 기간과 사유.</think>\n홍길동 연차 2일, 가족 여행',
+    )
+
+    await listener.handleRequested('leave.requested', base)
+
+    expect(messenger.sendApprovalRequestToUser.mock.calls[0][1].summary).toBe('홍길동 연차 2일, 가족 여행')
+  })
+
+  it('토큰 한도로 닫히지 않은 <think> 블록만 남으면 요약을 비워 발송한다', async () => {
+    prisma.approvalStep.findMany.mockResolvedValue([{ assigneeId: 'a' }])
+    prisma.document.findFirst.mockResolvedValue({
+      title: 't',
+      docNumber: null,
+      content: { reason: 'x' },
+      drafter: { name: '홍' },
+    })
+    prisma.messengerAccount.findFirst.mockResolvedValue({ externalUserId: 'd' })
+    llm.isEnabled.mockResolvedValue(true)
+    // <think>가 열린 채 num_predict 한도로 잘림 → 본문 요약이 없음
+    llm.chat.mockResolvedValue('<think>먼저 신청 내용을 분석하면 기간은')
+
+    await listener.handleRequested('leave.requested', base)
+
+    const sent = messenger.sendApprovalRequestToUser.mock.calls[0][1]
+    expect(sent.summary).toBeUndefined()
+    expect(messenger.sendApprovalRequestToUser).toHaveBeenCalled()
+  })
 })
