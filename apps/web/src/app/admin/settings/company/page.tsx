@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHead } from '@/components/ab/Page'
 import { Toggle, RadioGroup } from '@/components/ab/atoms'
 import { I } from '@/components/ab/icons'
@@ -94,6 +94,7 @@ const TIMEZONES = ['Asia/Seoul', 'Asia/Tokyo', 'Asia/Shanghai', 'UTC', 'America/
 
 export default function CompanySettingsPage() {
   const toast = useToast()
+  const qc = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const companyId = user?.companyId
   const isSuperAdmin = user?.accessLevel === 'SUPER_ADMIN'
@@ -144,6 +145,9 @@ export default function CompanySettingsPage() {
 
   const saveSettings = useMutation({
     mutationFn: (patch: Partial<CompanySettings>) => apiClient.patch('/company-settings', patch),
+    // 저장 후 캐시를 무효화하지 않으면 staleTime(60s) 동안 GET이 갱신되지 않아,
+    // 섹션 전환 시 settingsForm이 옛 캐시값으로 재동기되어 토글 변경이 영속되지 않은 것처럼 보인다.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['company-settings'] }),
   })
 
   // ── 휴일 ──────────────────────────────────────────────────
