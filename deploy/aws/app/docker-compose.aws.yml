@@ -1,5 +1,6 @@
 # EC2에서 실행되는 프로덕션 compose — ECR 이미지를 pull 해서 구동.
 # ECR_REGISTRY 는 deploy.sh 가 export 한다. env 파일은 fetch-env.sh 가 SSM에서 생성한다.
+# 컨테이너 로그는 awslogs 드라이버로 CloudWatch Logs(/ablework/prod/*)로 전송한다.
 name: ablework
 services:
   api:
@@ -7,6 +8,12 @@ services:
     restart: unless-stopped
     env_file: [.env.app]
     ports: ['3001:3001']
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ap-northeast-2
+        awslogs-group: /ablework/prod/api
+        awslogs-create-group: 'true'
 
   web:
     image: ${ECR_REGISTRY}/ablework-web:latest
@@ -14,3 +21,9 @@ services:
     env_file: [.env.web]
     ports: ['3000:3000']
     depends_on: [api]
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ap-northeast-2
+        awslogs-group: /ablework/prod/web
+        awslogs-create-group: 'true'
