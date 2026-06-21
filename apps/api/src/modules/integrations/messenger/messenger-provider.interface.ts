@@ -8,14 +8,24 @@
 /** 버튼 액션 식별 — PoC는 요청연동(request) 결재 기준 */
 export type ApprovalAction = { kind: 'request'; requestId: string }
 
-/** 결재 요청 메시지 페이로드 — 알림 + 승인/반려 버튼 구성용 */
+/** 결재 메시지 본문에 표시할 신청 내용 항목(기간/사유/내용 등) */
+export interface ApprovalField {
+  name: string
+  value: string
+}
+
+/** 결재 요청 메시지 페이로드 — 알림 + 신청 내용 + 승인/반려 버튼 구성용 */
 export interface ApprovalMessagePayload {
   /** 이벤트 라벨 (예: "휴가 신청 결재 요청") */
   eventLabel: string
   /** 문서/요청 제목 */
   title: string
+  /** 신청자(기안자) 이름 */
+  requesterName?: string
   docNumber?: string
-  /** 후속 AI 요약(2순위) — 현재 미사용, 메시지 [AI 요약] 결합 시 채움 */
+  /** 신청 내용 항목 — 결재자가 "무엇을" 승인하는지 본문에 표시 */
+  fields?: ApprovalField[]
+  /** 후속 AI 요약(2순위) — 메시지 [🤖 AI 요약] 결합 시 채움 */
   summary?: string
   /** 버튼 액션 식별 */
   action: ApprovalAction
