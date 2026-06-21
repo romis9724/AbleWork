@@ -28,6 +28,9 @@ import { MailModule } from './modules/mail/mail.module'
 import { AuditModule } from './modules/audit/audit.module'
 import { IntegrationsModule } from './modules/integrations/integrations.module'
 import { LlmModule } from './modules/integrations/llm/llm.module'
+import { APP_FILTER } from '@nestjs/core'
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
+import { ErrorAnalysisModule } from './modules/integrations/error-analysis/error-analysis.module'
 
 @Module({
   imports: [
@@ -71,6 +74,9 @@ import { LlmModule } from './modules/integrations/llm/llm.module'
     AuditModule,
     IntegrationsModule,
     LlmModule,
+    ErrorAnalysisModule,
   ],
+  // GlobalExceptionFilter를 DI로 등록(EventEmitter2 주입 → 에러 분석 이벤트 발행)
+  providers: [{ provide: APP_FILTER, useClass: GlobalExceptionFilter }],
 })
 export class AppModule {}

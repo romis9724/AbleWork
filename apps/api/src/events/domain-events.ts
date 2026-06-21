@@ -48,6 +48,9 @@ export const EVENTS = {
   DOCUMENT_RECALLED: 'document.recalled',
   DOCUMENT_STEP_PENDING: 'document.step_pending', // 다음 결재자 차례 알림
   DOCUMENT_BOUNCED: 'document.bounced', // 부서수신 반송 → 기안자 통지
+
+  // 시스템 — API 에러 감지(GlobalExceptionFilter 발행 → ErrorAnalysisService 구독)
+  API_ERROR_DETECTED: 'system.api_error_detected',
 } as const
 
 export type DomainEvent = (typeof EVENTS)[keyof typeof EVENTS]

@@ -19,9 +19,10 @@ export const UpdateEmployeeSchema = z.object({
   accessLevel: z
     .enum(['GENERAL_ADMIN', 'ORG_ADMIN', 'EMPLOYEE'])
     .optional(),
-  organizationIds: z.array(z.string().uuid()).min(1).optional(),
-  primaryOrganizationId: z.string().uuid().optional(),
-  positionIds: z.array(z.string().uuid()).optional(),
+  // ID 형식 강제(uuid) 대신 비어있지 않음만 — 시드/임포트 등 비-UUID ID 허용(실재는 DB 조회로 검증)
+  organizationIds: z.array(z.string().min(1)).min(1).optional(),
+  primaryOrganizationId: z.string().min(1).optional(),
+  positionIds: z.array(z.string().min(1)).optional(),
 })
 
 export type UpdateEmployeeDto = z.infer<typeof UpdateEmployeeSchema>

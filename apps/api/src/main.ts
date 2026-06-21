@@ -1,7 +1,6 @@
 import { NestFactory } from '@nestjs/core'
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 import { AppModule } from './app.module'
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor'
 
 async function bootstrap() {
@@ -16,7 +15,7 @@ async function bootstrap() {
     credentials: true,
   })
 
-  app.useGlobalFilters(new GlobalExceptionFilter())
+  // GlobalExceptionFilter는 app.module의 APP_FILTER(DI)로 등록된다(EventEmitter2 주입 위해).
   app.useGlobalInterceptors(new ResponseTransformInterceptor())
 
   const config = new DocumentBuilder()
