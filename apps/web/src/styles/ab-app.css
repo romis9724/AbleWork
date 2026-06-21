@@ -11,6 +11,9 @@
   flex-direction: column;
   background: var(--ab-bg);
 }
+/* 본문+네비 래퍼 — 모바일은 본문만 흐르고 네비는 fixed bottom(아래 .me-nav).
+   PC에서는 이 컨테이너가 [사이드바 | 본문] 행 레이아웃으로 바뀐다. */
+.me-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .me-head {
   height: 56px;
   flex: 0 0 56px;
@@ -58,6 +61,47 @@
   width: 26px; height: 2px; background: var(--ab-orange);
 }
 .me-nav-item .ic { display: inline-flex; }
+
+/* ---------- PC(데스크톱): 하단 탭 → 좌측 사이드바 (관리자 셸과 동일 패턴) ----------
+   직원 모드도 넓은 화면에서는 관리자처럼 메뉴가 본문 왼쪽에 세로로 선다. */
+@media (min-width: 1024px) {
+  .me-body { flex-direction: row; }
+
+  .me-nav {
+    /* fixed bottom 해제 → 헤더(56px) 아래에 붙는 sticky 사이드바 */
+    position: sticky;
+    top: 56px;
+    left: auto; right: auto; bottom: auto;
+    height: calc(100vh - 56px);
+    width: 220px;
+    flex: 0 0 220px;
+    order: -1; /* 본문보다 앞 = 왼쪽 */
+    flex-direction: column;
+    align-content: flex-start;
+    padding: 18px 0;
+    border-top: none;
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+  }
+  .me-nav-item {
+    flex: 0 0 auto; /* 균등분할 해제 */
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 11px 24px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  /* 활성 표식: 하단 가로 막대 → 좌측 세로 막대 (admin .sb-item.on과 동일) */
+  .me-nav-item.on::before {
+    top: 0; bottom: 0; left: 0;
+    transform: none;
+    width: 3px; height: auto;
+  }
+
+  /* 고정 하단 네비가 사라지므로 본문 하단 여백 정상화 */
+  .me-main { padding-bottom: 64px; }
+}
 
 /* me 화면에서 페이지 헤드 여백 축소 */
 .me-main .page-head { margin-bottom: 22px; }
