@@ -4,6 +4,8 @@ import { IntegrationsController } from './integrations.controller'
 import { DiscordInteractionService } from './messenger/discord/discord-interaction.service'
 import { DiscordProvider } from './messenger/discord/discord.provider'
 import { MESSENGER_PROVIDER } from './messenger/messenger-provider.interface'
+import { MessengerAccountController } from './messenger/messenger-account.controller'
+import { MessengerAccountService } from './messenger/messenger-account.service'
 
 /**
  * 메신저 연동(메신저 양방향 결재). 현재 구현체는 Discord.
@@ -12,10 +14,11 @@ import { MESSENGER_PROVIDER } from './messenger/messenger-provider.interface'
  */
 @Module({
   imports: [RequestsModule],
-  controllers: [IntegrationsController],
+  controllers: [IntegrationsController, MessengerAccountController],
   providers: [
     DiscordInteractionService,
     DiscordProvider,
+    MessengerAccountService,
     { provide: MESSENGER_PROVIDER, useExisting: DiscordProvider },
   ],
   exports: [MESSENGER_PROVIDER, DiscordProvider],
