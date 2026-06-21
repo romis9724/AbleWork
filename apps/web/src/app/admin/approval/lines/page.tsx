@@ -21,6 +21,7 @@ import {
   useDeleteSharedApprovalLine,
   type ApprovalStepInput,
   type SharedApprovalLine,
+  type SharedLineFilter,
   type StepRole,
 } from '@/lib/query/documents'
 
@@ -36,15 +37,15 @@ interface ModalState {
 
 export default function SharedApprovalLinesPage() {
   const toast = useToast()
-  // 검색: 입력값(input) / 적용값(applied) 분리 — [조회] 버튼으로 적용
+  // 검색: 입력값(input) / 적용값(applied) 분리 — [조회] 버튼으로 4개 필터 일괄 적용
   const [lineNameInput, setLineNameInput] = useState('')
   const [approverInput, setApproverInput] = useState('')
   const [authorInput, setAuthorInput] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [search, setSearch] = useState('')
+  const [applied, setApplied] = useState<SharedLineFilter>({})
 
-  const { data: lines = [], isLoading } = useSharedApprovalLines(search.trim() || undefined)
+  const { data: lines = [], isLoading } = useSharedApprovalLines(applied)
   const { data: employeeData } = useEmployees({ limit: 500, isActive: true })
   const { data: orgTree = [] } = useOrganizations()
   const deleteMutation = useDeleteSharedApprovalLine()
@@ -94,7 +95,14 @@ export default function SharedApprovalLinesPage() {
     }
   }
 
-  const handleQuery = () => setSearch(lineNameInput)
+  const handleQuery = () =>
+    setApplied({
+      search: lineNameInput.trim() || undefined,
+      author: authorInput.trim() || undefined,
+      approver: approverInput.trim() || undefined,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+    })
 
   return (
     <>
