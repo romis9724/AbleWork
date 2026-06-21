@@ -55,6 +55,7 @@ model Company {
   documentAttachments  DocumentAttachment[]
   formCategories       FormCategory[]
   auditLogs            AuditLog[]
+  messengerAccounts    MessengerAccount[]
 
   @@map("companies")
 }
@@ -215,6 +216,7 @@ model Employee {
   sentMessages          Message[]
   uploadedAttachments   DocumentAttachment[]       @relation("AttachmentUploader")
   createdSharedLines    SharedApprovalLine[]       @relation("SharedLineCreatedBy")
+  messengerAccounts     MessengerAccount[]
 
   @@index([companyId, isActive])
   @@index([companyId, accessLevel])
@@ -1187,4 +1189,24 @@ model AuditLog {
 
   @@index([companyId, createdAt(sort: Desc)])
   @@map("audit_logs")
+}
+
+/// 메신저 계정 연동 — 직원 ↔ 메신저(Discord 등) 사용자 매핑 (메신저 양방향 결재 PoC).
+/// 버튼 클릭자(externalUserId) → employee/company 역해석으로 결재 본인 검증에 사용.
+model MessengerAccount {
+  id             String   @id @default(uuid())
+  companyId      String   @map("company_id")
+  employeeId     String   @map("employee_id")
+  platform       String   @db.VarChar(20) // 'discord' | 'kakaowork' | 'naverworks'
+  externalUserId String   @map("external_user_id") @db.VarChar(100)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([platform, externalUserId])
+  @@unique([companyId, employeeId, platform])
+  @@index([companyId])
+  @@map("messenger_accounts")
 }
