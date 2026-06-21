@@ -110,7 +110,7 @@ export default function MessageAutomationsPage() {
     setLeaveTypeId(a.leaveTypeId ?? '')
     setTrigger(a.triggerBasis)
     setOffset(String(a.offsetDays))
-    setSendTime(a.sendTime?.slice(0, 5) || '09:00')
+    setSendTime(a.sendTime?.slice(11, 16) || '09:00')
     setOpen(true)
   }
 

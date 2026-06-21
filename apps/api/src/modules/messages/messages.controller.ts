@@ -114,7 +114,7 @@ export class MessagesController {
     @CurrentUser() user: JwtPayload,
     @Body(new ZodValidationPipe(SendMessageSchema)) dto: SendMessageDto,
   ) {
-    return this.messagesService.sendMessage(companyId, user.sub, dto)
+    return this.messagesService.sendMessage(companyId, user.employeeId, dto)
   }
 
   // ── MSG-06 수신 메시지 목록 ───────────────────────────────────────────────────
