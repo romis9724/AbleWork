@@ -70,4 +70,26 @@ export class DiscordProvider implements MessengerProvider {
     })
     return res.data.id as string
   }
+
+  /**
+   * 결재자 개인에게 DM으로 결재 요청 메시지를 전송한다.
+   * Bot↔사용자 DM 채널을 먼저 개설(이미 있으면 기존 채널 반환)한 뒤 채널 전송 로직을 재사용한다.
+   */
+  async sendApprovalRequestToUser(
+    externalUserId: string,
+    payload: ApprovalMessagePayload,
+  ): Promise<string> {
+    const dmChannelId = await this.openDmChannel(externalUserId)
+    return this.sendApprovalRequest(dmChannelId, payload)
+  }
+
+  /** Bot↔사용자 1:1 DM 채널 개설 — Discord는 동일 사용자에 대해 멱등(기존 채널 재사용) */
+  private async openDmChannel(recipientUserId: string): Promise<string> {
+    const res = await axios.post(
+      `${DISCORD_API}/users/@me/channels`,
+      { recipient_id: recipientUserId },
+      { headers: { Authorization: `Bot ${this.token}`, 'Content-Type': 'application/json' } },
+    )
+    return res.data.id as string
+  }
 }

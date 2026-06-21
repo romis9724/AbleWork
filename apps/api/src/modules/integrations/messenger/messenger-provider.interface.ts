@@ -24,8 +24,13 @@ export interface ApprovalMessagePayload {
 /** 메신저 제공자 추상화 — sendApprovalRequest가 핵심(전송 + 갱신용 식별자 반환) */
 export interface MessengerProvider {
   readonly platform: string
-  /** 결재 요청 메시지(+승인/반려 버튼)를 전송하고 메시지 식별자(갱신용)를 반환 */
+  /** 결재 요청 메시지(+승인/반려 버튼)를 채널에 전송하고 메시지 식별자(갱신용)를 반환 */
   sendApprovalRequest(target: string, payload: ApprovalMessagePayload): Promise<string>
+  /**
+   * 결재자 개인(외부 사용자 ID)에게 1:1 DM으로 결재 요청 메시지를 전송한다.
+   * 회사 채널 브로드캐스트(NotificationListener)와 달리 "당사자에게 직접" 보내 즉시 결재를 유도한다.
+   */
+  sendApprovalRequestToUser(externalUserId: string, payload: ApprovalMessagePayload): Promise<string>
 }
 
 /** DI 토큰 — 현재 구현체는 DiscordProvider */
