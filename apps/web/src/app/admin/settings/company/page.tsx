@@ -7,8 +7,7 @@ import { I } from '@/components/ab/icons'
 import { ConfirmDialog } from '@/components/ab/Modal'
 import { useToast } from '@/components/ab/Toast'
 import apiClient from '@/lib/api-client'
-import EmployeesPanel from '@/app/admin/employees/EmployeesPanel'
-import OrganizationsPanel from '@/app/admin/organizations/OrganizationsPanel'
+import PositionsPanel from '@/app/admin/positions/PositionsPanel'
 import ApprovalCommonPanel from '@/app/admin/approval/common/ApprovalCommonPanel'
 import PermissionsPanel from '@/app/admin/settings/permissions/PermissionsPanel'
 import NotificationsPanel from '@/app/admin/settings/notifications/NotificationsPanel'
@@ -59,8 +58,7 @@ const SECTIONS = [
   { key: 'general', label: '일반' },
   { key: 'notification', label: '알림' },
   { key: 'permission', label: '권한' },
-  { key: 'organization', label: '조직' },
-  { key: 'employee', label: '직원' },
+  { key: 'position', label: '직무' },
   { key: 'approval', label: '전자결재' },
   { key: 'shift', label: '근무일정' },
   { key: 'attendance', label: '출퇴근' },
@@ -599,11 +597,8 @@ export default function CompanySettingsPage() {
             </div>
           )}
 
-          {/* ── 직원 (임베드 패널) ───────────────────────────── */}
-          {section === 'employee' && <EmployeesPanel />}
-
-          {/* ── 조직 (임베드 패널) ───────────────────────────── */}
-          {section === 'organization' && <OrganizationsPanel />}
+          {/* ── 직무 (임베드 패널) ───────────────────────────── */}
+          {section === 'position' && <PositionsPanel />}
 
           {/* ── 전자결재 (임베드 패널: 공통 관리 — 문서/정책/알림) ─ */}
           {section === 'approval' && <ApprovalCommonPanel />}
