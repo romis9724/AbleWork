@@ -47,4 +47,12 @@ describe('OpenAiCompatibleProvider', () => {
     mockedAxios.post.mockResolvedValue({ data: { choices: [] } })
     expect(await provider.chat({ baseUrl: 'http://x/v1', model: 'm', messages: [] })).toBe('')
   })
+
+  it('timeoutMs가 주어지면 axios 요청 타임아웃을 그 값으로 오버라이드한다', async () => {
+    mockedAxios.post.mockResolvedValue({ data: { choices: [{ message: { content: 'x' } }] } })
+
+    await provider.chat({ baseUrl: 'http://x/v1', model: 'm', messages: [], timeoutMs: 8_000 })
+
+    expect((mockedAxios.post.mock.calls[0][2] as { timeout: number }).timeout).toBe(8_000)
+  })
 })

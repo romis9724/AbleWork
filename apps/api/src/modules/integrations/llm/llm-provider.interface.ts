@@ -16,6 +16,8 @@ export interface LlmChatRequest {
   messages: LlmMessage[]
   maxTokens?: number
   temperature?: number
+  /** 호출별 요청 타임아웃(ms). 미지정 시 provider 기본값. 부가기능(요약 등)은 짧게 잡아 핵심 흐름을 막지 않는다. */
+  timeoutMs?: number
 }
 
 export interface LlmProvider {

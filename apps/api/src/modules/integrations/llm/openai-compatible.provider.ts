@@ -31,7 +31,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
           'Content-Type': 'application/json',
           ...(req.apiKey ? { Authorization: `Bearer ${req.apiKey}` } : {}),
         },
-        timeout: REQUEST_TIMEOUT_MS,
+        timeout: req.timeoutMs ?? REQUEST_TIMEOUT_MS,
       },
     )
     const content = res.data?.choices?.[0]?.message?.content
