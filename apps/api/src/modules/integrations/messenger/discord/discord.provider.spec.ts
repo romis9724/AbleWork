@@ -52,7 +52,7 @@ describe('DiscordProvider', () => {
     expect(JSON.stringify(mockedAxios.post.mock.calls[0][1])).toContain('AI 요약')
   })
 
-  it('신청자와 신청 내용 항목을 embed 필드로 포함한다', async () => {
+  it('신청자와 신청 내용을 굵은 라벨로 본문(description)에 정리한다', async () => {
     mockedAxios.post.mockResolvedValue({ data: { id: 'msg-3' } })
 
     await provider.sendApprovalRequest('chan-1', {
@@ -66,12 +66,13 @@ describe('DiscordProvider', () => {
       action: { kind: 'request', requestId: 'req-3' },
     })
 
-    const body = JSON.stringify(mockedAxios.post.mock.calls[0][1])
-    expect(body).toContain('신청자')
-    expect(body).toContain('홍길동')
-    expect(body).toContain('기간')
-    expect(body).toContain('6/23~6/24')
-    expect(body).toContain('개인 사정')
+    const desc = (
+      mockedAxios.post.mock.calls[0][1] as { embeds: Array<{ description: string }> }
+    ).embeds[0].description
+    // 라벨이 볼드(**)로, 라벨과 값이 한 줄에
+    expect(desc).toContain('**신청자** 홍길동')
+    expect(desc).toContain('**기간** 6/23~6/24')
+    expect(desc).toContain('**사유** 개인 사정')
   })
 
   it('사용자에게 DM 채널을 개설하고 버튼 메시지를 전송한다', async () => {

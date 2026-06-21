@@ -40,9 +40,6 @@ const PAYLOAD_LABELS: Record<string, string> = {
   note: '비고',
 }
 
-/** 짧은 값 — Discord embed에서 가로(inline) 배치 */
-const INLINE_KEYS = new Set(['startDate', 'endDate', 'startAt', 'endAt', 'date', 'days', 'hours', 'amount'])
-
 /** 라벨 정의 순서를 표시 우선순위로 사용 */
 const FIELD_PRIORITY = Object.keys(PAYLOAD_LABELS)
 
@@ -53,7 +50,7 @@ const MAX_CONTENT_FIELDS = 6
  * 신청 내용(JSON payload)에서 사람이 읽을 항목만 추출한다.
  * - ID성 필드·중첩값 제외(2순위 AI 요약이 자연어로 정리)
  * - JSONB 키 순서가 비결정적이므로 라벨 정의 순서로 정렬(미지 키는 뒤)
- * - 날짜·수량은 inline(가로) 배치, 최대 MAX_CONTENT_FIELDS개
+ * - 최대 MAX_CONTENT_FIELDS개
  */
 function buildContentFields(content: unknown): ApprovalField[] {
   if (!content || typeof content !== 'object' || Array.isArray(content)) return []
@@ -69,7 +66,6 @@ function buildContentFields(content: unknown): ApprovalField[] {
   return keys.slice(0, MAX_CONTENT_FIELDS).map((key) => ({
     name: PAYLOAD_LABELS[key] ?? key,
     value: String(obj[key]).slice(0, 1024),
-    ...(INLINE_KEYS.has(key) ? { inline: true } : {}),
   }))
 }
 

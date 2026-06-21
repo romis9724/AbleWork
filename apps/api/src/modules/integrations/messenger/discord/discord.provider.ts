@@ -31,22 +31,12 @@ export class DiscordProvider implements MessengerProvider {
   }
 
   async sendApprovalRequest(channelId: string, payload: ApprovalMessagePayload): Promise<string> {
-    const fields: Array<{ name: string; value: string; inline?: boolean }> = []
-    if (payload.requesterName) fields.push({ name: '신청자', value: payload.requesterName, inline: true })
-    if (payload.docNumber) fields.push({ name: '문서번호', value: payload.docNumber, inline: true })
-    // 신청 내용(기간/사유/내용 등) — 결재자가 무엇을 승인하는지 본문에 표시
-    for (const field of payload.fields ?? []) {
-      fields.push({ name: field.name, value: field.value, ...(field.inline ? { inline: true } : {}) })
-    }
-    if (payload.summary) fields.push({ name: '🤖 AI 요약', value: payload.summary })
-
     const body = {
       embeds: [
         {
           title: payload.eventLabel,
-          description: payload.title,
+          description: this.buildDescription(payload),
           color: BRAND_COLOR,
-          ...(fields.length ? { fields } : {}),
         },
       ],
       components: [
@@ -74,6 +64,22 @@ export class DiscordProvider implements MessengerProvider {
       headers: { Authorization: `Bot ${this.token}`, 'Content-Type': 'application/json' },
     })
     return res.data.id as string
+  }
+
+  /**
+   * embed 본문(description) 구성 — 라벨을 굵게(`**`)·라벨과 값을 한 줄에 배치한다.
+   * embed field name은 마크다운이 적용되지 않아 강조가 약하므로, description 마크다운으로
+   * 모든 클라이언트(모바일 포함)에서 일관되게 굵게 표시한다. AI 요약은 하단 블록.
+   */
+  private buildDescription(payload: ApprovalMessagePayload): string {
+    const lines: string[] = []
+    if (payload.requesterName) lines.push(`**신청자** ${payload.requesterName}`)
+    if (payload.docNumber) lines.push(`**문서번호** ${payload.docNumber}`)
+    for (const field of payload.fields ?? []) {
+      lines.push(`**${field.name}** ${field.value}`)
+    }
+    const header = [payload.title, lines.join('\n')].filter(Boolean).join('\n\n')
+    return payload.summary ? `${header}\n\n**🤖 AI 요약**\n${payload.summary}` : header
   }
 
   /**
