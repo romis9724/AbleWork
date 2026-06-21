@@ -5,6 +5,7 @@ import { Emp, DateInput } from '@/components/ab/atoms'
 import { Modal, ConfirmDialog } from '@/components/ab/Modal'
 import { I, HRI } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
+import BulkCreateDialog from './BulkCreateDialog'
 import {
   useShifts,
   useShiftTypes,
@@ -114,6 +115,7 @@ function readEmployeePositionId(emp: Employee): string | undefined {
 export default function ShiftsPage() {
   const toast = useToast()
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
+  const [bulkOpen, setBulkOpen] = useState(false)
   const [orgFilter, setOrgFilter] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -398,9 +400,14 @@ export default function ShiftsPage() {
         eyebrow="Shift Schedule"
         title="근무일정"
         right={
-          <button className="btn btn-ghost btn-sm" onClick={openCreate}>
-            {I.plus({ style: { marginRight: 6 } })} 근무일정 추가
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-line btn-sm" onClick={() => setBulkOpen(true)}>
+              {I.plus({ style: { marginRight: 6 } })} 일괄 생성
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={openCreate}>
+              {I.plus({ style: { marginRight: 6 } })} 근무일정 추가
+            </button>
+          </div>
         }
       />
 
@@ -879,6 +886,16 @@ export default function ShiftsPage() {
         confirmLabel="삭제"
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      <BulkCreateDialog
+        open={bulkOpen}
+        templates={templates}
+        organizations={flatOrgs}
+        defaultStartDate={toLocalDateStr(weekStart)}
+        defaultEndDate={toLocalDateStr(addDays(weekStart, DAYS_PER_WEEK - 1))}
+        onClose={() => setBulkOpen(false)}
+        onResult={(msg) => toast(msg)}
       />
     </>
   )

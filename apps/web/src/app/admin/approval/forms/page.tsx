@@ -173,7 +173,6 @@ export default function ApprovalFormsPage() {
   const [ruleTarget, setRuleTarget] = useState<DocumentForm | null>(null)
   const [accessTarget, setAccessTarget] = useState<DocumentForm | null>(null)
   const [confirmTarget, setConfirmTarget] = useState<DocumentForm | null>(null)
-  const [confirmCatDelete, setConfirmCatDelete] = useState(false)
 
   const sortedForms = useMemo(() => [...forms].sort((a, b) => a.sortOrder - b.sortOrder), [forms])
 
@@ -250,9 +249,7 @@ export default function ApprovalFormsPage() {
               ))}
             </div>
             <div className="pane-foot">
-              <button className="btn btn-line btn-sm" onClick={() => setCatManagerOpen(true)}>추가</button>
-              <button className="btn btn-line btn-sm" onClick={() => setCatManagerOpen(true)}>수정</button>
-              <button className="btn btn-line btn-sm" onClick={() => setConfirmCatDelete(true)}>삭제</button>
+              <button className="btn btn-line btn-sm" onClick={() => setCatManagerOpen(true)}>분류 관리</button>
             </div>
           </div>
 
@@ -358,20 +355,6 @@ export default function ApprovalFormsPage() {
         open={catManagerOpen}
         onClose={() => setCatManagerOpen(false)}
         onResult={(msg) => toast(msg)}
-      />
-
-      {/* 분류함 삭제 안내 — 분류 관리로 유도 */}
-      <ConfirmDialog
-        open={confirmCatDelete}
-        title="양식함 삭제 안내"
-        message="등록되어있는 결재문서들은 삭제되지 않습니다. 분류 관리에서 삭제할 분류를 선택해 주세요."
-        confirmLabel="분류 관리"
-        cancelLabel="닫기"
-        onConfirm={() => {
-          setConfirmCatDelete(false)
-          setCatManagerOpen(true)
-        }}
-        onCancel={() => setConfirmCatDelete(false)}
       />
 
       {/* 양식 삭제 확인 */}
