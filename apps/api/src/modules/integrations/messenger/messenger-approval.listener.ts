@@ -20,13 +20,13 @@ const EVENT_LABEL: Record<string, string> = Object.fromEntries(
   NOTIFIABLE_EVENTS.map((e) => [e.event, e.label]),
 )
 
-/** 신청 payload 필드 → 한국어 라벨 (매핑 없으면 키 그대로) */
+/**
+ * 신청 payload 필드 → 한국어 라벨. 이 정의 순서가 곧 표시 우선순위다
+ * (JSONB는 키 순서를 보존하지 않으므로 아래에서 명시적으로 정렬한다).
+ */
 const PAYLOAD_LABELS: Record<string, string> = {
   title: '제목',
   content: '내용',
-  reason: '사유',
-  memo: '메모',
-  note: '비고',
   startDate: '시작일',
   endDate: '종료일',
   startAt: '시작',
@@ -34,26 +34,43 @@ const PAYLOAD_LABELS: Record<string, string> = {
   date: '일자',
   days: '일수',
   hours: '시간',
+  amount: '금액',
+  reason: '사유',
+  memo: '메모',
+  note: '비고',
 }
+
+/** 짧은 값 — Discord embed에서 가로(inline) 배치 */
+const INLINE_KEYS = new Set(['startDate', 'endDate', 'startAt', 'endAt', 'date', 'days', 'hours', 'amount'])
+
+/** 라벨 정의 순서를 표시 우선순위로 사용 */
+const FIELD_PRIORITY = Object.keys(PAYLOAD_LABELS)
 
 /** 결재 내용 본문에 표시할 최대 항목 수 (Discord embed 가독성) */
 const MAX_CONTENT_FIELDS = 6
 
 /**
  * 신청 내용(JSON payload)에서 사람이 읽을 항목만 추출한다.
- * ID성 필드는 이름 해석이 안 돼 의미가 없으므로 제외(2순위 AI 요약이 자연어로 정리),
- * 중첩 객체/배열도 제외. 최대 MAX_CONTENT_FIELDS개.
+ * - ID성 필드·중첩값 제외(2순위 AI 요약이 자연어로 정리)
+ * - JSONB 키 순서가 비결정적이므로 라벨 정의 순서로 정렬(미지 키는 뒤)
+ * - 날짜·수량은 inline(가로) 배치, 최대 MAX_CONTENT_FIELDS개
  */
 function buildContentFields(content: unknown): ApprovalField[] {
   if (!content || typeof content !== 'object' || Array.isArray(content)) return []
-  const fields: ApprovalField[] = []
-  for (const [key, value] of Object.entries(content as Record<string, unknown>)) {
-    if (value == null || typeof value === 'object') continue
-    if (/id$/i.test(key)) continue
-    fields.push({ name: PAYLOAD_LABELS[key] ?? key, value: String(value).slice(0, 1024) })
-    if (fields.length >= MAX_CONTENT_FIELDS) break
+  const obj = content as Record<string, unknown>
+  const orderOf = (key: string): number => {
+    const i = FIELD_PRIORITY.indexOf(key)
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i
   }
-  return fields
+  const keys = Object.keys(obj)
+    .filter((key) => obj[key] != null && typeof obj[key] !== 'object' && !/id$/i.test(key))
+    .sort((a, b) => orderOf(a) - orderOf(b))
+
+  return keys.slice(0, MAX_CONTENT_FIELDS).map((key) => ({
+    name: PAYLOAD_LABELS[key] ?? key,
+    value: String(obj[key]).slice(0, 1024),
+    ...(INLINE_KEYS.has(key) ? { inline: true } : {}),
+  }))
 }
 
 /** 상신 이벤트 payload (requests.service가 emit하는 형태) */
