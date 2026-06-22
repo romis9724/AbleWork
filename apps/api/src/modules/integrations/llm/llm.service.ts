@@ -27,7 +27,11 @@ export class LlmService {
    * 활성화·설정 검증 후 채팅 완성 호출.
    * opts.timeoutMs로 호출별 타임아웃을 좁힐 수 있다(부가기능이 핵심 흐름을 오래 막지 않도록).
    */
-  async chat(companyId: string, messages: LlmMessage[], opts?: { timeoutMs?: number }): Promise<string> {
+  async chat(
+    companyId: string,
+    messages: LlmMessage[],
+    opts?: { timeoutMs?: number; maxTokens?: number },
+  ): Promise<string> {
     const cfg = await this.aiSettings.getConfig(companyId)
     this.assertUsable(cfg)
     return this.selectProvider(cfg.provider).chat({
@@ -35,7 +39,8 @@ export class LlmService {
       model: cfg.model,
       apiKey: cfg.apiKey || undefined,
       messages,
-      maxTokens: cfg.maxTokens,
+      // 호출별 maxTokens가 있으면 회사 기본값보다 우선(긴 출력이 필요한 분석 등)
+      maxTokens: opts?.maxTokens ?? cfg.maxTokens,
       temperature: cfg.temperature,
       ...(opts?.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
     })

@@ -69,7 +69,12 @@ describe('ErrorAnalysisService', () => {
 
   it('AI 활성: chat·이메일·Discord 모두 호출', async () => {
     await svc.handle(makeEvent())
-    expect(llm.chat).toHaveBeenCalledWith('c1', expect.any(Array), expect.any(Object))
+    // 분석은 회사 기본값과 무관하게 조치 방안까지 완결되도록 maxTokens를 보장
+    expect(llm.chat).toHaveBeenCalledWith(
+      'c1',
+      expect.any(Array),
+      expect.objectContaining({ maxTokens: 1200 }),
+    )
     expect(mail.sendMessageMail).toHaveBeenCalledWith(
       'ops@x.com',
       expect.stringContaining('에러 500'),
@@ -116,6 +121,14 @@ describe('ErrorAnalysisService', () => {
 
   it('404는 알림·분석·적재 대상에서 제외', async () => {
     await svc.handle(makeEvent({ status: 404, code: 'NOT_FOUND', path: '/missing' }))
+    expect(llm.chat).not.toHaveBeenCalled()
+    expect(mail.sendMessageMail).not.toHaveBeenCalled()
+    expect(discord.send).not.toHaveBeenCalled()
+    expect(prisma.errorAnalysisLog.create).not.toHaveBeenCalled()
+  })
+
+  it('401은 알림·분석·적재 대상에서 제외(인증 노이즈)', async () => {
+    await svc.handle(makeEvent({ status: 401, code: 'UNAUTHORIZED', path: '/api/v1/x' }))
     expect(llm.chat).not.toHaveBeenCalled()
     expect(mail.sendMessageMail).not.toHaveBeenCalled()
     expect(discord.send).not.toHaveBeenCalled()
