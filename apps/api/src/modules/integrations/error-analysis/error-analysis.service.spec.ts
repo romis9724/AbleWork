@@ -202,7 +202,7 @@ describe('ErrorAnalysisService', () => {
     })
   })
 
-  it('exportCsv: BOM·헤더·처리상태(한글)·RFC4180 이스케이프 포함', async () => {
+  it('exportCsv: BOM·헤더·처리상태(한글)·스택·AI분석내용·RFC4180 이스케이프 포함', async () => {
     prisma.errorAnalysisLog.findMany.mockResolvedValue([
       {
         createdAt: new Date('2026-06-22T00:30:00.000Z'),
@@ -212,8 +212,9 @@ describe('ErrorAnalysisService', () => {
         method: 'POST',
         path: '/api/v1/x',
         message: 'a,b\n"c"',
-        aiAnalysis: null,
-        aiEnabled: false,
+        stack: 'Error: boom\n    at handler (/app/x.ts:1:1)',
+        aiAnalysis: '추정 원인: 검증 실패\n조치: 스키마 정합',
+        aiEnabled: true,
         notifiedEmail: true,
         notifiedDiscord: false,
         resolvedAt: null,
@@ -222,7 +223,12 @@ describe('ErrorAnalysisService', () => {
     const csv = await svc.exportCsv('c1', { page: 1, limit: 25 } as never)
     expect(csv.startsWith('﻿')).toBe(true)
     expect(csv).toContain('발생시각(KST)')
+    expect(csv).toContain('AI분석내용')
+    expect(csv).toContain('스택')
     expect(csv).toContain('미해결')
+    // 스택·AI분석 전문이 셀에 포함(개행 보존 위해 따옴표로 감싸짐)
+    expect(csv).toContain('"Error: boom\n    at handler (/app/x.ts:1:1)"')
+    expect(csv).toContain('"추정 원인: 검증 실패\n조치: 스키마 정합"')
     // 쉼표·개행·따옴표 포함 메시지는 따옴표로 감싸고 내부 따옴표는 이중화
     expect(csv).toContain('"a,b\n""c"""')
     expect(prisma.errorAnalysisLog.findMany).toHaveBeenCalledWith(
