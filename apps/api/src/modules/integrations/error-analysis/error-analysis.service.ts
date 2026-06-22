@@ -324,10 +324,12 @@ export class ErrorAnalysisService {
       '메서드',
       '경로',
       '메시지',
-      'AI분석',
+      'AI분석여부',
       '이메일통지',
       'Discord통지',
       '완료시각(KST)',
+      'AI분석내용',
+      '스택',
     ]
     const lines = items.map((i) =>
       [
@@ -342,6 +344,8 @@ export class ErrorAnalysisService {
         i.notifiedEmail ? 'Y' : 'N',
         i.notifiedDiscord ? 'Y' : 'N',
         i.resolvedAt ? toKst(i.resolvedAt) : '',
+        i.aiAnalysis ?? '',
+        i.stack ?? '',
       ]
         .map(csvEscape)
         .join(','),
@@ -367,6 +371,7 @@ interface ErrorAnalysisLogRow {
   method: string
   path: string
   message: string
+  stack: string | null
   aiAnalysis: string | null
   aiEnabled: boolean
   notifiedEmail: boolean
