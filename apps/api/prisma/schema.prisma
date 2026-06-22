@@ -213,6 +213,7 @@ model Employee {
   confirmedShifts       Shift[]                    @relation("ShiftConfirmer")
   createdShifts         Shift[]                    @relation("ShiftCreator")
   confirmedAttendances  Attendance[]               @relation("AttendanceConfirmer")
+  resolvedErrorLogs     ErrorAnalysisLog[]         @relation("ErrorResolver")
   lockedSnapshots       ReportSnapshot[]
   sentMessages          Message[]
   uploadedAttachments   DocumentAttachment[]       @relation("AttachmentUploader")
@@ -1221,12 +1222,20 @@ model ErrorAnalysisLog {
   notifiedEmail   Boolean  @default(false) @map("notified_email")
   /// Discord 경고 발송 성공 여부
   notifiedDiscord Boolean  @default(false) @map("notified_discord")
+  /// 처리 상태 — OPEN(미해결) | RESOLVED(완료). 관리자가 일괄 완료 처리.
+  resolutionStatus String  @default("OPEN") @map("resolution_status") @db.VarChar(20)
+  /// 완료 처리 시각(미해결이면 null)
+  resolvedAt      DateTime? @map("resolved_at")
+  /// 완료 처리한 관리자(직원). 직원 삭제 시 NULL로 보존
+  resolvedById    String?  @map("resolved_by_id")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  company Company @relation(fields: [companyId], references: [id])
+  company    Company   @relation(fields: [companyId], references: [id])
+  resolvedBy Employee? @relation("ErrorResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
 
   @@index([companyId, createdAt(sort: Desc)])
   @@index([companyId, status])
+  @@index([companyId, resolutionStatus])
   @@map("error_analysis_logs")
 }
 

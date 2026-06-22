@@ -22,6 +22,7 @@ describe('ErrorAnalysisService', () => {
       findMany: jest.Mock
       count: jest.Mock
       findFirst: jest.Mock
+      updateMany: jest.Mock
     }
   }
   let llm: { isEnabled: jest.Mock; chat: jest.Mock }
@@ -54,6 +55,7 @@ describe('ErrorAnalysisService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
         findFirst: jest.fn().mockResolvedValue(null),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
     }
     llm = {
@@ -153,5 +155,78 @@ describe('ErrorAnalysisService', () => {
   it('메일 발송 실패해도 throw 하지 않음', async () => {
     mail.sendMessageMail.mockRejectedValue(new Error('smtp down'))
     await expect(svc.handle(makeEvent({ path: '/w' }))).resolves.toBeUndefined()
+  })
+
+  it('findAll: 처리상태·시간(from/to) 필터를 where에 반영', async () => {
+    await svc.findAll('c1', {
+      page: 1,
+      limit: 25,
+      resolutionStatus: 'OPEN',
+      from: '2026-06-22T00:00:00.000Z',
+      to: '2026-06-22T05:00:00.000Z',
+    } as never)
+    expect(prisma.errorAnalysisLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          companyId: 'c1',
+          resolutionStatus: 'OPEN',
+          createdAt: {
+            gte: new Date('2026-06-22T00:00:00.000Z'),
+            lte: new Date('2026-06-22T05:00:00.000Z'),
+          },
+        }),
+      }),
+    )
+  })
+
+  it('bulkResolve: 완료 처리 시 처리시각·처리자 기록(회사 스코프)', async () => {
+    prisma.errorAnalysisLog.updateMany.mockResolvedValue({ count: 2 })
+    const res = await svc.bulkResolve('c1', { ids: ['a', 'b'], status: 'RESOLVED' }, 'emp1')
+    expect(res).toEqual({ count: 2 })
+    expect(prisma.errorAnalysisLog.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['a', 'b'] }, companyId: 'c1' },
+      data: expect.objectContaining({
+        resolutionStatus: 'RESOLVED',
+        resolvedById: 'emp1',
+        resolvedAt: expect.any(Date),
+      }),
+    })
+  })
+
+  it('bulkResolve: OPEN으로 되돌리면 처리정보 초기화', async () => {
+    prisma.errorAnalysisLog.updateMany.mockResolvedValue({ count: 1 })
+    await svc.bulkResolve('c1', { ids: ['a'], status: 'OPEN' }, 'emp1')
+    expect(prisma.errorAnalysisLog.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['a'] }, companyId: 'c1' },
+      data: { resolutionStatus: 'OPEN', resolvedAt: null, resolvedById: null },
+    })
+  })
+
+  it('exportCsv: BOM·헤더·처리상태(한글)·RFC4180 이스케이프 포함', async () => {
+    prisma.errorAnalysisLog.findMany.mockResolvedValue([
+      {
+        createdAt: new Date('2026-06-22T00:30:00.000Z'),
+        resolutionStatus: 'OPEN',
+        status: 500,
+        code: 'INTERNAL_SERVER_ERROR',
+        method: 'POST',
+        path: '/api/v1/x',
+        message: 'a,b\n"c"',
+        aiAnalysis: null,
+        aiEnabled: false,
+        notifiedEmail: true,
+        notifiedDiscord: false,
+        resolvedAt: null,
+      },
+    ])
+    const csv = await svc.exportCsv('c1', { page: 1, limit: 25 } as never)
+    expect(csv.startsWith('﻿')).toBe(true)
+    expect(csv).toContain('발생시각(KST)')
+    expect(csv).toContain('미해결')
+    // 쉼표·개행·따옴표 포함 메시지는 따옴표로 감싸고 내부 따옴표는 이중화
+    expect(csv).toContain('"a,b\n""c"""')
+    expect(prisma.errorAnalysisLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ companyId: 'c1' }) }),
+    )
   })
 })
