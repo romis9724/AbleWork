@@ -112,6 +112,14 @@ describe('ErrorAnalysisService', () => {
     })
   })
 
+  it('404는 알림·분석·적재 대상에서 제외', async () => {
+    await svc.handle(makeEvent({ status: 404, code: 'NOT_FOUND', path: '/missing' }))
+    expect(llm.chat).not.toHaveBeenCalled()
+    expect(mail.sendMessageMail).not.toHaveBeenCalled()
+    expect(discord.send).not.toHaveBeenCalled()
+    expect(prisma.errorAnalysisLog.create).not.toHaveBeenCalled()
+  })
+
   it('같은 시그니처 중복은 1회만 처리(디둡)', async () => {
     await svc.handle(makeEvent())
     await svc.handle(makeEvent())

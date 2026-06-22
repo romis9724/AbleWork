@@ -20,6 +20,12 @@ interface NotifyResult {
 const DEDUP_WINDOW_MS = 10 * 60 * 1000
 /** 시간당 분석 상한(AI 호출 비용 보호) */
 const HOURLY_CAP = 30
+/**
+ * 알림·분석·적재 대상에서 제외할 HTTP 상태 코드.
+ * 404(NOT_FOUND)는 끊긴 링크·오타 경로·봇 탐색 등 정상 범주의 클라이언트 노이즈라
+ * 알림 가치가 없고 AI 토큰만 소모하므로 파이프라인 진입 전에 차단한다.
+ */
+const IGNORED_STATUSES = new Set<number>([404])
 /** AI 분석 타임아웃 */
 const AI_TIMEOUT_MS = 20_000
 const DEFAULT_REPORT_EMAIL = 'romis@naver.com'
@@ -58,8 +64,9 @@ export class ErrorAnalysisService {
     }
   }
 
-  /** 시그니처 디둡 + 시간당 상한 */
+  /** 제외 상태 코드 차단 + 시그니처 디둡 + 시간당 상한 */
   private shouldProcess(e: ApiErrorEvent): boolean {
+    if (IGNORED_STATUSES.has(e.status)) return false
     const now = Date.now()
     if (now - this.hourWindowStart > 3_600_000) {
       this.hourWindowStart = now
