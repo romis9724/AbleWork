@@ -21,13 +21,17 @@ const DEDUP_WINDOW_MS = 10 * 60 * 1000
 /** 시간당 분석 상한(AI 호출 비용 보호) */
 const HOURLY_CAP = 30
 /**
- * 알림·분석·적재 대상에서 제외할 HTTP 상태 코드.
- * 404(NOT_FOUND)는 끊긴 링크·오타 경로·봇 탐색 등 정상 범주의 클라이언트 노이즈라
- * 알림 가치가 없고 AI 토큰만 소모하므로 파이프라인 진입 전에 차단한다.
+ * 알림·분석·적재 대상에서 제외할 HTTP 상태 코드(정상 범주의 클라이언트 노이즈).
+ * - 404(NOT_FOUND): 끊긴 링크·오타 경로·봇 탐색
+ * - 401(UNAUTHORIZED): 토큰 만료·미로그인 등 정상적인 인증 실패. 서버 버그가 아니라
+ *   SRE 조치가 불필요하며, 빈도가 높아 알림 폭주·AI 토큰 낭비를 유발한다.
+ * 알림 가치가 없으므로 파이프라인 진입 전에 차단한다.
  */
-const IGNORED_STATUSES = new Set<number>([404])
+const IGNORED_STATUSES = new Set<number>([404, 401])
 /** AI 분석 타임아웃 */
 const AI_TIMEOUT_MS = 20_000
+/** AI 분석 응답 토큰 상한 — 회사 기본값이 작아도 조치 방안까지 끊기지 않게 호출별로 보장 */
+const ANALYSIS_MAX_TOKENS = 1200
 const DEFAULT_REPORT_EMAIL = 'romis@naver.com'
 
 /**
@@ -116,11 +120,13 @@ export class ErrorAnalysisService {
           {
             role: 'system',
             content:
-              '너는 백엔드 SRE 보조다. 주어진 API 에러에 대해 (1) 추정 원인 (2) 영향 범위 (3) 조치 방안을 한국어로 항목별로 간결히 분석하라. 코드·설정·데이터 관점에서 구체적으로, 추측은 추측이라 명시.',
+              '너는 백엔드 SRE 보조다. 주어진 API 에러를 한국어로 (1) 추정 원인 (2) 영향 범위 (3) 조치 방안 세 항목으로 분석하라. ' +
+              '각 항목은 핵심만 2~3개 불릿으로 한 문장씩 짧게 쓰고, 마크다운 헤더(#)는 쓰지 마라. ' +
+              '(3) 조치 방안을 반드시 포함해 끝까지 완결하라. 코드·설정·데이터 관점에서 구체적으로, 추측은 추측이라 명시.',
           },
           { role: 'user', content: `다음 API 에러를 분석하라:\n${ctx}` },
         ],
-        { timeoutMs: AI_TIMEOUT_MS },
+        { timeoutMs: AI_TIMEOUT_MS, maxTokens: ANALYSIS_MAX_TOKENS },
       )
     } catch (err) {
       this.logger.warn(`AI 분석 실패: ${this.msg(err)}`)
