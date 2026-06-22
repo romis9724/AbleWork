@@ -8,7 +8,7 @@ import { DiscordWebhookService } from '../../notifications/discord-webhook.servi
 import { LlmService } from '../llm/llm.service'
 import { EVENTS } from '../../../events/domain-events'
 import { ApiErrorEvent } from '../../../common/filters/api-error-event'
-import { ErrorAnalysisFilterDto } from './dto/error-analysis-filter.dto'
+import { ErrorAnalysisFilterDto, BulkResolveDto } from './dto/error-analysis-filter.dto'
 
 /** 알림(이메일·Discord) 발송 성공 여부 */
 interface NotifyResult {
@@ -219,24 +219,9 @@ export class ErrorAnalysisService {
   // ── 조회 (관리자: 부가기능 > AI 에러 분석) ──────────────────────────────────
 
   async findAll(companyId: string, filter: ErrorAnalysisFilterDto) {
-    const { startDate, endDate, status, method, search, page, limit } = filter
+    const { page, limit } = filter
     const skip = (page - 1) * limit
-
-    const where: Prisma.ErrorAnalysisLogWhereInput = {
-      companyId,
-      ...(status !== undefined && { status }),
-      ...(method && { method }),
-      ...(this.buildDateRange(startDate, endDate) && {
-        createdAt: this.buildDateRange(startDate, endDate),
-      }),
-      ...(search && {
-        OR: [
-          { code: { contains: search, mode: 'insensitive' } },
-          { message: { contains: search, mode: 'insensitive' } },
-          { path: { contains: search, mode: 'insensitive' } },
-        ],
-      }),
-    }
+    const where = this.buildWhere(companyId, filter)
 
     const [items, total] = await Promise.all([
       this.prisma.errorAnalysisLog.findMany({
@@ -255,10 +240,74 @@ export class ErrorAnalysisService {
     return this.prisma.errorAnalysisLog.findFirst({ where: { id, companyId } })
   }
 
+  /**
+   * 처리 상태 일괄 변경. companyId 스코프로 타 회사 레코드는 건드리지 않는다.
+   * RESOLVED 처리 시 처리시각·처리자를 기록하고, OPEN으로 되돌리면 초기화한다.
+   */
+  async bulkResolve(
+    companyId: string,
+    dto: BulkResolveDto,
+    employeeId: string,
+  ): Promise<{ count: number }> {
+    const resolved = dto.status === 'RESOLVED'
+    const result = await this.prisma.errorAnalysisLog.updateMany({
+      where: { id: { in: dto.ids }, companyId },
+      data: {
+        resolutionStatus: dto.status,
+        resolvedAt: resolved ? new Date() : null,
+        resolvedById: resolved ? employeeId : null,
+      },
+    })
+    return { count: result.count }
+  }
+
+  /** 현재 필터에 해당하는 로그를 CSV(UTF-8 BOM)로 생성. 페이지네이션 없이 상한까지. */
+  async exportCsv(companyId: string, filter: ErrorAnalysisFilterDto): Promise<string> {
+    const where = this.buildWhere(companyId, filter)
+    const items = await this.prisma.errorAnalysisLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: EXPORT_ROW_CAP,
+    })
+    return this.toCsv(items)
+  }
+
+  /** findAll·exportCsv 공통 where 절. */
+  private buildWhere(
+    companyId: string,
+    filter: ErrorAnalysisFilterDto,
+  ): Prisma.ErrorAnalysisLogWhereInput {
+    const { startDate, endDate, from, to, resolutionStatus, status, method, search } = filter
+    const range = this.buildDateRange(startDate, endDate, from, to)
+    return {
+      companyId,
+      ...(resolutionStatus && { resolutionStatus }),
+      ...(status !== undefined && { status }),
+      ...(method && { method }),
+      ...(range && { createdAt: range }),
+      ...(search && {
+        OR: [
+          { code: { contains: search, mode: 'insensitive' } },
+          { message: { contains: search, mode: 'insensitive' } },
+          { path: { contains: search, mode: 'insensitive' } },
+        ],
+      }),
+    }
+  }
+
+  /** 시간 단위(from/to) 우선, 없으면 날짜 단위(startDate/endDate). */
   private buildDateRange(
     startDate?: string,
     endDate?: string,
+    from?: string,
+    to?: string,
   ): Prisma.DateTimeFilter | undefined {
+    if (from || to) {
+      const range: Prisma.DateTimeFilter = {}
+      if (from) range.gte = new Date(from)
+      if (to) range.lte = new Date(to)
+      return range
+    }
     if (!startDate && !endDate) return undefined
     const range: Prisma.DateTimeFilter = {}
     if (startDate) range.gte = new Date(`${startDate}T00:00:00.000Z`)
@@ -266,7 +315,71 @@ export class ErrorAnalysisService {
     return range
   }
 
+  private toCsv(items: ErrorAnalysisLogRow[]): string {
+    const header = [
+      '발생시각(KST)',
+      '처리상태',
+      'HTTP',
+      '코드',
+      '메서드',
+      '경로',
+      '메시지',
+      'AI분석',
+      '이메일통지',
+      'Discord통지',
+      '완료시각(KST)',
+    ]
+    const lines = items.map((i) =>
+      [
+        toKst(i.createdAt),
+        i.resolutionStatus === 'RESOLVED' ? '완료' : '미해결',
+        String(i.status),
+        i.code,
+        i.method,
+        i.path,
+        i.message,
+        i.aiAnalysis ? '분석됨' : i.aiEnabled ? '실패' : '미설정',
+        i.notifiedEmail ? 'Y' : 'N',
+        i.notifiedDiscord ? 'Y' : 'N',
+        i.resolvedAt ? toKst(i.resolvedAt) : '',
+      ]
+        .map(csvEscape)
+        .join(','),
+    )
+    // BOM + CRLF: Excel 한글 깨짐 방지
+    return '﻿' + [header.map(csvEscape).join(','), ...lines].join('\r\n')
+  }
+
   private msg(err: unknown): string {
     return err instanceof Error ? err.message : String(err)
   }
+}
+
+/** CSV export 최대 행 수(메모리·응답 크기 보호) */
+const EXPORT_ROW_CAP = 5000
+
+/** CSV에 필요한 최소 필드 형태 */
+interface ErrorAnalysisLogRow {
+  createdAt: Date
+  resolutionStatus: string
+  status: number
+  code: string
+  method: string
+  path: string
+  message: string
+  aiAnalysis: string | null
+  aiEnabled: boolean
+  notifiedEmail: boolean
+  notifiedDiscord: boolean
+  resolvedAt: Date | null
+}
+
+/** RFC 4180: 쉼표·따옴표·개행 포함 값은 따옴표로 감싸고 내부 따옴표는 이중화. */
+function csvEscape(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+}
+
+/** UTC Date → 'YYYY-MM-DD HH:mm:ss' (Asia/Seoul). sv-SE 로케일이 ISO 유사 포맷을 준다. */
+function toKst(d: Date): string {
+  return new Date(d).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' })
 }
