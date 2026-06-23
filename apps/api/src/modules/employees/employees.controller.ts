@@ -60,7 +60,8 @@ export class EmployeesController {
 
   // HR-03-01 직원 목록
   @Get()
-  @ApiOperation({ summary: '직원 목록 조회' })
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '직원 목록 조회 (ORG_ADMIN 이상)' })
   findAll(
     @CompanyId() companyId: string,
     @Query(new ZodValidationPipe(EmployeeFilterSchema)) filter: EmployeeFilterDto,

@@ -89,6 +89,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   return (
                     <button
                       key={n.id}
+                      data-testid={`nav-${n.id}`}
                       className={'sb-item' + (on ? ' on' : '')}
                       onClick={() => router.push(n.path)}
                     >
@@ -109,6 +110,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
               {visibleFoot.map((f) => (
                 <a
                   key={f.id}
+                  data-testid={`nav-${f.id}`}
                   role="button"
                   tabIndex={0}
                   onClick={() => router.push(f.path)}

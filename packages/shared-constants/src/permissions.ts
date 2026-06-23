@@ -75,6 +75,8 @@ export const ACTION_KEYS = {
   // 근태
   ATTENDANCE_UNCONFIRM: 'attendance.unconfirm',
   SHIFT_UNCONFIRM: 'shift.unconfirm',
+  // 휴가 마스터 (그룹/유형/발생규칙 CUD)
+  LEAVE_MANAGE: 'leave.manage',
   // 결재
   REQUEST_FORCE: 'request.force',
   // 설정
@@ -93,6 +95,7 @@ export const ACTION_MIN_LEVEL: Record<ActionKey, AccessLevel> = {
   [ACTION_KEYS.EMPLOYEE_WAGE_MANAGE]: AccessLevel.GENERAL_ADMIN,
   [ACTION_KEYS.ATTENDANCE_UNCONFIRM]: AccessLevel.GENERAL_ADMIN,
   [ACTION_KEYS.SHIFT_UNCONFIRM]: AccessLevel.GENERAL_ADMIN,
+  [ACTION_KEYS.LEAVE_MANAGE]: AccessLevel.GENERAL_ADMIN,
   [ACTION_KEYS.REQUEST_FORCE]: AccessLevel.SUPER_ADMIN,
   [ACTION_KEYS.COMPANY_EDIT_BASE]: AccessLevel.SUPER_ADMIN,
   [ACTION_KEYS.SETTINGS_SAVE_ADVANCED]: AccessLevel.GENERAL_ADMIN,

@@ -160,6 +160,7 @@ export default function EmployeeDetailPage() {
   const canManage = perm.can(ACTION_KEYS.EMPLOYEE_MANAGE)
   const canResetPassword = perm.can(ACTION_KEYS.EMPLOYEE_RESET_PASSWORD)
   const canResetDevice = perm.can(ACTION_KEYS.EMPLOYEE_RESET_DEVICE)
+  const canManageWage = perm.can(ACTION_KEYS.EMPLOYEE_WAGE_MANAGE)
   const canChangeLevel = perm.isGeneralAdmin // 권한 변경은 GENERAL_ADMIN 이상
 
   const { data: employee, isLoading } = useEmployee(id)
@@ -577,6 +578,7 @@ export default function EmployeeDetailPage() {
 
               <Box sx={{ display: 'flex', gap: 2, mt: 1, flexWrap: 'wrap' }}>
                 <Button
+                  data-testid="emp-detail-save-btn"
                   type="submit"
                   variant="contained"
                   disabled={updateMutation.isPending || !isDirty}
@@ -585,6 +587,7 @@ export default function EmployeeDetailPage() {
                 </Button>
                 {canResetPassword && (
                   <Button
+                    data-testid="emp-detail-reset-pw-btn"
                     variant="outlined"
                     color="primary"
                     onClick={() => {
@@ -625,9 +628,11 @@ export default function EmployeeDetailPage() {
       {tab === 1 && (
         <>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button variant="outlined" onClick={openWageAdd}>
-              + 근로정보 추가
-            </Button>
+            {canManageWage && (
+              <Button data-testid="emp-detail-wage-add-btn" variant="outlined" onClick={openWageAdd}>
+                + 근로정보 추가
+              </Button>
+            )}
           </Box>
           <TableContainer
             component={Paper}
@@ -642,13 +647,13 @@ export default function EmployeeDetailPage() {
                   <TableCell>계약 근무요일</TableCell>
                   <TableCell align="right">주 계약시간 (h)</TableCell>
                   <TableCell align="right">주 최대시간 (h)</TableCell>
-                  {canManage && <TableCell align="right" />}
+                  {canManageWage && <TableCell align="right" />}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {wageInfos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={canManage ? 6 : 5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    <TableCell colSpan={canManageWage ? 6 : 5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                       근로정보가 없습니다.
                     </TableCell>
                   </TableRow>
@@ -664,7 +669,7 @@ export default function EmployeeDetailPage() {
                       <TableCell>{formatWorkDays(w.contractedWorkDays)}</TableCell>
                       <TableCell align="right">{Number(w.contractedHoursPerWeek)}</TableCell>
                       <TableCell align="right">{Number(w.maxHoursPerWeek)}</TableCell>
-                      {canManage && (
+                      {canManageWage && (
                         <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                           <IconButton size="small" aria-label="수정" onClick={() => openWageEdit(w)}><EditIcon fontSize="small" /></IconButton>
                           <IconButton size="small" color="error" aria-label="삭제" onClick={() => setDeleteWageId(w.id)}><DeleteIcon fontSize="small" /></IconButton>
@@ -691,14 +696,17 @@ export default function EmployeeDetailPage() {
                 <Chip label="미등록" size="small" variant="outlined" color="default" />
               )}
             </Typography>
-            <Button
-              variant="outlined"
-              color="error"
-              onClick={() => setResetDeviceOpen(true)}
-              disabled={!employee.deviceId || !canResetDevice || resetDeviceMutation.isPending}
-            >
-              기기 초기화
-            </Button>
+            {canResetDevice && (
+              <Button
+                data-testid="emp-detail-reset-device-btn"
+                variant="outlined"
+                color="error"
+                onClick={() => setResetDeviceOpen(true)}
+                disabled={!employee.deviceId || resetDeviceMutation.isPending}
+              >
+                기기 초기화
+              </Button>
+            )}
             {!employee.deviceId && (
               <Typography variant="caption" color="text.secondary" display="block" mt={1}>
                 등록된 기기가 없어 초기화할 수 없습니다.

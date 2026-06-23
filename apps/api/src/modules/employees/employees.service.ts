@@ -605,17 +605,25 @@ export class EmployeesService {
   }
 
   /**
+   * SUPER_ADMIN / GENERAL_ADMIN은 전체 접근 허용.
    * ORG_ADMIN은 자신의 조직에 속한 직원만 접근 가능하다.
-   * GENERAL_ADMIN / SUPER_ADMIN은 전체 접근 허용.
+   * EMPLOYEE는 본인 레코드만 접근 가능하다(동료 PII/임금 열람 차단).
    */
   async guardOrgScope(
     requester: JwtPayload,
-    employee: { organizations: { organizationId: string }[] },
+    employee: { id: string; organizations: { organizationId: string }[] },
   ) {
     if (
       requester.accessLevel === AccessLevel.SUPER_ADMIN ||
       requester.accessLevel === AccessLevel.GENERAL_ADMIN
     ) {
+      return
+    }
+
+    if (requester.accessLevel === AccessLevel.EMPLOYEE) {
+      if (requester.employeeId !== employee.id) {
+        throw new ForbiddenException('해당 직원에 대한 접근 권한이 없습니다.')
+      }
       return
     }
 

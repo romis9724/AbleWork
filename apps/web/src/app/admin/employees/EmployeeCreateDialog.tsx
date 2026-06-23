@@ -133,6 +133,7 @@ export default function EmployeeCreateDialog({ open, loading, onSubmit, onClose 
                 fullWidth
                 size="small"
                 autoFocus
+                inputProps={{ 'data-testid': 'emp-create-name' }}
                 error={!!errors.name}
                 helperText={errors.name?.message}
               />
@@ -149,6 +150,7 @@ export default function EmployeeCreateDialog({ open, loading, onSubmit, onClose 
                 required
                 fullWidth
                 size="small"
+                inputProps={{ 'data-testid': 'emp-create-email' }}
                 error={!!errors.email}
                 helperText={errors.email?.message ?? '로그인 아이디로 사용됩니다.'}
               />
@@ -296,6 +298,7 @@ export default function EmployeeCreateDialog({ open, loading, onSubmit, onClose 
                 fullWidth
                 size="small"
                 InputLabelProps={{ shrink: true }}
+                inputProps={{ 'data-testid': 'emp-create-joined-at' }}
                 error={!!errors.joinedAt}
                 helperText={errors.joinedAt?.message}
               />
@@ -305,7 +308,7 @@ export default function EmployeeCreateDialog({ open, loading, onSubmit, onClose 
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>취소</Button>
-        <Button onClick={handleSubmit(onSubmit)} variant="contained" disabled={loading}>
+        <Button data-testid="emp-create-submit-btn" onClick={handleSubmit(onSubmit)} variant="contained" disabled={loading}>
           {loading ? <CircularProgress size={20} /> : '추가'}
         </Button>
       </DialogActions>
