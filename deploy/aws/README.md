@@ -1,7 +1,8 @@
 # AbleWork AWS 배포 (aws cli 스크립트)
 
 서울 리전(`ap-northeast-2`)에 AbleWork를 배포하는 멱등 bash 스크립트 모음.
-전체 설계는 승인된 계획서(요약: `docs` 또는 PR 설명) 참조.
+
+> **운영/접속/배포/트러블슈팅 런북: [`docs/design/AWS_OPERATIONS.md`](../../docs/design/AWS_OPERATIONS.md)** ← 다른 세션에서 AWS 작업 이어갈 때 먼저 읽을 것(리소스 ID·접속법·치트시트 포함).
 
 ## 토폴로지
 
@@ -28,15 +29,20 @@ aws sts get-caller-identity --profile ablework   # 확인
 
 ## 실행 순서
 
+전체 인프라가 **이미 구축·운영 중**이다(아래 스크립트 전부 실행 완료). 모두 멱등이라 재실행해도 안전하며, 처음부터 다시 세울 때의 순서이기도 하다.
+
 | 단계 | 스크립트 | 내용 |
 |---|---|---|
-| 1-a | `00-prereqs.sh` | 자격증명 점검 + ECR 리포(`ablework-api`,`ablework-web`) |
-| 1-b | `01-iam.sh` | EC2 인스턴스 역할/프로파일 + GitHub OIDC + 배포 역할 |
-| 1-c | `02-ssm-params.sh` | `.env.prod` → SSM 파라미터(`/ablework/api/prod/*`) |
-| 3 | `03-network.sh` *(예정)* | VPC·서브넷·SG (NAT 없음) |
-| 3 | `04-data.sh` *(예정)* | RDS·ElastiCache·S3 + DATABASE_URL/REDIS_URL SSM 기록 |
-| 4 | `05-compute.sh` *(예정)* | EC2·ALB·타깃그룹·리스너 |
-| 5 | `06-edge.sh` *(예정)* | ACM(us-east-1)·CloudFront·Route53(work.abmwc.net) |
+| 1 | `00-prereqs.sh` | 자격증명 점검 + ECR 리포(`ablework-api`,`ablework-web`) |
+| 2 | `01-iam.sh` | EC2 인스턴스 역할/프로파일 + GitHub OIDC + 배포 역할 |
+| 3 | `02-ssm-params.sh` | `.env.prod` → SSM 파라미터(`/ablework/api/prod/*`) |
+| 4 | `03-network.sh` | VPC·서브넷·SG (NAT 없음) |
+| 5 | `04-data.sh` | RDS·ElastiCache·S3 + DATABASE_URL/REDIS_URL SSM 기록 |
+| 6 | `05-compute.sh` | EC2·ALB·타깃그룹·리스너 |
+| 7 | `06-edge.sh` | ACM(us-east-1)·CloudFront·Route53(work.abmwc.net) |
+| 8 | `07-monitoring.sh` | SNS·CloudWatch 알람·대시보드·예산 |
+| 9 | `08-alerting.sh` | 알람→Discord Lambda + SNS 구독 |
+| 10 | `09-daily-report.sh` | 일일 인프라 보고 Lambda + 스케줄 |
 
 ### Step 1 빠른 시작
 

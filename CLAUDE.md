@@ -341,3 +341,4 @@ pnpm dev
 | `docs/design/FEATURE_LIST.md` | 기능 목록, 우선순위, 화면 경로 목록 |
 | `docs/design/ENGINEERING_DESIGN.md` | 기술 스택, 디렉토리 구조, 설정 코드, 배포 |
 | `docs/design/THEMING.md` | 멀티 테마(6종) SSOT·전환·SSR. 색 토큰 추가/변경은 `apps/web/src/theme/tokens.ts` 한 곳에서 |
+| `docs/design/AWS_OPERATIONS.md` | **AWS 운영 런북** — 계정·리소스 ID·접속(SSM)·배포·SSM 파라미터·로그·트러블슈팅. 다른 세션에서 AWS 작업 시 먼저 읽을 것. 스크립트는 `deploy/aws/` |
