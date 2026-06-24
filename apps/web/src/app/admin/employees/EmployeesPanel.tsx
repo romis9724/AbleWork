@@ -297,7 +297,7 @@ export default function EmployeesPanel() {
             onChange={handleUploadFile}
           />
           {canCreate && (
-            <button className="btn btn-ghost btn-sm" onClick={() => setCreateOpen(true)}>
+            <button data-testid="employees-add-btn" className="btn btn-ghost btn-sm" onClick={() => setCreateOpen(true)}>
               {I.plus({ style: { marginRight: 6 } })}직원 추가하기
             </button>
           )}
@@ -308,6 +308,7 @@ export default function EmployeesPanel() {
       <div className="fbar">
         <div className="inp-wrap" style={{ width: 240 }}>
           <input
+            data-testid="employees-search-input"
             className="inp"
             placeholder="이름 / 사번 / 전화번호 검색"
             value={searchInput}
@@ -357,6 +358,7 @@ export default function EmployeesPanel() {
       <div className="tbl-bar">
         <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
           <Toggle
+            testId="employees-inactive-toggle"
             on={showInactive}
             onChange={(v) => {
               setShowInactive(v)
@@ -431,7 +433,7 @@ export default function EmployeesPanel() {
                   employees.map((emp) => {
                     const { primary, others } = formatOrganizations(emp)
                     return (
-                      <tr key={emp.id} style={emp.isActive ? undefined : { opacity: 0.5 }}>
+                      <tr key={emp.id} data-testid="employees-row" style={emp.isActive ? undefined : { opacity: 0.5 }}>
                         <td className="c" onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"

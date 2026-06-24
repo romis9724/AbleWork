@@ -232,6 +232,7 @@ export default function RequestListPanel() {
         {STATUS_TABS.map((t) => (
           <button
             key={t}
+            data-testid={`req-status-tab-${t}`}
             className={'tab' + (statusTab === t ? ' on' : '')}
             onClick={() => {
               setStatusTab(t)
@@ -246,6 +247,7 @@ export default function RequestListPanel() {
       {/* 필터 칩 + 요약 */}
       <div className="fbar" style={{ marginTop: 16 }}>
         <button
+          data-testid="req-filter-all"
           className="fchip"
           onClick={() => setShowAll((v) => !v)}
           style={showAll ? { borderColor: 'var(--ab-orange)', color: 'var(--ab-orange)' } : undefined}
@@ -253,6 +255,7 @@ export default function RequestListPanel() {
           {HRI.people({ className: 'ic' })} 모든 직원 요청
         </button>
         <button
+          data-testid="req-filter-myturn"
           className="fchip"
           onClick={() => setMyTurn((v) => !v)}
           style={myTurn ? { borderColor: 'var(--ab-orange)', color: 'var(--ab-orange)' } : undefined}
@@ -273,7 +276,7 @@ export default function RequestListPanel() {
             <b>{selected.length}</b>건 선택됨
           </span>
           <div className="tbl-tools" style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary btn-sm" disabled={bulkApproveMutation.isPending} onClick={handleBulkApprove}>
+            <button data-testid="req-bulk-approve-btn" className="btn btn-primary btn-sm" disabled={bulkApproveMutation.isPending} onClick={handleBulkApprove}>
               일괄 승인
             </button>
             <button className="btn btn-dark btn-sm" onClick={() => setSelected([])}>
@@ -325,6 +328,7 @@ export default function RequestListPanel() {
                   return (
                     <tr
                       key={r.id}
+                      data-testid="req-row"
                       role="button"
                       tabIndex={0}
                       style={{ cursor: 'pointer' }}
@@ -379,6 +383,7 @@ export default function RequestListPanel() {
                         {isPending ? (
                           <span className="req-act">
                             <button
+                              data-testid="req-approve-btn"
                               className="btn-approve"
                               disabled={isActionPending}
                               onClick={() => inlineApprove(r.id)}
@@ -386,6 +391,7 @@ export default function RequestListPanel() {
                               승인
                             </button>
                             <button
+                              data-testid="req-reject-btn"
                               className="btn-reject"
                               disabled={isActionPending}
                               onClick={() => inlineReject(r.id)}
@@ -425,6 +431,7 @@ export default function RequestListPanel() {
                     회수
                   </button>
                   <button
+                    data-testid="req-modal-reject-btn"
                     className="btn btn-reject"
                     disabled={isActionPending}
                     onClick={async () => {
@@ -435,6 +442,7 @@ export default function RequestListPanel() {
                     거절
                   </button>
                   <button
+                    data-testid="req-modal-approve-btn"
                     className="btn btn-primary"
                     disabled={isActionPending}
                     onClick={async () => {
@@ -446,10 +454,10 @@ export default function RequestListPanel() {
                   </button>
                   {isSuperAdmin && (
                     <>
-                      <button className="btn btn-dark" disabled={isActionPending} onClick={handleForceReject}>
+                      <button data-testid="req-force-reject-btn" className="btn btn-dark" disabled={isActionPending} onClick={handleForceReject}>
                         강제 거절
                       </button>
-                      <button className="btn btn-dark" disabled={isActionPending} onClick={handleForceApprove}>
+                      <button data-testid="req-force-approve-btn" className="btn btn-dark" disabled={isActionPending} onClick={handleForceApprove}>
                         강제 승인
                       </button>
                     </>

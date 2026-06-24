@@ -66,6 +66,9 @@ const mockPrisma = {
   employee: {
     count: jest.fn(),
   },
+  employeeOrganization: {
+    findMany: jest.fn(),
+  },
 }
 
 // ── 테스트 ────────────────────────────────────────────────────────────────────
@@ -88,6 +91,18 @@ describe('ShiftsService', () => {
     mockPrisma.employee.count.mockImplementation(
       ({ where }: { where: { id: { in: string[] } } }) =>
         Promise.resolve(where.id.in.length),
+    )
+    // 조직 경계 가드 기본 통과: 요청자·대상 모두 ORG_ID 소속으로 간주.
+    // 단건(where.employeeId=string)·배치(where.employeeId.in=string[]) 두 형태를 모두 처리하고,
+    // 배치 조회는 guardOrgScopeBulk가 employeeId로 그룹핑하므로 각 row에 employeeId를 포함한다.
+    mockPrisma.employeeOrganization.findMany.mockImplementation(
+      ({ where }: { where: { employeeId: string | { in: string[] } } }) => {
+        const ids =
+          typeof where.employeeId === 'string' ? [where.employeeId] : where.employeeId.in
+        return Promise.resolve(
+          ids.map((employeeId) => ({ employeeId, organizationId: ORG_ID })),
+        )
+      },
     )
   })
 
@@ -252,7 +267,12 @@ describe('ShiftsService', () => {
       mockPrisma.shift.findFirst.mockResolvedValue(baseShift)
       mockPrisma.shift.update.mockResolvedValue({ ...baseShift, offsiteAddress: '서울시 강남구' })
 
-      const result = await service.update(COMPANY_ID, SHIFT_ID, { offsiteAddress: '서울시 강남구' })
+      const result = await service.update(
+        COMPANY_ID,
+        SHIFT_ID,
+        { offsiteAddress: '서울시 강남구' },
+        makeRequester(AccessLevel.GENERAL_ADMIN),
+      )
       expect(result.offsiteAddress).toBe('서울시 강남구')
     })
 
@@ -263,14 +283,21 @@ describe('ShiftsService', () => {
       })
 
       await expect(
-        service.update(COMPANY_ID, SHIFT_ID, { offsiteAddress: '수정 시도' }),
+        service.update(
+          COMPANY_ID,
+          SHIFT_ID,
+          { offsiteAddress: '수정 시도' },
+          makeRequester(AccessLevel.GENERAL_ADMIN),
+        ),
       ).rejects.toThrow(BadRequestException)
     })
 
     it('존재하지 않는 일정이면 NotFoundException을 던진다', async () => {
       mockPrisma.shift.findFirst.mockResolvedValue(null)
 
-      await expect(service.update(COMPANY_ID, 'nonexistent', {})).rejects.toThrow(NotFoundException)
+      await expect(
+        service.update(COMPANY_ID, 'nonexistent', {}, makeRequester(AccessLevel.GENERAL_ADMIN)),
+      ).rejects.toThrow(NotFoundException)
     })
   })
 
@@ -281,7 +308,9 @@ describe('ShiftsService', () => {
       mockPrisma.shift.findFirst.mockResolvedValue(baseShift)
       mockPrisma.shift.delete.mockResolvedValue(baseShift)
 
-      await expect(service.remove(COMPANY_ID, SHIFT_ID)).resolves.toBeDefined()
+      await expect(
+        service.remove(COMPANY_ID, SHIFT_ID, makeRequester(AccessLevel.GENERAL_ADMIN)),
+      ).resolves.toBeDefined()
       expect(mockPrisma.shift.delete).toHaveBeenCalledWith({ where: { id: SHIFT_ID } })
     })
 
@@ -291,7 +320,9 @@ describe('ShiftsService', () => {
         status: ShiftStatus.CONFIRMED,
       })
 
-      await expect(service.remove(COMPANY_ID, SHIFT_ID)).rejects.toThrow(BadRequestException)
+      await expect(
+        service.remove(COMPANY_ID, SHIFT_ID, makeRequester(AccessLevel.GENERAL_ADMIN)),
+      ).rejects.toThrow(BadRequestException)
     })
   })
 
@@ -323,6 +354,207 @@ describe('ShiftsService', () => {
       await expect(service.confirm(COMPANY_ID, SHIFT_ID, requester)).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'SHIFT_ALREADY_CONFIRMED' }),
       })
+    })
+  })
+
+  // ── 조직 경계 가드 (보안: ORG_ADMIN 타 조직 차단) ─────────────────────────────
+
+  describe('조직 경계 가드 (guardOrgScope)', () => {
+    /**
+     * 요청자·대상 직원의 소속 조직을 employeeId별로 분기해 반환하도록 목 구성.
+     * 단건(where.employeeId=string)·배치(where.employeeId.in=string[]) 두 형태를 모두 처리하고
+     * 각 row에 employeeId를 포함한다(guardOrgScopeBulk가 그룹핑에 사용).
+     */
+    const mockOrgsByEmployee = (orgsByEmployee: Record<string, string[]>) => {
+      mockPrisma.employeeOrganization.findMany.mockImplementation(
+        ({ where }: { where: { employeeId: string | { in: string[] } } }) => {
+          const ids =
+            typeof where.employeeId === 'string' ? [where.employeeId] : where.employeeId.in
+          return Promise.resolve(
+            ids.flatMap((employeeId) =>
+              (orgsByEmployee[employeeId] ?? []).map((organizationId) => ({
+                employeeId,
+                organizationId,
+              })),
+            ),
+          )
+        },
+      )
+    }
+
+    it('ORG_ADMIN이 타 조직 일정을 수정하면 ForbiddenException을 던진다', async () => {
+      mockPrisma.shift.findFirst.mockResolvedValue(baseShift) // 대상 직원 EMPLOYEE_ID
+      mockOrgsByEmployee({
+        'admin-1': ['org-A'], // 요청자는 org-A
+        [EMPLOYEE_ID]: ['org-B'], // 대상은 org-B → 교집합 없음
+      })
+
+      await expect(
+        service.update(
+          COMPANY_ID,
+          SHIFT_ID,
+          { offsiteAddress: 'x' },
+          makeRequester(AccessLevel.ORG_ADMIN, 'admin-1'),
+        ),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('ORG_ADMIN이 본인 조직 일정을 확정하면 통과한다', async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN, 'admin-1')
+      mockPrisma.shift.findFirst.mockResolvedValue(baseShift)
+      mockPrisma.shift.update.mockResolvedValue({ ...baseShift, status: ShiftStatus.CONFIRMED })
+      mockPrisma.shift.findMany.mockResolvedValue([baseShift])
+      mockOrgsByEmployee({
+        'admin-1': ['org-A', 'org-B'], // 요청자
+        [EMPLOYEE_ID]: ['org-B'], // 대상 → org-B 교집합
+      })
+
+      const result = await service.confirm(COMPANY_ID, SHIFT_ID, requester)
+      expect(result.status).toBe(ShiftStatus.CONFIRMED)
+    })
+
+    it('GENERAL_ADMIN/SUPER_ADMIN은 조직 조회 없이 전사 일정을 삭제할 수 있다', async () => {
+      mockPrisma.shift.findFirst.mockResolvedValue(baseShift)
+      mockPrisma.shift.delete.mockResolvedValue(baseShift)
+
+      await expect(
+        service.remove(COMPANY_ID, SHIFT_ID, makeRequester(AccessLevel.GENERAL_ADMIN)),
+      ).resolves.toBeDefined()
+      // 전사 권한은 조직 교집합 검사를 수행하지 않는다
+      expect(mockPrisma.employeeOrganization.findMany).not.toHaveBeenCalled()
+    })
+
+    // ── create 조직 경계 (보안 HIGH: 생성도 update/confirm/remove와 대칭) ──────────
+
+    const createDto = {
+      employeeId: EMPLOYEE_ID,
+      organizationId: ORG_ID,
+      shiftTypeId: SHIFT_TYPE_ID,
+      startAt: '2024-06-10T09:00:00.000Z',
+      endAt: '2024-06-10T18:00:00.000Z',
+      isOffsite: false,
+    }
+
+    const stubCreateRelations = () => {
+      mockPrisma.organization.findFirst.mockResolvedValue({ id: ORG_ID })
+      mockPrisma.shiftType.findFirst.mockResolvedValue({ id: SHIFT_TYPE_ID })
+      mockPrisma.shift.create.mockResolvedValue(baseShift)
+      mockPrisma.shift.findMany.mockResolvedValue([baseShift]) // 주52h 계산용
+    }
+
+    it('ORG_ADMIN이 타 조직 직원의 일정을 생성하면 ForbiddenException을 던진다', async () => {
+      stubCreateRelations()
+      mockOrgsByEmployee({
+        'admin-1': ['org-A'], // 요청자
+        [EMPLOYEE_ID]: ['org-B'], // 대상 → 교집합 없음
+      })
+
+      await expect(
+        service.create(COMPANY_ID, createDto, makeRequester(AccessLevel.ORG_ADMIN, 'admin-1')),
+      ).rejects.toThrow(ForbiddenException)
+      expect(mockPrisma.shift.create).not.toHaveBeenCalled()
+    })
+
+    it('ORG_ADMIN이 본인 조직 직원의 일정을 생성하면 통과한다', async () => {
+      stubCreateRelations()
+      mockOrgsByEmployee({
+        'admin-1': ['org-A', 'org-B'], // 요청자
+        [EMPLOYEE_ID]: ['org-B'], // 대상 → org-B 교집합
+      })
+
+      const result = await service.create(
+        COMPANY_ID,
+        createDto,
+        makeRequester(AccessLevel.ORG_ADMIN, 'admin-1'),
+      )
+      expect(result.id).toBe(SHIFT_ID)
+      expect(mockPrisma.shift.create).toHaveBeenCalled()
+    })
+
+    it('GENERAL_ADMIN은 조직 조회 없이 일정을 생성한다(전사)', async () => {
+      stubCreateRelations()
+
+      const result = await service.create(
+        COMPANY_ID,
+        createDto,
+        makeRequester(AccessLevel.GENERAL_ADMIN),
+      )
+      expect(result.id).toBe(SHIFT_ID)
+      expect(mockPrisma.employeeOrganization.findMany).not.toHaveBeenCalled()
+    })
+
+    // ── bulkCreate 조직 경계 (보안 HIGH) ──────────────────────────────────────────
+
+    const baseTemplateForGuard = {
+      id: TEMPLATE_ID,
+      companyId: COMPANY_ID,
+      shiftTypeId: SHIFT_TYPE_ID,
+      name: '오전 근무',
+      startTime: new Date(1970, 0, 1, 9, 0, 0),
+      endTime: new Date(1970, 0, 1, 18, 0, 0),
+      isActive: true,
+    }
+
+    const stubBulkRelations = () => {
+      mockPrisma.shiftTemplate.findFirst.mockResolvedValue(baseTemplateForGuard)
+      mockPrisma.organization.findFirst.mockResolvedValue({ id: ORG_ID })
+      mockPrisma.shift.createMany.mockResolvedValue({ count: 1 })
+      mockPrisma.shift.findMany.mockResolvedValue([]) // 주52h 계산용
+    }
+
+    const bulkDto = (employeeIds: string[]) => ({
+      templateId: TEMPLATE_ID,
+      organizationId: ORG_ID,
+      employeeIds,
+      startDate: '2024-06-10',
+      endDate: '2024-06-10',
+    })
+
+    it('ORG_ADMIN이 일괄 대상에 타 조직 직원이 한 명이라도 섞이면 ForbiddenException을 던진다', async () => {
+      stubBulkRelations()
+      mockOrgsByEmployee({
+        'admin-1': ['org-A'], // 요청자
+        'emp-same': ['org-A'], // 동조직
+        'emp-other': ['org-B'], // 타조직 → 한 명이라도 무관하면 거부
+      })
+
+      await expect(
+        service.bulkCreate(
+          COMPANY_ID,
+          bulkDto(['emp-same', 'emp-other']),
+          makeRequester(AccessLevel.ORG_ADMIN, 'admin-1'),
+        ),
+      ).rejects.toThrow(ForbiddenException)
+      expect(mockPrisma.shift.createMany).not.toHaveBeenCalled()
+    })
+
+    it('ORG_ADMIN이 모두 본인 조직 직원이면 일괄 생성에 통과한다', async () => {
+      stubBulkRelations()
+      mockOrgsByEmployee({
+        'admin-1': ['org-A'], // 요청자
+        'emp-1': ['org-A'],
+        'emp-2': ['org-A'],
+      })
+
+      const result = await service.bulkCreate(
+        COMPANY_ID,
+        bulkDto(['emp-1', 'emp-2']),
+        makeRequester(AccessLevel.ORG_ADMIN, 'admin-1'),
+      )
+      expect(result.created).toBeGreaterThan(0)
+      expect(mockPrisma.shift.createMany).toHaveBeenCalled()
+    })
+
+    it('GENERAL_ADMIN은 조직 조회 없이 일괄 생성한다(전사)', async () => {
+      stubBulkRelations()
+
+      const result = await service.bulkCreate(
+        COMPANY_ID,
+        bulkDto([EMPLOYEE_ID]),
+        makeRequester(AccessLevel.GENERAL_ADMIN),
+      )
+      expect(result.created).toBeGreaterThan(0)
+      expect(mockPrisma.employeeOrganization.findMany).not.toHaveBeenCalled()
     })
   })
 

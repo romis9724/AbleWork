@@ -598,14 +598,20 @@ describe('EmployeesService', () => {
     it('SUPER_ADMIN은 모든 직원에 접근 가능하다', async () => {
       const requester = makeRequester(AccessLevel.SUPER_ADMIN)
       await expect(
-        service.guardOrgScope(requester, { organizations: [{ organizationId: 'any-org' }] }),
+        service.guardOrgScope(requester, {
+          id: 'target-emp',
+          organizations: [{ organizationId: 'any-org' }],
+        }),
       ).resolves.toBeUndefined()
     })
 
     it('GENERAL_ADMIN은 모든 직원에 접근 가능하다', async () => {
       const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
       await expect(
-        service.guardOrgScope(requester, { organizations: [{ organizationId: 'any-org' }] }),
+        service.guardOrgScope(requester, {
+          id: 'target-emp',
+          organizations: [{ organizationId: 'any-org' }],
+        }),
       ).resolves.toBeUndefined()
     })
 
@@ -616,7 +622,10 @@ describe('EmployeesService', () => {
       ])
 
       await expect(
-        service.guardOrgScope(requester, { organizations: [{ organizationId: 'org-other' }] }),
+        service.guardOrgScope(requester, {
+          id: 'target-emp',
+          organizations: [{ organizationId: 'org-other' }],
+        }),
       ).rejects.toThrow(ForbiddenException)
     })
 
@@ -627,8 +636,31 @@ describe('EmployeesService', () => {
       ])
 
       await expect(
-        service.guardOrgScope(requester, { organizations: [{ organizationId: 'org-shared' }] }),
+        service.guardOrgScope(requester, {
+          id: 'target-emp',
+          organizations: [{ organizationId: 'org-shared' }],
+        }),
       ).resolves.toBeUndefined()
+    })
+
+    it('EMPLOYEE는 본인 레코드에만 접근 가능하다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE, 'self-emp')
+      await expect(
+        service.guardOrgScope(requester, {
+          id: 'self-emp',
+          organizations: [{ organizationId: 'org-shared' }],
+        }),
+      ).resolves.toBeUndefined()
+    })
+
+    it('EMPLOYEE가 동일 조직 동료에 접근하면 ForbiddenException을 던진다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE, 'self-emp')
+      await expect(
+        service.guardOrgScope(requester, {
+          id: 'colleague-emp',
+          organizations: [{ organizationId: 'org-shared' }],
+        }),
+      ).rejects.toThrow(ForbiddenException)
     })
   })
 })

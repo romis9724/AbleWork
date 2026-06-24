@@ -176,8 +176,9 @@ export class AttendancesController {
     @CompanyId() companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(UpdateBreaksSchema)) dto: UpdateBreaksDto,
+    @CurrentUser() requester: JwtPayload,
   ) {
-    return this.service.updateBreaks(companyId, id, dto)
+    return this.service.updateBreaks(companyId, id, dto, requester)
   }
 
   // HR-05-12 출퇴근 수정 (관리자)

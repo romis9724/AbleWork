@@ -259,7 +259,7 @@ export default function FormModalNative({ form, mode, onClose }: Props) {
 
         <div className="modal-foot">
           <button className="btn btn-line" style={{ minWidth: 110 }} disabled={busy} onClick={onClose}>취소</button>
-          <button className="btn btn-primary" style={{ minWidth: 110 }} disabled={busy || !name.trim()} onClick={handleSave}>저장</button>
+          <button className="btn btn-primary" style={{ minWidth: 110 }} disabled={busy || !name.trim()} onClick={handleSave} data-testid="eforms-form-submit-btn">저장</button>
         </div>
       </div>
     </div>

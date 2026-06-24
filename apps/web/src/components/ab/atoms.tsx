@@ -18,9 +18,9 @@ export function Badge({ kind, children }: { kind: BadgeKind; children: ReactNode
   )
 }
 
-export function Toggle({ on, onChange, label }: { on: boolean; onChange: (next: boolean) => void; label?: string }) {
+export function Toggle({ on, onChange, label, testId }: { on: boolean; onChange: (next: boolean) => void; label?: string; testId?: string }) {
   return (
-    <button type="button" className={'tog' + (on ? ' on' : '')} onClick={() => onChange(!on)}>
+    <button type="button" data-testid={testId} className={'tog' + (on ? ' on' : '')} onClick={() => onChange(!on)}>
       {label && <span className="tog-label">{label}</span>}
       <span className="tog-track" />
     </button>
@@ -69,14 +69,16 @@ interface TextInputProps {
   defaultValue?: string
   onChange?: (v: string) => void
   type?: string
+  testId?: string
 }
-export function TextInput({ placeholder, icon, value, defaultValue, onChange, type = 'text' }: TextInputProps) {
+export function TextInput({ placeholder, icon, value, defaultValue, onChange, type = 'text', testId }: TextInputProps) {
   // value·defaultValue 동시 전달(React 경고) 방지: controlled면 value만, 아니면 defaultValue만.
   const isControlled = value !== undefined
   return (
     <div className="inp-wrap">
       <input
         className="inp"
+        data-testid={testId}
         type={type}
         placeholder={placeholder}
         {...(isControlled ? { value } : { defaultValue })}

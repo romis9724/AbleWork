@@ -36,6 +36,8 @@ import EditIcon from '@mui/icons-material/Edit'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import EmptyState from '@/components/common/EmptyState'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { usePermission } from '@/hooks/usePermission'
+import { ACTION_KEYS } from '@ablework/shared-constants'
 import {
   useLeaveGroups,
   useCreateLeaveGroup,
@@ -106,6 +108,10 @@ const SPECIAL_OPTIONS: { value: string; label: string }[] = [
  */
 export default function LeaveTypesPanel() {
   const [tab, setTab] = useState(0)
+
+  // 휴가 마스터(그룹/유형/발생규칙) CUD 권한 — 없으면 추가/수정/삭제 버튼 숨김
+  const perm = usePermission()
+  const canManageLeave = perm.can(ACTION_KEYS.LEAVE_MANAGE)
 
   const { data: groups = [], isLoading: groupsLoading } = useLeaveGroups()
   const { data: types = [], isLoading: typesLoading } = useLeaveTypes()
@@ -271,11 +277,18 @@ export default function LeaveTypesPanel() {
       {/* ── Tab 0: Groups ──────────────────────────────────────────────────────── */}
       {tab === 0 && (
         <>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openAddGroup}>
-              그룹 추가
-            </Button>
-          </Box>
+          {canManageLeave && (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={openAddGroup}
+                data-testid="leave-group-add-btn"
+              >
+                그룹 추가
+              </Button>
+            </Box>
+          )}
           {groupsLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
               <CircularProgress />
@@ -284,9 +297,16 @@ export default function LeaveTypesPanel() {
             <EmptyState
               message="등록된 휴가 그룹이 없습니다."
               action={
-                <Button variant="outlined" startIcon={<AddIcon />} onClick={openAddGroup}>
-                  그룹 추가
-                </Button>
+                canManageLeave ? (
+                  <Button
+                    variant="outlined"
+                    startIcon={<AddIcon />}
+                    onClick={openAddGroup}
+                    data-testid="leave-group-add-btn"
+                  >
+                    그룹 추가
+                  </Button>
+                ) : undefined
               }
             />
           ) : (
@@ -307,7 +327,7 @@ export default function LeaveTypesPanel() {
                 </TableHead>
                 <TableBody>
                   {groups.map((g: LeaveGroup) => (
-                    <TableRow key={g.id} hover>
+                    <TableRow key={g.id} hover data-testid="leave-group-row">
                       <TableCell sx={{ fontWeight: 600 }}>{g.name}</TableCell>
                       <TableCell>{g.code ?? '—'}</TableCell>
                       <TableCell>{g.overageLimitDays}일</TableCell>
@@ -320,12 +340,25 @@ export default function LeaveTypesPanel() {
                         />
                       </TableCell>
                       <TableCell align="right">
-                        <IconButton size="small" onClick={() => openEditGroup(g)}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton size="small" color="error" onClick={() => setDeleteGroupTarget(g)}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                        {canManageLeave && (
+                          <>
+                            <IconButton
+                              size="small"
+                              onClick={() => openEditGroup(g)}
+                              data-testid="leave-group-edit-btn"
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => setDeleteGroupTarget(g)}
+                              data-testid="leave-group-delete-btn"
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -339,11 +372,18 @@ export default function LeaveTypesPanel() {
       {/* ── Tab 1: Types ───────────────────────────────────────────────────────── */}
       {tab === 1 && (
         <>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openAddType}>
-              유형 추가
-            </Button>
-          </Box>
+          {canManageLeave && (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={openAddType}
+                data-testid="leave-type-add-btn"
+              >
+                유형 추가
+              </Button>
+            </Box>
+          )}
           {typesLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
               <CircularProgress />
@@ -352,9 +392,16 @@ export default function LeaveTypesPanel() {
             <EmptyState
               message="등록된 휴가 유형이 없습니다."
               action={
-                <Button variant="outlined" startIcon={<AddIcon />} onClick={openAddType}>
-                  유형 추가
-                </Button>
+                canManageLeave ? (
+                  <Button
+                    variant="outlined"
+                    startIcon={<AddIcon />}
+                    onClick={openAddType}
+                    data-testid="leave-type-add-btn"
+                  >
+                    유형 추가
+                  </Button>
+                ) : undefined
               }
             />
           ) : (
@@ -377,7 +424,7 @@ export default function LeaveTypesPanel() {
                 </TableHead>
                 <TableBody>
                   {types.map((t: LeaveType) => (
-                    <TableRow key={t.id} hover>
+                    <TableRow key={t.id} hover data-testid="leave-type-row">
                       <TableCell sx={{ fontWeight: 600 }}>{t.name}</TableCell>
                       <TableCell>{t.displayName ?? '—'}</TableCell>
                       <TableCell>{t.group?.name ?? '—'}</TableCell>
@@ -392,12 +439,25 @@ export default function LeaveTypesPanel() {
                         />
                       </TableCell>
                       <TableCell align="right">
-                        <IconButton size="small" onClick={() => openEditType(t)}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton size="small" color="error" onClick={() => setDeleteTarget(t)}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                        {canManageLeave && (
+                          <>
+                            <IconButton
+                              size="small"
+                              onClick={() => openEditType(t)}
+                              data-testid="leave-type-edit-btn"
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => setDeleteTarget(t)}
+                              data-testid="leave-type-delete-btn"
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -418,6 +478,7 @@ export default function LeaveTypesPanel() {
             value={groupForm.name}
             onChange={(e) => setGroupForm((f) => ({ ...f, name: e.target.value }))}
             fullWidth
+            inputProps={{ 'data-testid': 'leave-group-name-input' }}
           />
           <TextField
             label="코드 (선택)"
@@ -444,6 +505,7 @@ export default function LeaveTypesPanel() {
               updateGroupMutation.isPending ||
               !groupForm.name.trim()
             }
+            data-testid="leave-group-submit-btn"
           >
             {editingGroup ? '수정' : '추가'}
           </Button>
@@ -460,6 +522,7 @@ export default function LeaveTypesPanel() {
             value={typeForm.name}
             onChange={(e) => setTypeForm((f) => ({ ...f, name: e.target.value }))}
             fullWidth
+            inputProps={{ 'data-testid': 'leave-type-name-input' }}
           />
           <Box sx={{ display: 'flex', gap: 2 }}>
             <TextField
@@ -569,6 +632,7 @@ export default function LeaveTypesPanel() {
             variant="contained"
             onClick={handleSaveType}
             disabled={isTypeSaving || !typeForm.name.trim()}
+            data-testid="leave-type-submit-btn"
           >
             {editingType ? '수정' : '추가'}
           </Button>

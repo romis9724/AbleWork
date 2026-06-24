@@ -52,7 +52,7 @@ export default function MyDocumentsPage() {
         eyebrow="Documents"
         title="전자결재"
         right={
-          <button className="btn btn-primary btn-sm" onClick={() => setModal({ mode: 'create' })}>
+          <button data-testid="me-doc-create-btn" className="btn btn-primary btn-sm" onClick={() => setModal({ mode: 'create' })}>
             {I.plus({ style: { marginRight: 6 } })}기안 등록
           </button>
         }

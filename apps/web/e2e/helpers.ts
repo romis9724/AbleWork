@@ -8,6 +8,15 @@
  * UI 텍스트 의존 플래키를 줄인다.
  */
 import { expect, type Page } from '@playwright/test'
+import {
+  AccessLevel,
+  canViewNav,
+  canDo,
+  hasLevel,
+  isAdminLevel,
+  requiredLevelForPath,
+  type ActionKey,
+} from '@ablework/shared-constants'
 
 export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4000'
 export const API_URL = process.env.E2E_API_URL ?? 'http://localhost:4001/api/v1'
@@ -201,4 +210,105 @@ export async function stepStatusAt(
 ): Promise<string | undefined> {
   const steps = await getSteps(page, token, documentId)
   return steps.find((s) => s.stepOrder === stepOrder)?.status
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RBAC 브라우저 테스트 매트릭스 헬퍼 (docs/testing/RBAC_BROWSER_LOOP.md)
+// 기대값은 항상 권한 SSOT(@ablework/shared-constants)에서 도출한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** ACCOUNTS 키 → 접근 레벨 매핑 */
+export const ROLE_LEVEL = {
+  admin: AccessLevel.SUPER_ADMIN,
+  genAdmin: AccessLevel.GENERAL_ADMIN,
+  orgAdmin: AccessLevel.ORG_ADMIN,
+  employee: AccessLevel.EMPLOYEE,
+  sales: AccessLevel.EMPLOYEE,
+} as const
+
+export type RoleKey = keyof typeof ROLE_LEVEL
+
+/** 역할 키로 UI 로그인 (admins → /admin/*, EMPLOYEE → /me/*) */
+export async function loginAs(page: Page, role: RoleKey): Promise<void> {
+  await uiLogin(page, ACCOUNTS[role].email, ACCOUNTS[role].password)
+}
+
+/** 현재 페이지의 pathname */
+export function pathOf(page: Page): string {
+  return new URL(page.url()).pathname
+}
+
+/**
+ * nav 항목 가시성 검증. data-testid="nav-<navId>" 규약.
+ * 기대값 = canViewNav(level, navId). 관리자 셸이 떠 있는 상태에서 호출.
+ */
+export async function assertNavVisible(
+  page: Page,
+  navId: string,
+  level: AccessLevel,
+): Promise<void> {
+  const item = page.locator(`[data-testid="nav-${navId}"]`)
+  if (canViewNav(level, navId)) {
+    await expect(item, `nav-${navId} 는 ${level} 에게 보여야 함`).toBeVisible()
+  } else {
+    await expect(item, `nav-${navId} 는 ${level} 에게 숨겨야 함`).toHaveCount(0)
+  }
+}
+
+/**
+ * 라우트 가드 검증. 직접 URL 접근 시 허용(머무름) vs 차단(다른 경로로 리다이렉트).
+ * 기대 허용 = isAdminLevel + requiredLevelForPath 충족 (/me/* 는 항상 허용).
+ */
+export async function assertRouteGuard(
+  page: Page,
+  path: string,
+  level: AccessLevel,
+): Promise<void> {
+  await page.goto(`${BASE_URL}${path}`)
+  await page.waitForLoadState('networkidle')
+  const isAdminPath = path.startsWith('/admin')
+  const allowed = isAdminPath
+    ? isAdminLevel(level) && hasLevel(level, requiredLevelForPath(path))
+    : true
+  const landed = pathOf(page)
+  if (allowed) {
+    expect(landed, `${level} 는 ${path} 에 머물러야 함`).toBe(path)
+  } else {
+    // 차단: 요청 경로에 머무르지 않고, 인증 상태이므로 /login(세션 만료)도 아닌 허용된 화면으로 안착해야 함
+    expect(landed, `${level} 는 ${path} 에서 리다이렉트돼야 함`).not.toBe(path)
+    expect(landed, `${level} 차단 후 /login 으로 떨어지면 안 됨(인증 상태 유지)`).not.toBe('/login')
+  }
+}
+
+/**
+ * 액션 버튼/요소 가시성 검증. data-testid 규약.
+ * 기대값 = canDo(level, action). 해당 액션 화면에 진입한 상태에서 호출.
+ */
+export async function assertActionVisible(
+  page: Page,
+  testid: string,
+  level: AccessLevel,
+  action: ActionKey,
+): Promise<void> {
+  const el = page.locator(`[data-testid="${testid}"]`)
+  if (canDo(level, action)) {
+    await expect(el, `${testid} 는 ${level} 에게 보여야 함`).toBeVisible()
+  } else {
+    await expect(el, `${testid} 는 ${level} 에게 숨겨야 함`).toHaveCount(0)
+  }
+}
+
+/** API 강제 호출이 403(또는 401)으로 차단되는지 — negative 보강 검증 */
+export async function expectForbidden(
+  page: Page,
+  token: string,
+  method: 'get' | 'post' | 'patch' | 'delete',
+  apiPath: string,
+  data?: unknown,
+): Promise<void> {
+  const resp = await page.request[method](`${API_URL}${apiPath}`, {
+    data: data ?? {},
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  })
+  expect([401, 403], `${method.toUpperCase()} ${apiPath} 는 차단돼야 함`).toContain(resp.status())
 }

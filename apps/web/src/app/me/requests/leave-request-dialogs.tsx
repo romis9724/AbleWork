@@ -55,6 +55,7 @@ export function LeaveCreateDialog({ open, submitting, onClose, onSubmit }: Reque
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           disabled={!canSubmit || submitting}
           onClick={() => onSubmit('LEAVE_CREATE', { leaveTypeId, startDate, endDate, reason })}
@@ -110,6 +111,7 @@ export function LeaveModifyDialog({ open, employeeId, submitting, onClose, onSub
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           disabled={!canSubmit || submitting}
           onClick={() => onSubmit('LEAVE_MODIFY', { leaveId, startDate, endDate, ...(reason && { reason }) })}
@@ -150,6 +152,7 @@ export function LeaveDeleteDialog({ open, employeeId, submitting, onClose, onSub
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           color="error"
           disabled={!leaveId || submitting}

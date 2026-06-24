@@ -214,7 +214,7 @@ export default function ApprovalFormsPage() {
         eyebrow="Form Templates"
         title="기안양식 관리"
         right={
-          <button className="btn btn-ghost btn-sm" onClick={() => setFormModal({ mode: 'create', form: null })}>＋ 양식 추가</button>
+          <button className="btn btn-ghost btn-sm" data-testid="eforms-add-btn" onClick={() => setFormModal({ mode: 'create', form: null })}>＋ 양식 추가</button>
         }
       />
 
@@ -232,6 +232,7 @@ export default function ApprovalFormsPage() {
               {folders.map((f) => (
                 <div
                   key={f.id}
+                  data-testid="eforms-cat-row"
                   className={'pane-li' + (selectedCat === f.id ? ' on' : '')}
                   role="button"
                   tabIndex={0}
@@ -249,7 +250,7 @@ export default function ApprovalFormsPage() {
               ))}
             </div>
             <div className="pane-foot">
-              <button className="btn btn-line btn-sm" onClick={() => setCatManagerOpen(true)}>분류 관리</button>
+              <button className="btn btn-line btn-sm" data-testid="eforms-cat-manage-btn" onClick={() => setCatManagerOpen(true)}>분류 관리</button>
             </div>
           </div>
 
@@ -258,9 +259,10 @@ export default function ApprovalFormsPage() {
             <div className="filter" style={{ padding: '20px 24px', marginBottom: 22 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                 <label style={{ fontSize: 13, color: 'var(--fg-3)', flex: '0 0 auto' }}>검색</label>
-                <TextInput placeholder="기안양식명 입력" value={searchInput} onChange={setSearchInput} />
+                <TextInput placeholder="기안양식명 입력" value={searchInput} onChange={setSearchInput} testId="eforms-search-input" />
                 <button
                   className="btn btn-primary btn-sm"
+                  data-testid="eforms-search-btn"
                   style={{ flex: '0 0 auto', padding: '10px 28px' }}
                   onClick={() => setSearch(searchInput)}
                 >
@@ -293,6 +295,7 @@ export default function ApprovalFormsPage() {
                         <td className="lead">
                           <span
                             className="tbl-link"
+                            data-testid="eforms-row"
                             role="button"
                             tabIndex={0}
                             onClick={() => setFormModal({ mode: 'edit', form })}
@@ -314,9 +317,9 @@ export default function ApprovalFormsPage() {
                         <td className="muted">{categoryName(form)}</td>
                         <td className="c">
                           <div style={{ display: 'inline-flex', gap: 8, color: 'var(--fg-4)' }}>
-                            <button className="modal-x" style={{ width: 26, height: 26 }} onClick={() => setAccessTarget(form)} aria-label="접근규칙" title="접근규칙">{I.user()}</button>
-                            <button className="modal-x" style={{ width: 26, height: 26 }} onClick={() => setRuleTarget(form)} aria-label="문서번호 채번" title="문서번호 채번">{I.file()}</button>
-                            <button className="modal-x" style={{ width: 26, height: 26 }} onClick={() => setConfirmTarget(form)} aria-label="삭제" title="삭제">{I.trash()}</button>
+                            <button className="modal-x" style={{ width: 26, height: 26 }} onClick={() => setAccessTarget(form)} aria-label="접근규칙" title="접근규칙" data-testid="eforms-access-btn">{I.user()}</button>
+                            <button className="modal-x" style={{ width: 26, height: 26 }} onClick={() => setRuleTarget(form)} aria-label="문서번호 채번" title="문서번호 채번" data-testid="eforms-number-btn">{I.file()}</button>
+                            <button className="modal-x" style={{ width: 26, height: 26 }} onClick={() => setConfirmTarget(form)} aria-label="삭제" title="삭제" data-testid="eforms-delete-btn">{I.trash()}</button>
                           </div>
                         </td>
                       </tr>
