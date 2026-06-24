@@ -947,7 +947,7 @@ notification_rules {
 
 **공용 결재선 정합(AP-01-08)**: `shared_approval_lines`에 작성자(`createdById`, SetNull)·작성일(`createdAt`)을 노출하고, 목록은 `search`(name contains) 필터를 지원한다.
 - **이름 중복 차단**: 같은 회사 내 동일 이름 결재선 생성/수정 시 `SHARED_LINE_DUPLICATE_NAME`(수정은 자기 자신 제외).
-- **최종결재자=협조자 금지**: 마지막 APPROVER 단계 담당자가 동일 결재선의 협조자(AGREEMENT/부서협조)로도 지정되면 `FINAL_APPROVER_IS_COLLABORATOR`.
+- **최종결재자=협조자 금지**: 마지막 APPROVER 단계 담당자가 동일 결재선의 협조자(AGREEMENT/부서협조)로도 지정되면 `FINAL_APPROVER_IS_COLLABORATOR`. **공용 결재선에만 적용** — 개인 결재선은 개인 템플릿이라 이 제약을 적용하지 않는다(중복 인원 배치 자유, 상신 시점에도 동일 검증 없음).
 - **중복 인원 배치 허용**: 동일 인원을 서로 다른 결재 단계(APPROVER 등)에 중복 배치하는 것은 허용한다(위 금지 규칙만 예외).
 
 **개인 결재선(빠른 결재선 불러오기)**: `shared_approval_lines.scope`로 공용(`COMPANY`)/개인(`PERSONAL`)을 구분한다. 개인 결재선은 작성자 본인(`created_by_id`)만 조회·저장·수정·삭제한다.
