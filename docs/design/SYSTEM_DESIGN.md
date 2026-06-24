@@ -954,6 +954,13 @@ notification_rules {
 - 엔드포인트 `/personal-approval-lines`(GET·POST·PATCH·DELETE, 인증된 전 직원). 소유자 외 접근은 `PERSONAL_LINE_FORBIDDEN`, 미존재는 `PERSONAL_LINE_NOT_FOUND`.
 - 이름 중복은 본인(`created_by_id`)·`PERSONAL` 범위로만 판정 — 다른 직원과 같은 이름은 허용. 공용 목록(`/shared-approval-lines`)에는 `scope=COMPANY`만 노출된다.
 - 기안 작성 화면에서 "내 결재선으로 저장"으로 현재 결재선 구성을 보관하고, "내 결재선 불러오기"로 즉시 prefill 한다.
+
+**문서성격·문서번호 체계(채번 대분류)**: `document_categories`(이름·약어)를 회사 마스터로 관리(GENERAL_ADMIN, `/document-categories`)하고, 기안 작성 시 선택(`documents.categoryId`)한다. 양식함 분류(`form_categories`)와 별개 축이다.
+- 문서번호 패턴(`DocumentNumberRule.pattern`) 토큰: `{CATEGORY}`(문서성격 약어)·`{ABBR}`(양식 약어)·`{YYYY}`/`{YY}`(연도)·`{MM}`(월)·`{SEQ:n}`(n자리 0패딩). 예) `{CATEGORY}-{ABBR}-{YY}-{SEQ:4}` → `사업-지출기안-26-0001`.
+- 채번은 상신 시점에 문서의 `categoryId`로 약어를 해석해 치환한다(미지정이면 빈 문자열).
+- 사용 중(문서 참조) 문서성격은 삭제 차단(`DOCUMENT_CATEGORY_IN_USE`), 이름·약어 중복 차단(`DOCUMENT_CATEGORY_DUPLICATE`).
+
+**문서함 탭별 검색**: 문서함 목록(`/documents`)은 `searchField`(`all`/`title`/`form`/`drafter`)로 검색 대상을 지정한다. `all`(기본)은 제목·문서번호·양식명·기안자명 OR 검색, 나머지는 해당 단일 필드 검색. 모든 박스(기안함/결재함/문서대장 등)에 적용된다.
 - (follow-up) **소속부서 팀장 동적 결재자 토큰**: 상신 시 기안자 소속부서 팀장으로 해석되는 동적 단계는 `ApprovalStep.assigneeId` NOT NULL 제약 + 상신 시점 drafter-org 해석이 필요해 별도 단계로 보류.
 
 **전자결재 공통 관리 정책(AP-01 공통)**:

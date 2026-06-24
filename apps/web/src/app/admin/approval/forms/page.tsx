@@ -25,6 +25,7 @@ import { I } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
 import FormModalNative from '@/components/approval/FormModalNative'
 import FormCategoryManagerDialog from '@/components/approval/FormCategoryManagerDialog'
+import DocumentCategoryManagerDialog from '@/components/approval/DocumentCategoryManagerDialog'
 import FormAccessRulesPanel from '@/components/approval/FormAccessRulesPanel'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -39,12 +40,15 @@ import {
 const DEFAULT_PATTERN = 'HR-{YYYY}-{SEQ:4}'
 const ALL_CATEGORY = '__all__'
 
-/** 문서번호 패턴 미리보기 — {YYYY},{MM},{ABBR},{SEQ:n} 토큰 치환 */
+/** 문서번호 패턴 미리보기 — {CATEGORY},{ABBR},{YYYY},{YY},{MM},{SEQ:n} 토큰 치환 */
 function previewNumber(pattern: string, abbr = ''): string {
   const now = new Date()
   return pattern
     .replace(/\{YYYY\}/g, String(now.getFullYear()))
+    .replace(/\{YY\}/g, String(now.getFullYear()).slice(-2))
     .replace(/\{MM\}/g, String(now.getMonth() + 1).padStart(2, '0'))
+    // {CATEGORY}는 기안 시 선택하는 문서성격 약어 — 미리보기에선 예시('사업')로 표시
+    .replace(/\{CATEGORY\}/g, '사업')
     .replace(/\{ABBR\}/g, abbr)
     .replace(/\{SEQ:(\d+)\}/g, (_m, digits: string) => '1'.padStart(Number(digits), '0'))
 }
@@ -115,7 +119,7 @@ function NumberRuleDialog({
               fullWidth
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
-              helperText="사용 가능 토큰: {YYYY} 연도, {MM} 월, {ABBR} 양식 약어, {SEQ:4} 일련번호(자릿수)"
+              helperText="토큰: {CATEGORY} 문서성격 약어, {ABBR} 양식 약어, {YYYY}/{YY} 연도, {MM} 월, {SEQ:4} 일련번호. 예) {CATEGORY}-{ABBR}-{YY}-{SEQ:4} → 사업-지출기안-26-0001"
             />
             <FormControlLabel
               control={<Switch checked={resetYearly} onChange={(e) => setResetYearly(e.target.checked)} />}
@@ -170,6 +174,7 @@ export default function ApprovalFormsPage() {
   const [search, setSearch] = useState('')
   const [formModal, setFormModal] = useState<FormModalState | null>(null)
   const [catManagerOpen, setCatManagerOpen] = useState(false)
+  const [docCatManagerOpen, setDocCatManagerOpen] = useState(false)
   const [ruleTarget, setRuleTarget] = useState<DocumentForm | null>(null)
   const [accessTarget, setAccessTarget] = useState<DocumentForm | null>(null)
   const [confirmTarget, setConfirmTarget] = useState<DocumentForm | null>(null)
@@ -249,8 +254,9 @@ export default function ApprovalFormsPage() {
                 </div>
               ))}
             </div>
-            <div className="pane-foot">
+            <div className="pane-foot" style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-line btn-sm" data-testid="eforms-cat-manage-btn" onClick={() => setCatManagerOpen(true)}>분류 관리</button>
+              <button className="btn btn-line btn-sm" data-testid="eforms-doccat-manage-btn" onClick={() => setDocCatManagerOpen(true)}>문서성격 관리</button>
             </div>
           </div>
 
@@ -357,6 +363,13 @@ export default function ApprovalFormsPage() {
       <FormCategoryManagerDialog
         open={catManagerOpen}
         onClose={() => setCatManagerOpen(false)}
+        onResult={(msg) => toast(msg)}
+      />
+
+      {/* 문서성격(채번 대분류) 관리 */}
+      <DocumentCategoryManagerDialog
+        open={docCatManagerOpen}
+        onClose={() => setDocCatManagerOpen(false)}
         onResult={(msg) => toast(msg)}
       />
 

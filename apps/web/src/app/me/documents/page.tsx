@@ -1,7 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PageHead } from '@/components/ab/Page'
-import { Seg } from '@/components/ab/atoms'
+import { Seg, TextInput } from '@/components/ab/atoms'
 import { I } from '@/components/ab/icons'
 import { DocStatusChip } from '@/components/approval/StatusChips'
 import DocModal from '@/components/approval/DocModal'
@@ -32,8 +32,21 @@ type ModalState =
 export default function MyDocumentsPage() {
   const [box, setBox] = useState<BoxValue>('draft')
   const [modal, setModal] = useState<ModalState>(null)
+  const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
+  const [searchField, setSearchField] = useState<'all' | 'title' | 'form' | 'drafter'>('all')
 
-  const { data, isLoading, refetch } = useDocuments(box, { page: 1, limit: PAGE_LIMIT })
+  // 검색어 디바운스 — 입력 멈춤 후 300ms 적용
+  useEffect(() => {
+    const t = setTimeout(() => setAppliedSearch(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const { data, isLoading, refetch } = useDocuments(box, {
+    page: 1,
+    limit: PAGE_LIMIT,
+    ...(appliedSearch ? { search: appliedSearch, searchField } : {}),
+  })
   const items: DocumentListItem[] = data?.items ?? []
   const total = data?.total ?? 0
   const isMineBox = MINE_BOXES.includes(box)
@@ -68,6 +81,26 @@ export default function MyDocumentsPage() {
         <span className="tbl-count">
           총 <b>{total.toLocaleString()}</b>건
         </span>
+        <div className="tbl-tools" style={{ display: 'flex', gap: 8, minWidth: 280 }}>
+          <select
+            className="sel"
+            style={{ maxWidth: 96 }}
+            value={searchField}
+            onChange={(e) => setSearchField(e.target.value as typeof searchField)}
+            aria-label="검색 대상"
+          >
+            <option value="all">전체</option>
+            <option value="title">제목</option>
+            <option value="form">양식</option>
+            <option value="drafter">기안자</option>
+          </select>
+          <TextInput
+            placeholder={searchField === 'drafter' ? '기안자명 검색' : searchField === 'form' ? '양식명 검색' : '제목 · 문서번호 검색'}
+            icon={I.search()}
+            value={search}
+            onChange={setSearch}
+          />
+        </div>
       </div>
 
       {isLoading ? (

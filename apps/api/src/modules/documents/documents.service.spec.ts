@@ -64,6 +64,9 @@ const mockPrisma = {
   documentForm: {
     findFirst: jest.fn(),
   },
+  documentCategory: {
+    findFirst: jest.fn(),
+  },
   documentNumberRule: {
     findFirst: jest.fn(),
     update: jest.fn(),
@@ -335,6 +338,52 @@ describe('DocumentsService', () => {
       expect(result.docNumber).toBe(`DOC-${new Date().getFullYear()}-0008`)
     })
 
+    it('문서성격 채번: {CATEGORY}-{ABBR}-{YY}-{SEQ:4} → 사업-지출기안-26-0001', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(makeDocument({ categoryId: 'dcat-1' }))
+      mockPrisma.documentNumberRule.findFirst
+        .mockResolvedValueOnce({ id: 'rule-1', pattern: '{CATEGORY}-{ABBR}-{YY}-{SEQ:4}', currentSeq: 0, resetYearly: true })
+        .mockResolvedValueOnce({ id: 'rule-1', pattern: '{CATEGORY}-{ABBR}-{YY}-{SEQ:4}', currentSeq: 1, resetYearly: true })
+      mockPrisma.documentNumberRule.update.mockResolvedValue({})
+      // 양식 약어·문서성격 약어 조회
+      mockPrisma.documentForm.findFirst.mockResolvedValue({ abbreviation: '지출기안' })
+      mockPrisma.documentCategory.findFirst.mockResolvedValue({ abbreviation: '사업' })
+
+      const result = await service.submit(
+        COMPANY_ID,
+        DOCUMENT_ID,
+        { steps: APPROVER_STEPS },
+        makeUser(),
+      )
+
+      const yy = String(new Date().getFullYear()).slice(-2)
+      expect(result.docNumber).toBe(`사업-지출기안-${yy}-0001`)
+      // 문서성격 약어 조회는 companyId 스코프로 수행
+      expect(mockPrisma.documentCategory.findFirst).toHaveBeenCalledWith({
+        where: { id: 'dcat-1', companyId: COMPANY_ID },
+        select: { abbreviation: true },
+      })
+    })
+
+    it('문서성격 미지정(categoryId null)이면 {CATEGORY}는 빈 문자열로 치환된다', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(makeDocument({ categoryId: null }))
+      mockPrisma.documentNumberRule.findFirst
+        .mockResolvedValueOnce({ id: 'rule-1', pattern: '{CATEGORY}{ABBR}-{SEQ:3}', currentSeq: 0, resetYearly: false })
+        .mockResolvedValueOnce({ id: 'rule-1', pattern: '{CATEGORY}{ABBR}-{SEQ:3}', currentSeq: 1, resetYearly: false })
+      mockPrisma.documentNumberRule.update.mockResolvedValue({})
+      mockPrisma.documentForm.findFirst.mockResolvedValue({ abbreviation: 'EXP' })
+
+      const result = await service.submit(
+        COMPANY_ID,
+        DOCUMENT_ID,
+        { steps: APPROVER_STEPS },
+        makeUser(),
+      )
+
+      expect(result.docNumber).toBe('EXP-001')
+      // categoryId가 없으면 문서성격 약어 조회를 하지 않는다
+      expect(mockPrisma.documentCategory.findFirst).not.toHaveBeenCalled()
+    })
+
     it('REJECTED 재상신은 form.allowReDraft가 false면 거부한다', async () => {
       mockPrisma.document.findFirst.mockResolvedValue(
         makeDocument({ status: 'REJECTED', form: { id: FORM_ID, allowReDraft: false } }),
@@ -599,6 +648,41 @@ describe('DocumentsService', () => {
           }),
         }),
       )
+    })
+
+    it('탭별 검색: searchField=drafter면 기안자명(contains)으로만 검색한다', async () => {
+      await service.findAll(
+        COMPANY_ID,
+        { box: 'completed', page: 1, limit: 20, search: '홍길동', searchField: 'drafter' },
+        makeUser(),
+      )
+      const where = mockPrisma.document.findMany.mock.calls[0][0].where
+      expect(where.OR).toEqual([{ drafter: { name: { contains: '홍길동' } } }])
+    })
+
+    it('탭별 검색: searchField=form이면 양식명(contains)으로만 검색한다', async () => {
+      await service.findAll(
+        COMPANY_ID,
+        { box: 'completed', page: 1, limit: 20, search: '지출', searchField: 'form' },
+        makeUser(),
+      )
+      const where = mockPrisma.document.findMany.mock.calls[0][0].where
+      expect(where.OR).toEqual([{ form: { name: { contains: '지출' } } }])
+    })
+
+    it('탭별 검색: searchField 미지정(all)이면 제목·문서번호·양식·기안자를 모두 검색한다', async () => {
+      await service.findAll(
+        COMPANY_ID,
+        { box: 'completed', page: 1, limit: 20, search: '계약' },
+        makeUser(),
+      )
+      const where = mockPrisma.document.findMany.mock.calls[0][0].where
+      expect(where.OR).toEqual([
+        { title: { contains: '계약' } },
+        { docNumber: { contains: '계약' } },
+        { form: { name: { contains: '계약' } } },
+        { drafter: { name: { contains: '계약' } } },
+      ])
     })
 
     it('pending_approval 박스: 대리인인 principal의 단계도 포함한다', async () => {

@@ -18,6 +18,7 @@ import {
   useAddCcSteps,
   useCreateDocument,
   useDocument,
+  useDocumentCategories,
   useDocumentForms,
   useDocumentStepAction,
   usePersonalApprovalLines,
@@ -155,6 +156,7 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   // 상세 (view/edit) — create는 미로드
   const { data: doc, isLoading } = useDocument(isCreate ? null : documentId)
   const { data: forms = [] } = useDocumentForms()
+  const { data: docCategories = [] } = useDocumentCategories()
   const { data: sharedLines = [] } = useSharedApprovalLines()
   const { data: personalLines = [] } = usePersonalApprovalLines()
   const { data: empData } = useEmployees({ isActive: true, limit: 200 })
@@ -170,6 +172,7 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
 
   // ----- 편집/작성 폼 상태 -----
   const [formId, setFormId] = useState('')
+  const [categoryId, setCategoryId] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({})
@@ -189,6 +192,7 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   useEffect(() => {
     if (!editable || !doc || initializedFor === `${doc.id}:${mode}`) return
     setFormId(doc.form?.id ?? '')
+    setCategoryId(doc.category?.id ?? '')
     setTitle(doc.title)
     setBody(typeof doc.content?.body === 'string' ? doc.content.body : '')
     const content = (doc.content ?? {}) as Record<string, unknown>
@@ -358,6 +362,7 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     try {
       const created = await createMutation.mutateAsync({
         formId,
+        categoryId: categoryId || null,
         title: title.trim(),
         content: { body, ...fieldValues },
       })
@@ -647,18 +652,32 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
               <div className="doc-section">
                 <div className="doc-sec-head"><span className="dot" /><span className="t">문서 정보</span><span className="en">Document Info</span></div>
                 {isCreate ? (
-                  <div className="doc-field">
-                    <span className="fk">기안양식<span className="req">*</span></span>
-                    <span className="fv">
-                      <select className="sel" value={formId} onChange={(e) => setFormId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
-                        <option value="">양식 선택</option>
-                        {forms.filter((f) => f.isActive).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                      </select>
-                    </span>
-                  </div>
+                  <>
+                    <div className="doc-field">
+                      <span className="fk">기안양식<span className="req">*</span></span>
+                      <span className="fv">
+                        <select className="sel" value={formId} onChange={(e) => setFormId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
+                          <option value="">양식 선택</option>
+                          {forms.filter((f) => f.isActive).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                      </span>
+                    </div>
+                    {docCategories.length > 0 && (
+                      <div className="doc-field">
+                        <span className="fk">문서성격</span>
+                        <span className="fv">
+                          <select className="sel" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
+                            <option value="">선택 안 함</option>
+                            {docCategories.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.abbreviation})</option>)}
+                          </select>
+                        </span>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="doc-meta">
                     <div className="cell"><div className="k">Doc No.</div><div className="v num">{doc?.docNumber ?? '미부여'}</div></div>
+                    {doc?.category && <div className="cell"><div className="k">문서성격</div><div className="v">{doc.category.name}</div></div>}
                     <div className="cell"><div className="k">기안양식</div><div className="v">{doc?.form?.name ?? '—'}</div></div>
                     <div className="cell"><div className="k">기안자</div><div className="v">{doc?.drafter?.name ?? '—'}</div></div>
                     <div className="cell"><div className="k">상신일시</div><div className="v">{dateTimeText(doc?.submittedAt)}</div></div>

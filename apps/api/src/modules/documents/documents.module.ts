@@ -16,6 +16,8 @@ import { AttachmentsController } from './attachments.controller'
 import { AttachmentsService } from './attachments.service'
 import { FormCategoriesController } from './form-categories.controller'
 import { FormCategoriesService } from './form-categories.service'
+import { DocumentCategoriesController } from './document-categories.controller'
+import { DocumentCategoriesService } from './document-categories.service'
 
 /**
  * Phase 2 전자결재 (Goal 11~16)
@@ -29,6 +31,7 @@ import { FormCategoriesService } from './form-categories.service'
   controllers: [
     DocumentFormsController,
     FormCategoriesController,
+    DocumentCategoriesController,
     SharedApprovalLinesController,
     PersonalApprovalLinesController,
     ProxySettingsController,
@@ -40,6 +43,7 @@ import { FormCategoriesService } from './form-categories.service'
     ApprovalActionsService,
     DocumentFormsService,
     FormCategoriesService,
+    DocumentCategoriesService,
     SharedApprovalLinesService,
     ProxySettingsService,
     AttachmentsService,

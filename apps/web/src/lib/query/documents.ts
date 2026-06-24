@@ -95,6 +95,15 @@ export interface FormCategory {
   isActive: boolean
 }
 
+/** AP 문서성격(채번 대분류) — 사업관리/일반관리/인사관리/LABL CHINA 등 */
+export interface DocumentCategory {
+  id: string
+  name: string
+  abbreviation: string
+  sortOrder: number
+  isActive: boolean
+}
+
 export interface FormAccessRule {
   id: string
   formId: string
@@ -133,6 +142,8 @@ export interface DocumentListItem {
   status: DocumentStatus
   submittedAt?: string | null
   form?: { id?: string; name: string } | null
+  /** AP 문서성격(채번 대분류) */
+  category?: { id: string; name: string; abbreviation: string } | null
   drafter?: { id?: string; name: string } | null
   mySteps?: { id: string; role: StepRole; status: StepStatus }[]
   /** 결재 현황(status box)용: 상신/진행중 구분 */
@@ -187,6 +198,9 @@ export interface DocumentDetail {
     allowPreApproval?: boolean
     allowZipUpload?: boolean
   } | null
+  /** AP 문서성격(채번 대분류) */
+  category?: { id: string; name: string; abbreviation: string } | null
+  categoryId?: string | null
   drafter?: { id?: string; name: string } | null
   submittedAt?: string | null
   approvalLines?: { steps: ApprovalStepDetail[] }[]
@@ -287,6 +301,50 @@ export const useDeleteFormCategory = () => {
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/form-categories/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: CATEGORIES_KEY }),
+  })
+}
+
+// AP 문서성격(채번 대분류) CRUD
+const DOC_CATEGORIES_KEY = ['document-categories']
+
+export const useDocumentCategories = () =>
+  useQuery({
+    queryKey: DOC_CATEGORIES_KEY,
+    queryFn: () => apiClient.get('/document-categories') as Promise<DocumentCategory[]>,
+    staleTime: 60_000,
+  })
+
+export const useCreateDocumentCategory = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { name: string; abbreviation: string; sortOrder?: number }) =>
+      apiClient.post('/document-categories', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOC_CATEGORIES_KEY }),
+  })
+}
+
+export const useUpdateDocumentCategory = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...data
+    }: {
+      id: string
+      name?: string
+      abbreviation?: string
+      sortOrder?: number
+      isActive?: boolean
+    }) => apiClient.patch(`/document-categories/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOC_CATEGORIES_KEY }),
+  })
+}
+
+export const useDeleteDocumentCategory = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/document-categories/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: DOC_CATEGORIES_KEY }),
   })
 }
 
@@ -432,8 +490,10 @@ export interface DocumentListParams {
   page?: number
   limit?: number
   status?: string
-  /** 제목·문서번호 부분검색 (BE: title/docNumber contains) */
+  /** 부분검색어 (대상은 searchField로 지정) */
   search?: string
+  /** 탭별 검색 대상 — 전체(제목+문서번호+양식+기안자)/제목/양식/기안자 */
+  searchField?: 'all' | 'title' | 'form' | 'drafter'
   /** 결재 현황(status box) 필터 — 기안양식 id */
   formId?: string
   /** 결재 현황(status box) 필터 — 상신일 시작 (YYYY-MM-DD) */
@@ -462,8 +522,12 @@ export const useDocument = (id: string | null) =>
 export const useCreateDocument = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { formId: string; title: string; content: DocumentContent }) =>
-      apiClient.post('/documents', data) as Promise<DocumentDetail>,
+    mutationFn: (data: {
+      formId: string
+      categoryId?: string | null
+      title: string
+      content: DocumentContent
+    }) => apiClient.post('/documents', data) as Promise<DocumentDetail>,
     onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
   })
 }
@@ -471,8 +535,15 @@ export const useCreateDocument = () => {
 export const useUpdateDocument = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...data }: { id: string; title?: string; content?: DocumentContent }) =>
-      apiClient.patch(`/documents/${id}`, data),
+    mutationFn: ({
+      id,
+      ...data
+    }: {
+      id: string
+      categoryId?: string | null
+      title?: string
+      content?: DocumentContent
+    }) => apiClient.patch(`/documents/${id}`, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
   })
 }

@@ -67,6 +67,27 @@ export const UpdateFormCategorySchema = z
 export type CreateFormCategoryDto = z.infer<typeof CreateFormCategorySchema>
 export type UpdateFormCategoryDto = z.infer<typeof UpdateFormCategorySchema>
 
+// AP 문서성격(채번 대분류) CRUD — 사업관리/일반관리/인사관리/LABL CHINA 등. abbreviation은 문서번호 {CATEGORY} 토큰.
+export const CreateDocumentCategorySchema = z.object({
+  name: z.string().min(1, '문서성격명을 입력하세요.').max(100),
+  abbreviation: z.string().min(1, '약어를 입력하세요.').max(20),
+  sortOrder: z.number().int().min(0).default(0),
+})
+
+export const UpdateDocumentCategorySchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    abbreviation: z.string().min(1).max(20).optional(),
+    sortOrder: z.number().int().min(0).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: '수정할 항목을 하나 이상 입력하세요.',
+  })
+
+export type CreateDocumentCategoryDto = z.infer<typeof CreateDocumentCategorySchema>
+export type UpdateDocumentCategoryDto = z.infer<typeof UpdateDocumentCategorySchema>
+
 // AP-01-07 양식 접근규칙 — 특정 조직/직무에만 작성 권한 부여 (규칙 없으면 전체 허용)
 export const FormAccessScopeType = ['ORGANIZATION', 'POSITION'] as const
 export const CreateFormAccessRuleSchema = z.object({
@@ -77,7 +98,7 @@ export const CreateFormAccessRuleSchema = z.object({
 })
 export type CreateFormAccessRuleDto = z.infer<typeof CreateFormAccessRuleSchema>
 
-// 문서번호 채번 규칙 — pattern 토큰: {YYYY}, {MM}, {SEQ:n}(n자리 0패딩)
+// 문서번호 채번 규칙 — pattern 토큰: {CATEGORY}(문서성격 약어), {ABBR}(양식 약어), {YYYY}, {YY}, {MM}, {SEQ:n}(n자리 0패딩)
 export const UpsertNumberRuleSchema = z.object({
   pattern: z.string().min(1, '채번 패턴을 입력하세요.').max(200),
   resetYearly: z.boolean().default(true),
