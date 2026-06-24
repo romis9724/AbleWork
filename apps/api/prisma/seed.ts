@@ -6,12 +6,24 @@ const prisma = new PrismaClient()
 async function main() {
   console.log('🌱 Seeding database...')
 
+  // 0. 그룹 생성 (멀티컴퍼니 — 회사 묶음 컨테이너)
+  const group = await prisma.group.upsert({
+    where: { id: 'seed-group-001' },
+    update: {},
+    create: {
+      id: 'seed-group-001',
+      name: 'AbleWork 테스트 그룹',
+    },
+  })
+  console.log('✅ Group:', group.name)
+
   // 1. 테스트 회사 생성
   const company = await prisma.company.upsert({
     where: { id: 'seed-company-001' },
     update: {},
     create: {
       id: 'seed-company-001',
+      groupId: group.id,
       name: 'AbleWork 테스트 회사',
       timezone: 'Asia/Seoul',
       locale: 'ko',
@@ -35,7 +47,7 @@ async function main() {
   })
 
   await prisma.employee.upsert({
-    where: { userId: adminUser.id },
+    where: { id: 'seed-emp-admin' },
     update: {},
     create: {
       id: 'seed-emp-admin',
@@ -48,6 +60,34 @@ async function main() {
     },
   })
   console.log('✅ Admin user:', adminUser.email)
+
+  // 2-1. 멀티컴퍼니 데모: 같은 그룹의 2번째 회사 + 관리자 멤버십
+  const company2 = await prisma.company.upsert({
+    where: { id: 'seed-company-002' },
+    update: {},
+    create: {
+      id: 'seed-company-002',
+      groupId: group.id,
+      name: 'AbleWork 2호점',
+      timezone: 'Asia/Seoul',
+      locale: 'ko',
+      countryCode: 'KR',
+    },
+  })
+  await prisma.employee.upsert({
+    where: { id: 'seed-emp-admin-co2' },
+    update: {},
+    create: {
+      id: 'seed-emp-admin-co2',
+      companyId: company2.id,
+      userId: adminUser.id,
+      name: '최고관리자',
+      joinedAt: new Date('2024-01-01'),
+      employmentType: 'regular',
+      accessLevel: 'SUPER_ADMIN',
+    },
+  })
+  console.log('✅ Company 2 (multi-company demo):', company2.name)
 
   // 3. 일반 직원 계정
   const empHash = await bcrypt.hash('employee1234!', 10)
@@ -77,7 +117,7 @@ async function main() {
   })
 
   await prisma.employee.upsert({
-    where: { userId: empUser.id },
+    where: { id: 'seed-emp-001' },
     update: {},
     create: {
       id: 'seed-emp-001',
@@ -126,7 +166,7 @@ async function main() {
   })
 
   await prisma.employee.upsert({
-    where: { userId: orgAdminUser.id },
+    where: { id: 'seed-emp-orgadmin' },
     update: {},
     create: {
       id: 'seed-emp-orgadmin',
@@ -169,7 +209,7 @@ async function main() {
   })
 
   await prisma.employee.upsert({
-    where: { userId: salesUser.id },
+    where: { id: 'seed-emp-sales' },
     update: {},
     create: {
       id: 'seed-emp-sales',
@@ -206,7 +246,7 @@ async function main() {
   })
 
   await prisma.employee.upsert({
-    where: { userId: genAdminUser.id },
+    where: { id: 'seed-emp-genadmin' },
     update: {},
     create: {
       id: 'seed-emp-genadmin',

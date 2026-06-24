@@ -113,6 +113,8 @@ export function canDo(level: AccessLevel | undefined | null, action: ActionKey):
  * 더 구체적인(긴) prefix 가 우선한다.
  */
 export const ADMIN_ROUTE_GUARDS: ReadonlyArray<{ prefix: string; minLevel: AccessLevel }> = [
+  // 회사 추가는 SUPER_ADMIN 전용 (더 구체적인 prefix 가 /admin/settings 가드보다 우선)
+  { prefix: '/admin/settings/company/add', minLevel: AccessLevel.SUPER_ADMIN },
   { prefix: '/admin/organizations', minLevel: AccessLevel.GENERAL_ADMIN },
   { prefix: '/admin/approval/lines', minLevel: AccessLevel.GENERAL_ADMIN },
   { prefix: '/admin/approval/forms', minLevel: AccessLevel.GENERAL_ADMIN },

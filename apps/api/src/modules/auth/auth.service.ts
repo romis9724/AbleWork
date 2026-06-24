@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
@@ -19,6 +20,14 @@ import { AccessLevel } from '@ablework/shared-constants'
 
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000 // 30분
 const RESET_TOKEN_BYTES = 32
+
+export interface MyCompanyItem {
+  companyId: string
+  companyName: string
+  logoUrl: string | null
+  accessLevel: AccessLevel
+  isCurrent: boolean
+}
 
 @Injectable()
 export class AuthService {
@@ -37,7 +46,11 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email, isActive: true },
       include: {
-        employee: { select: { id: true, companyId: true, accessLevel: true, isActive: true } },
+        employees: {
+          where: { isActive: true },
+          select: { id: true, companyId: true, accessLevel: true, createdAt: true },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     })
 
@@ -47,18 +60,79 @@ export class AuthService {
     if (!passwordValid)
       throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.')
 
-    if (!user.employee || !user.employee.isActive) {
+    if (user.employees.length === 0) {
       throw new UnauthorizedException('비활성화된 계정입니다.')
     }
 
+    // 멀티컴퍼니: 마지막 선택 회사(lastCompanyId) 우선, 없으면 가장 먼저 가입한 회사
+    const activeEmployee =
+      user.employees.find((e) => e.companyId === user.lastCompanyId) ?? user.employees[0]
+
     const payload: JwtPayload = {
       sub: user.id,
-      employeeId: user.employee.id,
-      companyId: user.employee.companyId,
-      accessLevel: user.employee.accessLevel as AccessLevel,
+      employeeId: activeEmployee.id,
+      companyId: activeEmployee.companyId,
+      accessLevel: activeEmployee.accessLevel as AccessLevel,
     }
 
     return this.generateTokens(payload)
+  }
+
+  /**
+   * 회사 전환 — 사용자가 활성 멤버십을 가진 다른 회사로 토큰을 재발급한다.
+   * 선택 회사를 lastCompanyId에 기억한다.
+   */
+  async switchCompany(
+    userId: string,
+    companyId: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
+    const employee = await this.prisma.employee.findFirst({
+      where: { userId, companyId, isActive: true },
+      select: { id: true, companyId: true, accessLevel: true },
+    })
+
+    if (!employee) {
+      throw new ForbiddenException({
+        code: 'COMPANY_MEMBERSHIP_NOT_FOUND',
+        message: '해당 회사에 대한 접근 권한이 없습니다.',
+      })
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastCompanyId: companyId },
+    })
+
+    const payload: JwtPayload = {
+      sub: userId,
+      employeeId: employee.id,
+      companyId: employee.companyId,
+      accessLevel: employee.accessLevel as AccessLevel,
+    }
+
+    return this.generateTokens(payload)
+  }
+
+  /**
+   * 내 소속 회사 목록 — 회사 전환 UI용.
+   */
+  async getMyCompanies(userId: string, currentCompanyId: string): Promise<MyCompanyItem[]> {
+    const employees = await this.prisma.employee.findMany({
+      where: { userId, isActive: true },
+      select: {
+        accessLevel: true,
+        company: { select: { id: true, name: true, logoUrl: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    return employees.map((e) => ({
+      companyId: e.company.id,
+      companyName: e.company.name,
+      logoUrl: e.company.logoUrl,
+      accessLevel: e.accessLevel as AccessLevel,
+      isCurrent: e.company.id === currentCompanyId,
+    }))
   }
 
   async refresh(rawToken: string): Promise<{ accessToken: string; refreshToken: string }> {

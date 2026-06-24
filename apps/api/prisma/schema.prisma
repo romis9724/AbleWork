@@ -11,11 +11,26 @@ datasource db {
 }
 
 // ════════════════════════════════════════════════
-// 1. 회사 / 조직
+// 1. 그룹 / 회사 / 조직
 // ════════════════════════════════════════════════
+
+// 그룹(계열사 묶음) — 한 그룹에 여러 회사가 속한다.
+// 상위 역할/결제는 두지 않는다(멤버십만). 회사 묶음 컨테이너 역할.
+model Group {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  companies Company[]
+
+  @@map("groups")
+}
 
 model Company {
   id             String   @id @default(uuid())
+  groupId        String   @map("group_id")
   name           String   @db.VarChar(100)
   businessNumber String?  @db.VarChar(20) @map("business_number")
   foundedAt      DateTime? @db.Date @map("founded_at")
@@ -27,6 +42,7 @@ model Company {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
+  group                Group                    @relation(fields: [groupId], references: [id])
   organizations        Organization[]
   holidays             CompanyHoliday[]
   settings             CompanySetting[]
@@ -58,6 +74,7 @@ model Company {
   messengerAccounts    MessengerAccount[]
   errorAnalysisLogs    ErrorAnalysisLog[]
 
+  @@index([groupId])
   @@map("companies")
 }
 
@@ -150,10 +167,13 @@ model User {
   timezone         String   @default("Asia/Seoul")
   twoFactorEnabled Boolean  @default(false) @map("two_factor_enabled")
   isActive         Boolean  @default(true) @map("is_active")
+  // 마지막으로 선택한 활성 회사 (멀티컴퍼니 전환 기억). FK 강제 안 함 — 로그인 시 유효성 재검증.
+  lastCompanyId    String?  @map("last_company_id")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  employee Employee?
+  // 멀티컴퍼니: 한 사용자가 회사마다 Employee 레코드를 가질 수 있다 (1:N).
+  employees           Employee[]
   passwordResetTokens PasswordResetToken[]
 
   @@map("users")
@@ -176,7 +196,9 @@ model PasswordResetToken {
 model Employee {
   id             String    @id @default(uuid())
   companyId      String    @map("company_id")
-  userId         String?   @unique @map("user_id")
+  // 멀티컴퍼니: userId는 더 이상 전역 unique가 아니다. 한 사용자가 여러 회사에 소속 가능.
+  // 회사 내 중복 멤버십만 @@unique([companyId, userId])로 방지한다.
+  userId         String?   @map("user_id")
   employeeNumber String?   @map("employee_number") @db.VarChar(50)
   name           String    @db.VarChar(50)
   phone          String?   @db.VarChar(20)
@@ -220,8 +242,10 @@ model Employee {
   createdSharedLines    SharedApprovalLine[]       @relation("SharedLineCreatedBy")
   messengerAccounts     MessengerAccount[]
 
+  @@unique([companyId, userId])
   @@index([companyId, isActive])
   @@index([companyId, accessLevel])
+  @@index([userId])
   @@map("employees")
 }
 

@@ -37,6 +37,9 @@ const mockEmployee = {
 }
 
 const mockPrisma = {
+  group: {
+    create: jest.fn(),
+  },
   company: {
     create: jest.fn(),
     findFirst: jest.fn(),
@@ -45,9 +48,11 @@ const mockPrisma = {
   user: {
     create: jest.fn(),
     findUnique: jest.fn(),
+    update: jest.fn(),
   },
   employee: {
     create: jest.fn(),
+    findFirst: jest.fn(),
   },
   companySetting: {
     upsert: jest.fn(),
@@ -83,10 +88,11 @@ describe('CompaniesService', () => {
       adminName: '관리자',
     }
 
-    it('회사, 사용자, 직원을 트랜잭션으로 생성한다', async () => {
+    it('그룹, 회사, 사용자, 직원을 트랜잭션으로 생성한다', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(null)
       mockPrisma.$transaction.mockImplementation(async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => {
         const txMock = {
+          group: { create: jest.fn().mockResolvedValue({ id: 'group-1', name: '테스트 회사' }) },
           company: { create: jest.fn().mockResolvedValue(mockCompany) },
           user: { create: jest.fn().mockResolvedValue(mockUser) },
           employee: { create: jest.fn().mockResolvedValue(mockEmployee) },
@@ -162,52 +168,76 @@ describe('CompaniesService', () => {
   })
 
   describe('joinByInviteCode', () => {
-    const joinDto = {
-      inviteCode: 'ABC123',
-      email: 'employee@test.com',
-      password: 'Password123',
-      name: '신규 직원',
-    }
+    const joinDto = { inviteCode: 'ABC123' }
 
-    it('유효한 코드로 사용자와 직원을 생성한다', async () => {
-      mockPrisma.companySetting.findFirst.mockResolvedValue({
+    it('유효한 코드로 현재 사용자를 회사 멤버(EMPLOYEE)로 추가한다', async () => {
+      mockPrisma.companySetting.findFirst.mockResolvedValue({ companyId: 'company-1', value: 'ABC123' })
+      mockPrisma.user.findUnique.mockResolvedValue({ name: '신규 직원' })
+      mockPrisma.employee.findFirst.mockResolvedValue(null)
+      mockPrisma.employee.create.mockResolvedValue({
+        id: 'emp-2',
         companyId: 'company-1',
-        value: 'ABC123',
-      })
-      mockPrisma.user.findUnique.mockResolvedValue(null)
-      mockPrisma.$transaction.mockImplementation(async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => {
-        const txMock = {
-          user: { create: jest.fn().mockResolvedValue({ id: 'user-2', email: 'employee@test.com' }) },
-          employee: {
-            create: jest.fn().mockResolvedValue({
-              id: 'emp-2',
-              companyId: 'company-1',
-              accessLevel: 'EMPLOYEE',
-            }),
-          },
-        }
-        return fn(txMock as unknown as typeof mockPrisma)
+        accessLevel: 'EMPLOYEE',
       })
 
-      const result = await service.joinByInviteCode(joinDto)
+      const result = await service.joinByInviteCode('user-2', joinDto)
 
-      expect(result.user.email).toBe('employee@test.com')
       expect(result.employee.accessLevel).toBe('EMPLOYEE')
+      expect(mockPrisma.employee.create).toHaveBeenCalledTimes(1)
     })
 
     it('유효하지 않은 코드로 BadRequestException을 던진다', async () => {
       mockPrisma.companySetting.findFirst.mockResolvedValue(null)
 
-      await expect(service.joinByInviteCode({ ...joinDto, inviteCode: 'WRONG1' })).rejects.toThrow(
+      await expect(service.joinByInviteCode('user-2', { inviteCode: 'WRONG1' })).rejects.toThrow(
         BadRequestException,
       )
     })
 
-    it('이미 사용 중인 이메일로 BadRequestException을 던진다', async () => {
+    it('이미 해당 회사 멤버이면 BadRequestException을 던진다', async () => {
       mockPrisma.companySetting.findFirst.mockResolvedValue({ companyId: 'company-1', value: 'ABC123' })
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser)
+      mockPrisma.user.findUnique.mockResolvedValue({ name: '기존 직원' })
+      mockPrisma.employee.findFirst.mockResolvedValue({ id: 'emp-existing' })
 
-      await expect(service.joinByInviteCode(joinDto)).rejects.toThrow(BadRequestException)
+      await expect(service.joinByInviteCode('user-2', joinDto)).rejects.toThrow(BadRequestException)
+    })
+  })
+
+  describe('addCompany', () => {
+    const addDto = {
+      name: '새 계열사',
+      timezone: 'Asia/Seoul',
+      locale: 'ko-KR',
+      countryCode: 'KR',
+    }
+
+    it('같은 그룹에 회사를 만들고 현재 사용자를 SUPER_ADMIN으로 등록한다', async () => {
+      mockPrisma.company.findFirst.mockResolvedValue({ groupId: 'group-1' })
+      mockPrisma.user.findUnique.mockResolvedValue({ name: '관리자' })
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => {
+        const txMock = {
+          company: {
+            create: jest.fn().mockResolvedValue({ ...mockCompany, id: 'company-2', groupId: 'group-1' }),
+          },
+          employee: {
+            create: jest.fn().mockResolvedValue({ id: 'emp-3', companyId: 'company-2', accessLevel: 'SUPER_ADMIN' }),
+          },
+        }
+        return fn(txMock as unknown as typeof mockPrisma)
+      })
+
+      const result = await service.addCompany('company-1', 'user-1', addDto)
+
+      expect(result.company.id).toBe('company-2')
+      expect(result.employee.accessLevel).toBe('SUPER_ADMIN')
+    })
+
+    it('현재 회사가 없으면 NotFoundException을 던진다', async () => {
+      mockPrisma.company.findFirst.mockResolvedValue(null)
+
+      await expect(service.addCompany('non-existent', 'user-1', addDto)).rejects.toThrow(
+        NotFoundException,
+      )
     })
   })
 })

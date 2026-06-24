@@ -5,23 +5,11 @@ import apiClient from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth.store'
 import { Sigil } from '@/components/ab/icons'
 import { ThemeSwitcher } from '@/components/ab/ThemeSwitcher'
-import type { AccessLevel } from '@ablework/shared-constants'
+import { parseJwt, writeAuthCookies } from '@/lib/auth-session'
 
 interface LoginResponse {
   accessToken: string
   refreshToken: string
-}
-
-interface JwtClaims {
-  sub: string
-  employeeId: string
-  companyId: string
-  accessLevel: AccessLevel
-}
-
-function parseJwt(token: string): JwtClaims {
-  const payload = token.split('.')[1]
-  return JSON.parse(atob(payload))
 }
 
 export default function LoginPage() {
@@ -41,8 +29,7 @@ export default function LoginPage() {
       const res = await apiClient.post<LoginResponse>('/auth/login', { email, password })
       const { accessToken, refreshToken } = res as unknown as LoginResponse
 
-      document.cookie = `accessToken=${accessToken}; path=/; max-age=${15 * 60}`
-      document.cookie = `refreshToken=${refreshToken}; path=/; max-age=${7 * 24 * 60 * 60}`
+      writeAuthCookies(accessToken, refreshToken)
 
       const claims = parseJwt(accessToken)
       setUser({

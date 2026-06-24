@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { UnauthorizedException, BadRequestException } from '@nestjs/common'
+import { UnauthorizedException, BadRequestException, ForbiddenException } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import { getQueueToken } from '@nestjs/bullmq'
@@ -15,6 +15,8 @@ const mockPrisma = {
   },
   employee: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
   },
   passwordResetToken: {
     create: jest.fn(),
@@ -66,12 +68,36 @@ describe('AuthService', () => {
         id: 'user-1',
         email: 'test@test.com',
         passwordHash: hash,
-        employee: { id: 'emp-1', companyId: 'co-1', accessLevel: 'EMPLOYEE', isActive: true },
+        lastCompanyId: null,
+        employees: [
+          { id: 'emp-1', companyId: 'co-1', accessLevel: 'EMPLOYEE', createdAt: new Date() },
+        ],
       })
 
       const result = await service.login({ email: 'test@test.com', password: 'password123' })
       expect(result).toHaveProperty('accessToken')
       expect(result).toHaveProperty('refreshToken')
+    })
+
+    it('lastCompanyId가 있으면 해당 회사 멤버십을 활성으로 선택한다', async () => {
+      const hash = await bcrypt.hash('password123', 10)
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'test@test.com',
+        passwordHash: hash,
+        lastCompanyId: 'co-2',
+        employees: [
+          { id: 'emp-1', companyId: 'co-1', accessLevel: 'EMPLOYEE', createdAt: new Date() },
+          { id: 'emp-2', companyId: 'co-2', accessLevel: 'SUPER_ADMIN', createdAt: new Date() },
+        ],
+      })
+
+      await service.login({ email: 'test@test.com', password: 'password123' })
+
+      expect(mockJwt.sign).toHaveBeenCalledWith(
+        expect.objectContaining({ employeeId: 'emp-2', companyId: 'co-2', accessLevel: 'SUPER_ADMIN' }),
+        expect.anything(),
+      )
     })
 
     it('잘못된 비밀번호로 UnauthorizedException을 던진다', async () => {
@@ -80,11 +106,29 @@ describe('AuthService', () => {
         id: 'user-1',
         email: 'test@test.com',
         passwordHash: hash,
-        employee: { id: 'emp-1', companyId: 'co-1', accessLevel: 'EMPLOYEE', isActive: true },
+        lastCompanyId: null,
+        employees: [
+          { id: 'emp-1', companyId: 'co-1', accessLevel: 'EMPLOYEE', createdAt: new Date() },
+        ],
       })
 
       await expect(
         service.login({ email: 'test@test.com', password: 'wrong_password' }),
+      ).rejects.toThrow(UnauthorizedException)
+    })
+
+    it('소속 회사가 없으면 UnauthorizedException을 던진다', async () => {
+      const hash = await bcrypt.hash('password123', 10)
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'test@test.com',
+        passwordHash: hash,
+        lastCompanyId: null,
+        employees: [],
+      })
+
+      await expect(
+        service.login({ email: 'test@test.com', password: 'password123' }),
       ).rejects.toThrow(UnauthorizedException)
     })
 
@@ -93,6 +137,50 @@ describe('AuthService', () => {
       await expect(
         service.login({ email: 'nobody@test.com', password: 'any' }),
       ).rejects.toThrow(UnauthorizedException)
+    })
+  })
+
+  describe('switchCompany', () => {
+    it('멤버십이 있는 회사로 전환하고 lastCompanyId를 기록한다', async () => {
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        id: 'emp-2',
+        companyId: 'co-2',
+        accessLevel: 'SUPER_ADMIN',
+      })
+      mockPrisma.user.update.mockResolvedValue({})
+
+      const result = await service.switchCompany('user-1', 'co-2')
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { lastCompanyId: 'co-2' },
+      })
+      expect(mockJwt.sign).toHaveBeenCalledWith(
+        expect.objectContaining({ employeeId: 'emp-2', companyId: 'co-2' }),
+        expect.anything(),
+      )
+      expect(result).toHaveProperty('accessToken')
+    })
+
+    it('멤버십이 없는 회사로 전환 시 ForbiddenException을 던진다', async () => {
+      mockPrisma.employee.findFirst.mockResolvedValue(null)
+
+      await expect(service.switchCompany('user-1', 'co-x')).rejects.toThrow(ForbiddenException)
+    })
+  })
+
+  describe('getMyCompanies', () => {
+    it('내 활성 회사 목록을 반환하고 현재 회사를 표시한다', async () => {
+      mockPrisma.employee.findMany.mockResolvedValue([
+        { accessLevel: 'EMPLOYEE', company: { id: 'co-1', name: 'A사', logoUrl: null } },
+        { accessLevel: 'SUPER_ADMIN', company: { id: 'co-2', name: 'B사', logoUrl: null } },
+      ])
+
+      const result = await service.getMyCompanies('user-1', 'co-2')
+
+      expect(result).toHaveLength(2)
+      expect(result.find((c) => c.companyId === 'co-2')?.isCurrent).toBe(true)
+      expect(result.find((c) => c.companyId === 'co-1')?.isCurrent).toBe(false)
     })
   })
 
