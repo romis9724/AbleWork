@@ -11,10 +11,11 @@ import { useAuthStore } from '@/stores/auth.store'
 import { canViewNav } from '@ablework/shared-constants'
 import { useToast } from './Toast'
 import { ThemeSwitcher } from './ThemeSwitcher'
+import { CompanySwitcher } from './CompanySwitcher'
+import { clearAuthCookies } from '@/lib/auth-session'
 
 function logout(push: (p: string) => void, clearUser: () => void) {
-  document.cookie = 'accessToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT'
-  document.cookie = 'refreshToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT'
+  clearAuthCookies()
   clearUser()
   push('/login')
 }
@@ -48,6 +49,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <span className="hd-admin">Admin</span>
         </div>
         <div className="hd-right">
+          <CompanySwitcher />
           <div className="hd-user">
             <span className="hd-user-name">
               <b>{user?.name ?? '관리자'}</b>

@@ -22,6 +22,7 @@ import { AccessLevel } from '@ablework/shared-constants'
 import { CreateCompanySchema, CreateCompanyDto } from './dto/create-company.dto'
 import { UpdateCompanySchema, UpdateCompanyDto } from './dto/update-company.dto'
 import { JoinCompanySchema, JoinCompanyDto } from './dto/join-company.dto'
+import { AddCompanySchema, AddCompanyDto } from './dto/add-company.dto'
 
 @ApiTags('companies')
 @Controller('companies')
@@ -30,9 +31,23 @@ export class CompaniesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: '회사 생성 (최초 가입)' })
+  @ApiOperation({ summary: '회사 생성 (신규 그룹 최초 가입)' })
   create(@Body(new ZodValidationPipe(CreateCompanySchema)) dto: CreateCompanyDto) {
     return this.companiesService.create(dto)
+  }
+
+  @Post('add')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(AccessLevel.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: '같은 그룹에 회사 추가 (SUPER_ADMIN)' })
+  addCompany(
+    @CompanyId() companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body(new ZodValidationPipe(AddCompanySchema)) dto: AddCompanyDto,
+  ) {
+    return this.companiesService.addCompany(companyId, user.sub, dto)
   }
 
   @Get(':id')
@@ -61,9 +76,12 @@ export class CompaniesController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: '합류코드로 회사 합류' })
-  join(@Body(new ZodValidationPipe(JoinCompanySchema)) dto: JoinCompanyDto) {
-    return this.companiesService.joinByInviteCode(dto)
+  @ApiOperation({ summary: '합류코드로 다른 회사 합류 (멀티컴퍼니)' })
+  join(
+    @CurrentUser() user: JwtPayload,
+    @Body(new ZodValidationPipe(JoinCompanySchema)) dto: JoinCompanyDto,
+  ) {
+    return this.companiesService.joinByInviteCode(user.sub, dto)
   }
 
   @Post('invite-code')

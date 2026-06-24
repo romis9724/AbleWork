@@ -10,6 +10,7 @@ import { AuditService } from '../audit/audit.service'
 import { CreateCompanyDto } from './dto/create-company.dto'
 import { UpdateCompanyDto } from './dto/update-company.dto'
 import { JoinCompanyDto } from './dto/join-company.dto'
+import { AddCompanyDto } from './dto/add-company.dto'
 import { AccessLevel } from '@ablework/shared-constants'
 
 const INVITE_CODE_SECTION = 'invite'
@@ -22,6 +23,11 @@ export class CompaniesService {
     private readonly audit: AuditService,
   ) {}
 
+  /**
+   * 신규 그룹 부트스트랩 (최초 가입, 공개).
+   * 그룹 → 회사 → User → Employee(SUPER_ADMIN)를 한 트랜잭션으로 생성한다.
+   * 신규 user 전제이므로 이메일 중복 시 에러.
+   */
   async create(dto: CreateCompanyDto) {
     const { adminEmail, adminPassword, adminName, ...companyData } = dto
 
@@ -36,7 +42,11 @@ export class CompaniesService {
     const passwordHash = await bcrypt.hash(adminPassword, 10)
 
     return this.prisma.$transaction(async (tx) => {
-      const company = await tx.company.create({ data: companyData })
+      const group = await tx.group.create({ data: { name: companyData.name } })
+
+      const company = await tx.company.create({
+        data: { ...companyData, groupId: group.id },
+      })
 
       const user = await tx.user.create({
         data: {
@@ -44,6 +54,7 @@ export class CompaniesService {
           passwordHash,
           name: adminName,
           isActive: true,
+          lastCompanyId: company.id,
         },
       })
 
@@ -60,6 +71,54 @@ export class CompaniesService {
       })
 
       return { company, user: { id: user.id, email: user.email }, employee }
+    })
+  }
+
+  /**
+   * 같은 그룹에 새 회사 추가 (로그인한 SUPER_ADMIN).
+   * 현재 활성 회사의 그룹에 새 회사를 만들고, 현재 사용자를 새 회사 SUPER_ADMIN으로 등록한다.
+   */
+  async addCompany(currentCompanyId: string, userId: string, dto: AddCompanyDto) {
+    const current = await this.prisma.company.findFirst({
+      where: { id: currentCompanyId, isActive: true },
+      select: { groupId: true },
+    })
+    if (!current) {
+      throw new NotFoundException({
+        code: 'COMPANY_NOT_FOUND',
+        message: '회사를 찾을 수 없습니다.',
+      })
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    })
+    if (!user) {
+      throw new NotFoundException({
+        code: 'USER_NOT_FOUND',
+        message: '사용자를 찾을 수 없습니다.',
+      })
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const company = await tx.company.create({
+        data: { ...dto, groupId: current.groupId },
+      })
+
+      const employee = await tx.employee.create({
+        data: {
+          companyId: company.id,
+          userId,
+          name: user.name,
+          accessLevel: AccessLevel.SUPER_ADMIN,
+          employmentType: 'regular',
+          joinedAt: new Date(),
+          isActive: true,
+        },
+      })
+
+      return { company, employee }
     })
   }
 
@@ -145,8 +204,12 @@ export class CompaniesService {
     return { inviteCode: code }
   }
 
-  async joinByInviteCode(dto: JoinCompanyDto) {
-    const { inviteCode, email, password, name } = dto
+  /**
+   * 합류코드로 다른 회사에 합류 (로그인한 사용자, 멀티컴퍼니 멤버십 추가).
+   * 현재 사용자를 합류코드 대상 회사의 EMPLOYEE로 등록한다. 이미 멤버면 차단.
+   */
+  async joinByInviteCode(userId: string, dto: JoinCompanyDto) {
+    const { inviteCode } = dto
 
     const setting = await this.prisma.companySetting.findFirst({
       where: {
@@ -163,40 +226,41 @@ export class CompaniesService {
       })
     }
 
-    const existingUser = await this.prisma.user.findUnique({ where: { email } })
-    if (existingUser) {
-      throw new BadRequestException({
-        code: 'COMPANY_EMAIL_ALREADY_EXISTS',
-        message: '이미 사용 중인 이메일입니다.',
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    })
+    if (!user) {
+      throw new NotFoundException({
+        code: 'USER_NOT_FOUND',
+        message: '사용자를 찾을 수 없습니다.',
       })
     }
 
-    const passwordHash = await bcrypt.hash(password, 10)
-
-    return this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          email,
-          passwordHash,
-          name,
-          isActive: true,
-        },
-      })
-
-      const employee = await tx.employee.create({
-        data: {
-          companyId: setting.companyId,
-          userId: user.id,
-          name,
-          accessLevel: AccessLevel.EMPLOYEE,
-          employmentType: 'regular',
-          joinedAt: new Date(),
-          isActive: true,
-        },
-      })
-
-      return { user: { id: user.id, email: user.email }, employee }
+    const existingMembership = await this.prisma.employee.findFirst({
+      where: { companyId: setting.companyId, userId },
+      select: { id: true },
     })
+    if (existingMembership) {
+      throw new BadRequestException({
+        code: 'COMPANY_ALREADY_MEMBER',
+        message: '이미 해당 회사에 소속되어 있습니다.',
+      })
+    }
+
+    const employee = await this.prisma.employee.create({
+      data: {
+        companyId: setting.companyId,
+        userId,
+        name: user.name,
+        accessLevel: AccessLevel.EMPLOYEE,
+        employmentType: 'regular',
+        joinedAt: new Date(),
+        isActive: true,
+      },
+    })
+
+    return { employee }
   }
 
   private generateRandomCode(length: number): string {

@@ -13,6 +13,13 @@ export const RefreshTokenSchema = z.object({
 
 export type RefreshTokenDto = z.infer<typeof RefreshTokenSchema>
 
+export const SwitchCompanySchema = z.object({
+  // 멤버십 검증(서비스 레이어)이 실질 방어. 포맷은 비어있지 않은 문자열만 요구.
+  companyId: z.string().min(1, '회사 ID가 필요합니다.'),
+})
+
+export type SwitchCompanyDto = z.infer<typeof SwitchCompanySchema>
+
 export const ChangePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, '현재 비밀번호를 입력하세요.'),

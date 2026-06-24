@@ -1,15 +1,18 @@
-import { Controller, Post, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
+import { Controller, Post, Get, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { AuthService } from './auth.service'
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
+import { CompanyId } from '../../common/decorators/company-id.decorator'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import {
   LoginDto,
   LoginSchema,
   RefreshTokenDto,
   RefreshTokenSchema,
+  SwitchCompanyDto,
+  SwitchCompanySchema,
   ChangePasswordDto,
   ChangePasswordSchema,
   ForgotPasswordDto,
@@ -35,6 +38,26 @@ export class AuthController {
   @ApiOperation({ summary: 'Access Token 갱신' })
   refresh(@Body(new ZodValidationPipe(RefreshTokenSchema)) dto: RefreshTokenDto) {
     return this.authService.refresh(dto.refreshToken)
+  }
+
+  @Get('my-companies')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '내 소속 회사 목록 (회사 전환용)' })
+  myCompanies(@CurrentUser() user: JwtPayload, @CompanyId() companyId: string) {
+    return this.authService.getMyCompanies(user.sub, companyId)
+  }
+
+  @Post('switch-company')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '회사 전환 (토큰 재발급)' })
+  switchCompany(
+    @CurrentUser() user: JwtPayload,
+    @Body(new ZodValidationPipe(SwitchCompanySchema)) dto: SwitchCompanyDto,
+  ) {
+    return this.authService.switchCompany(user.sub, dto.companyId)
   }
 
   @Post('forgot-password')
