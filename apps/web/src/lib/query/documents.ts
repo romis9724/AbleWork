@@ -216,6 +216,7 @@ export interface ProxySetting {
 
 const FORMS_KEY = ['document-forms']
 const LINES_KEY = ['shared-approval-lines']
+const PERSONAL_LINES_KEY = ['personal-approval-lines']
 const DOCS_KEY = ['documents']
 const PROXY_KEY = ['proxy-settings']
 
@@ -390,6 +391,38 @@ export const useDeleteSharedApprovalLine = () => {
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/shared-approval-lines/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: LINES_KEY }),
+  })
+}
+
+// ---------- 개인 결재선 (빠른 결재선 불러오기) ----------
+
+/** 내 결재선 목록 — 본인 소유분. 결재선명 부분검색 지원. */
+export const usePersonalApprovalLines = (search?: string) => {
+  const trimmed = search?.trim()
+  const params = trimmed ? { search: trimmed } : undefined
+  return useQuery({
+    queryKey: params ? [...PERSONAL_LINES_KEY, params] : PERSONAL_LINES_KEY,
+    queryFn: () =>
+      apiClient.get('/personal-approval-lines', { params }) as Promise<SharedApprovalLine[]>,
+    staleTime: 60_000,
+  })
+}
+
+/** 현재 결재선 구성을 내 결재선으로 저장 */
+export const useSavePersonalApprovalLine = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { name: string; steps: ApprovalStepInput[] }) =>
+      apiClient.post('/personal-approval-lines', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: PERSONAL_LINES_KEY }),
+  })
+}
+
+export const useDeletePersonalApprovalLine = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/personal-approval-lines/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: PERSONAL_LINES_KEY }),
   })
 }
 

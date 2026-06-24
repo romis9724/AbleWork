@@ -8,6 +8,7 @@ import { ApprovalActionsService } from './approval-actions.service'
 import { DocumentFormsController } from './document-forms.controller'
 import { DocumentFormsService } from './document-forms.service'
 import { SharedApprovalLinesController } from './shared-approval-lines.controller'
+import { PersonalApprovalLinesController } from './personal-approval-lines.controller'
 import { SharedApprovalLinesService } from './shared-approval-lines.service'
 import { ProxySettingsController } from './proxy-settings.controller'
 import { ProxySettingsService } from './proxy-settings.service'
@@ -29,6 +30,7 @@ import { FormCategoriesService } from './form-categories.service'
     DocumentFormsController,
     FormCategoriesController,
     SharedApprovalLinesController,
+    PersonalApprovalLinesController,
     ProxySettingsController,
     AttachmentsController,
     DocumentsController,

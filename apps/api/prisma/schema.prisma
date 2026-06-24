@@ -972,7 +972,9 @@ model SharedApprovalLine {
   name        String   @db.VarChar(100)
   steps       Json
   version     Int      @default(1)
-  // 작성자 (감사/표시용) — 직원 삭제 시 SetNull
+  // 결재선 범위 — COMPANY(공용, 관리자 관리·전 직원 사용) | PERSONAL(개인, 작성자 본인만 관리·사용)
+  scope       String   @default("COMPANY") @db.VarChar(20)
+  // 작성자 (공용: 감사/표시용 · 개인: 소유자) — 직원 삭제 시 SetNull
   createdById String?  @map("created_by_id")
   updatedAt   DateTime @updatedAt @map("updated_at")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -982,6 +984,7 @@ model SharedApprovalLine {
   approvalLines ApprovalLine[]
   defaultForForms DocumentForm[] @relation("FormDefaultLine")
 
+  @@index([companyId, scope, createdById])
   @@map("shared_approval_lines")
 }
 

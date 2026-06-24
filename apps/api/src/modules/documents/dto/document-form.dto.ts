@@ -121,9 +121,15 @@ export const SharedLineFilterSchema = z
     path: ['dateTo'],
   })
 
+// 개인 결재선 목록 필터 — 본인 소유분만 조회하므로 결재선명 부분검색만 받는다.
+export const PersonalLineFilterSchema = z.object({
+  search: z.string().trim().max(100).optional(),
+})
+
 export type CreateDocumentFormDto = z.infer<typeof CreateDocumentFormSchema>
 export type UpdateDocumentFormDto = z.infer<typeof UpdateDocumentFormSchema>
 export type UpsertNumberRuleDto = z.infer<typeof UpsertNumberRuleSchema>
 export type CreateSharedLineDto = z.infer<typeof CreateSharedLineSchema>
 export type UpdateSharedLineDto = z.infer<typeof UpdateSharedLineSchema>
 export type SharedLineFilterDto = z.infer<typeof SharedLineFilterSchema>
+export type PersonalLineFilterDto = z.infer<typeof PersonalLineFilterSchema>

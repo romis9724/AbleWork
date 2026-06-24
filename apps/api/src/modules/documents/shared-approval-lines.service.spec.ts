@@ -72,7 +72,7 @@ describe('SharedApprovalLinesService', () => {
 
       expect(result).toEqual(lines)
       expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith({
-        where: { companyId: COMPANY_ID },
+        where: { companyId: COMPANY_ID, scope: 'COMPANY' },
         orderBy: { name: 'asc' },
         include: { createdBy: { select: { id: true, name: true } } },
       })
@@ -82,7 +82,9 @@ describe('SharedApprovalLinesService', () => {
       mockPrisma.sharedApprovalLine.findMany.mockResolvedValue([])
       await service.findAll(COMPANY_ID, { search: '표준' })
       expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { companyId: COMPANY_ID, name: { contains: '표준' } } }),
+        expect.objectContaining({
+          where: { companyId: COMPANY_ID, scope: 'COMPANY', name: { contains: '표준' } },
+        }),
       )
     })
 
@@ -92,7 +94,7 @@ describe('SharedApprovalLinesService', () => {
       await service.findAll(OTHER_COMPANY_ID)
 
       expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { companyId: OTHER_COMPANY_ID } }),
+        expect.objectContaining({ where: { companyId: OTHER_COMPANY_ID, scope: 'COMPANY' } }),
       )
     })
 
@@ -104,6 +106,7 @@ describe('SharedApprovalLinesService', () => {
         expect.objectContaining({
           where: {
             companyId: COMPANY_ID,
+            scope: 'COMPANY',
             createdBy: {
               is: {
                 OR: [
@@ -124,6 +127,7 @@ describe('SharedApprovalLinesService', () => {
         expect.objectContaining({
           where: {
             companyId: COMPANY_ID,
+            scope: 'COMPANY',
             createdAt: {
               gte: new Date('2026-01-01T00:00:00.000+09:00'),
               lte: new Date('2026-01-31T23:59:59.999+09:00'),
@@ -179,7 +183,13 @@ describe('SharedApprovalLinesService', () => {
 
       expect(result).toEqual(baseLine)
       expect(mockPrisma.sharedApprovalLine.create).toHaveBeenCalledWith({
-        data: { companyId: COMPANY_ID, name: '표준 결재선', steps: baseSteps, createdById: 'creator-1' },
+        data: {
+          companyId: COMPANY_ID,
+          name: '표준 결재선',
+          steps: baseSteps,
+          createdById: 'creator-1',
+          scope: 'COMPANY',
+        },
       })
     })
 
@@ -355,7 +365,7 @@ describe('SharedApprovalLinesService', () => {
 
       // 소속 검증 쿼리에 companyId 필터 포함
       expect(mockPrisma.sharedApprovalLine.findFirst).toHaveBeenCalledWith({
-        where: { id: LINE_ID, companyId: OTHER_COMPANY_ID },
+        where: { id: LINE_ID, companyId: OTHER_COMPANY_ID, scope: 'COMPANY' },
       })
     })
 
@@ -407,7 +417,7 @@ describe('SharedApprovalLinesService', () => {
       )
 
       expect(mockPrisma.sharedApprovalLine.findFirst).toHaveBeenCalledWith({
-        where: { id: LINE_ID, companyId: OTHER_COMPANY_ID },
+        where: { id: LINE_ID, companyId: OTHER_COMPANY_ID, scope: 'COMPANY' },
       })
     })
 
@@ -442,6 +452,156 @@ describe('SharedApprovalLinesService', () => {
           where: expect.objectContaining({ companyId: COMPANY_ID }),
         }),
       )
+    })
+  })
+
+  // ── 개인 결재선 (PERSONAL) — 빠른 결재선 불러오기 ──────────────────────────────
+
+  describe('findPersonal', () => {
+    it('본인 소유 개인 결재선만 scope·createdById로 이름순 조회한다', async () => {
+      const personalLine = { ...baseLine, scope: 'PERSONAL', createdById: 'owner-1' }
+      mockPrisma.sharedApprovalLine.findMany.mockResolvedValue([personalLine])
+
+      const result = await service.findPersonal(COMPANY_ID, 'owner-1')
+
+      expect(result).toEqual([personalLine])
+      expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith({
+        where: { companyId: COMPANY_ID, scope: 'PERSONAL', createdById: 'owner-1' },
+        orderBy: { name: 'asc' },
+      })
+    })
+
+    it('search 필터 시 name contains 조건을 추가한다', async () => {
+      mockPrisma.sharedApprovalLine.findMany.mockResolvedValue([])
+      await service.findPersonal(COMPANY_ID, 'owner-1', { search: '자주쓰는' })
+      expect(mockPrisma.sharedApprovalLine.findMany).toHaveBeenCalledWith({
+        where: {
+          companyId: COMPANY_ID,
+          scope: 'PERSONAL',
+          createdById: 'owner-1',
+          name: { contains: '자주쓰는' },
+        },
+        orderBy: { name: 'asc' },
+      })
+    })
+  })
+
+  describe('createPersonal', () => {
+    const dto: CreateSharedLineDto = { name: '내 결재선', steps: baseSteps }
+
+    it('scope=PERSONAL·소유자(createdById)로 개인 결재선을 생성한다', async () => {
+      mockPrisma.employee.count.mockResolvedValue(2)
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(null) // 이름 중복 없음
+      mockPrisma.sharedApprovalLine.create.mockResolvedValue({ ...baseLine, scope: 'PERSONAL' })
+
+      await service.createPersonal(COMPANY_ID, dto, 'owner-1')
+
+      expect(mockPrisma.sharedApprovalLine.create).toHaveBeenCalledWith({
+        data: {
+          companyId: COMPANY_ID,
+          name: '내 결재선',
+          steps: baseSteps,
+          createdById: 'owner-1',
+          scope: 'PERSONAL',
+        },
+      })
+    })
+
+    it('이름 중복 검증은 본인(createdById)·PERSONAL 범위로만 수행한다', async () => {
+      mockPrisma.employee.count.mockResolvedValue(2)
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(null)
+      mockPrisma.sharedApprovalLine.create.mockResolvedValue(baseLine)
+
+      await service.createPersonal(COMPANY_ID, dto, 'owner-1')
+
+      expect(mockPrisma.sharedApprovalLine.findFirst).toHaveBeenCalledWith({
+        where: {
+          companyId: COMPANY_ID,
+          scope: 'PERSONAL',
+          name: '내 결재선',
+          createdById: 'owner-1',
+        },
+        select: { id: true },
+      })
+    })
+
+    it('[중복 허용] 동일 인원을 여러 결재 단계에 배치해도 생성된다', async () => {
+      const dupDto: CreateSharedLineDto = {
+        name: '중복 인원 결재선',
+        steps: [
+          { role: 'APPROVER', assigneeId: 'emp-1', stepOrder: 0 },
+          { role: 'APPROVER', assigneeId: 'emp-1', stepOrder: 1 },
+        ],
+      }
+      mockPrisma.employee.count.mockResolvedValue(1)
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(null)
+      mockPrisma.sharedApprovalLine.create.mockResolvedValue(baseLine)
+
+      await expect(service.createPersonal(COMPANY_ID, dupDto, 'owner-1')).resolves.toBeDefined()
+      expect(mockPrisma.sharedApprovalLine.create).toHaveBeenCalled()
+    })
+  })
+
+  describe('updatePersonal / removePersonal — 소유자 격리', () => {
+    const ownLine = { ...baseLine, scope: 'PERSONAL', createdById: 'owner-1' }
+
+    it('[HIGH] 타인 소유 결재선 수정 시 PERSONAL_LINE_FORBIDDEN', async () => {
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue({
+        ...baseLine,
+        scope: 'PERSONAL',
+        createdById: 'other-owner',
+      })
+
+      await expect(
+        service.updatePersonal(COMPANY_ID, LINE_ID, { name: 'x' }, 'owner-1'),
+      ).rejects.toMatchObject({ response: { code: 'PERSONAL_LINE_FORBIDDEN' } })
+      expect(mockPrisma.sharedApprovalLine.update).not.toHaveBeenCalled()
+    })
+
+    it('[HIGH] 존재하지 않으면 PERSONAL_LINE_NOT_FOUND', async () => {
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(null)
+
+      await expect(
+        service.removePersonal(COMPANY_ID, 'nope', 'owner-1'),
+      ).rejects.toMatchObject({ response: { code: 'PERSONAL_LINE_NOT_FOUND' } })
+      expect(mockPrisma.sharedApprovalLine.delete).not.toHaveBeenCalled()
+    })
+
+    it('소유자 검증 findFirst는 scope=PERSONAL로 한정한다 (공용 결재선 오접근 차단)', async () => {
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(null)
+
+      await expect(service.removePersonal(COMPANY_ID, LINE_ID, 'owner-1')).rejects.toThrow(
+        NotFoundException,
+      )
+      expect(mockPrisma.sharedApprovalLine.findFirst).toHaveBeenCalledWith({
+        where: { id: LINE_ID, companyId: COMPANY_ID, scope: 'PERSONAL' },
+      })
+    })
+
+    it('본인 소유분 수정은 검증 후 반영된다', async () => {
+      mockPrisma.sharedApprovalLine.findFirst
+        .mockResolvedValueOnce(ownLine) // 소유자 검증
+        .mockResolvedValueOnce(null) // 이름 중복 없음
+      mockPrisma.sharedApprovalLine.update.mockResolvedValue({ ...ownLine, name: '수정' })
+
+      await service.updatePersonal(COMPANY_ID, LINE_ID, { name: '수정' }, 'owner-1')
+
+      expect(mockPrisma.sharedApprovalLine.update).toHaveBeenCalledWith({
+        where: { id: LINE_ID, companyId: COMPANY_ID },
+        data: { name: '수정' },
+      })
+    })
+
+    it('본인 소유분 삭제는 { deleted: true }를 반환한다', async () => {
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(ownLine)
+      mockPrisma.sharedApprovalLine.delete.mockResolvedValue(ownLine)
+
+      const result = await service.removePersonal(COMPANY_ID, LINE_ID, 'owner-1')
+
+      expect(result).toEqual({ deleted: true })
+      expect(mockPrisma.sharedApprovalLine.delete).toHaveBeenCalledWith({
+        where: { id: LINE_ID, companyId: COMPANY_ID },
+      })
     })
   })
 })

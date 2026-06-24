@@ -596,6 +596,7 @@ erDiagram
     uuid   id PK
     uuid   company_id FK
     uuid   created_by_id FK
+    string scope "COMPANY(공용)/PERSONAL(개인)"
     string name
     jsonb  steps
     int    version

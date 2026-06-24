@@ -20,7 +20,9 @@ import {
   useDocument,
   useDocumentForms,
   useDocumentStepAction,
+  usePersonalApprovalLines,
   useRecallDocument,
+  useSavePersonalApprovalLine,
   useSharedApprovalLines,
   useSubmitDocument,
   useUpdateDocument,
@@ -154,6 +156,7 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const { data: doc, isLoading } = useDocument(isCreate ? null : documentId)
   const { data: forms = [] } = useDocumentForms()
   const { data: sharedLines = [] } = useSharedApprovalLines()
+  const { data: personalLines = [] } = usePersonalApprovalLines()
   const { data: empData } = useEmployees({ isActive: true, limit: 200 })
   const employees = empData?.items ?? []
 
@@ -163,6 +166,7 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const stepAction = useDocumentStepAction()
   const recallMutation = useRecallDocument()
   const addCcMutation = useAddCcSteps()
+  const savePersonalLine = useSavePersonalApprovalLine()
 
   // ----- 편집/작성 폼 상태 -----
   const [formId, setFormId] = useState('')
@@ -175,6 +179,10 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const [ccEmpId, setCcEmpId] = useState('')
   const [ccRole, setCcRole] = useState<'VIEWER' | 'REFERENCE'>('VIEWER')
   const [sharedLineId, setSharedLineId] = useState('')
+  // 개인 결재선 (빠른 결재선 불러오기 / 저장)
+  const [personalLineId, setPersonalLineId] = useState('')
+  const [savingPersonal, setSavingPersonal] = useState(false)
+  const [personalLineName, setPersonalLineName] = useState('')
   const [initializedFor, setInitializedFor] = useState<string | null>(null)
 
   // 편집 모드 진입 시 원본으로 폼 채우기 (1회)
@@ -259,7 +267,8 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     submitMutation.isPending ||
     stepAction.isPending ||
     recallMutation.isPending ||
-    addCcMutation.isPending
+    addCcMutation.isPending ||
+    savePersonalLine.isPending
 
   const stampLine: StampStep[] = useMemo(() => (doc ? buildStampLine(doc) : []), [doc])
 
@@ -423,6 +432,43 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     if (line) setSteps(line.steps.map((s, i) => ({ ...s, stepOrder: i + 1 })))
   }
 
+  /** 내 결재선 불러오기 → 작성 중 결재선(steps) prefill */
+  const applyPersonalLine = (lineId: string) => {
+    setPersonalLineId(lineId)
+    const line = personalLines.find((l) => l.id === lineId)
+    if (line) setSteps(line.steps.map((s, i) => ({ ...s, stepOrder: i + 1 })))
+  }
+
+  /** 현재 결재선 구성을 내 결재선으로 저장 */
+  const handleSavePersonalLine = async () => {
+    const name = personalLineName.trim()
+    if (!name) {
+      toast('결재선 이름을 입력해 주세요')
+      return
+    }
+    if (steps.length === 0) {
+      toast('저장할 결재 단계가 없습니다')
+      return
+    }
+    const incomplete = (s: ApprovalStepInput) =>
+      isDeptRole(s.role) ? !s.organizationId : !s.assigneeId
+    if (steps.some(incomplete)) {
+      toast('결재선 단계의 담당자(또는 부서)를 모두 지정해 주세요')
+      return
+    }
+    try {
+      await savePersonalLine.mutateAsync({
+        name,
+        steps: steps.map((s, i) => ({ ...s, stepOrder: i + 1 })),
+      })
+      toast('내 결재선으로 저장했습니다')
+      setSavingPersonal(false)
+      setPersonalLineName('')
+    } catch {
+      toast('저장 중 오류가 발생했습니다 (이름이 중복되지 않았는지 확인해 주세요)')
+    }
+  }
+
   // ----- 헤더 텍스트 -----
   const eyebrow = isCreate ? 'New Draft' : mode === 'edit' ? 'Edit Document' : 'Approval Document'
   const heading = isCreate ? '기안 등록' : (editable ? title : doc?.title) || '제목 없음'
@@ -527,21 +573,67 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
                 <div className="doc-sec-head"><span className="dot" /><span className="t">결재선</span><span className="en">Approval Line</span></div>
                 {isCreate ? (
                   <>
-                    {sharedLines.length > 0 && (
-                      <div style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {sharedLines.length > 0 && (
                         <select
                           className="sel"
-                          style={{ maxWidth: 320 }}
+                          style={{ maxWidth: 240 }}
                           value={sharedLineId}
                           onChange={(e) => applySharedLine(e.target.value)}
                         >
-                          <option value="">공용 결재선 선택 (선택 시 자동 구성)</option>
+                          <option value="">공용 결재선 선택</option>
                           {sharedLines.map((l) => (
                             <option key={l.id} value={l.id}>{l.name}</option>
                           ))}
                         </select>
-                      </div>
-                    )}
+                      )}
+                      {personalLines.length > 0 && (
+                        <select
+                          className="sel"
+                          style={{ maxWidth: 240 }}
+                          value={personalLineId}
+                          onChange={(e) => applyPersonalLine(e.target.value)}
+                        >
+                          <option value="">내 결재선 불러오기</option>
+                          {personalLines.map((l) => (
+                            <option key={l.id} value={l.id}>{l.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      {savingPersonal ? (
+                        <>
+                          <input
+                            className="inp-block"
+                            style={{ maxWidth: 180 }}
+                            placeholder="내 결재선 이름"
+                            value={personalLineName}
+                            onChange={(e) => setPersonalLineName(e.target.value)}
+                          />
+                          <button
+                            className="btn btn-primary btn-sm"
+                            disabled={busy || !personalLineName.trim()}
+                            onClick={handleSavePersonalLine}
+                          >
+                            저장
+                          </button>
+                          <button
+                            className="btn btn-line btn-sm"
+                            disabled={busy}
+                            onClick={() => { setSavingPersonal(false); setPersonalLineName('') }}
+                          >
+                            취소
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="btn btn-line btn-sm"
+                          disabled={busy || steps.length === 0}
+                          onClick={() => setSavingPersonal(true)}
+                        >
+                          내 결재선으로 저장
+                        </button>
+                      )}
+                    </div>
                     <ApprovalLineBuilder steps={steps} onChange={setSteps} disabled={busy} />
                   </>
                 ) : lineSet ? (
