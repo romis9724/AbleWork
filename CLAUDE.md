@@ -342,3 +342,4 @@ pnpm dev
 | `docs/design/ENGINEERING_DESIGN.md` | 기술 스택, 디렉토리 구조, 설정 코드, 배포 |
 | `docs/design/THEMING.md` | 멀티 테마(6종) SSOT·전환·SSR. 색 토큰 추가/변경은 `apps/web/src/theme/tokens.ts` 한 곳에서 |
 | `docs/design/AWS_OPERATIONS.md` | **AWS 운영 런북** — 계정·리소스 ID·접속(SSM)·배포·SSM 파라미터·로그·트러블슈팅. 다른 세션에서 AWS 작업 시 먼저 읽을 것. 스크립트는 `deploy/aws/` |
+| `docs/design/SELF_CHECK_LOOP.md` | **자가점검·자가수정 루프** — 루프 엔지니어링 실행 규격. 검증 게이트(G1~G7)·가드레일·서브에이전트 분리·상태파일(`docs/loop/STATE.md`)·진입 프롬프트. "자가점검/루프 돌려줘" 지시 시 먼저 읽을 것 |
