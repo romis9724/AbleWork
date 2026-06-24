@@ -485,6 +485,15 @@ erDiagram
     bool   is_active
   }
 
+  document_categories {
+    uuid   id PK
+    uuid   company_id FK
+    string name "사업관리/일반관리/인사관리/LABL CHINA 등"
+    string abbreviation "문서번호 {CATEGORY} 토큰"
+    int    sort_order
+    bool   is_active
+  }
+
   document_forms {
     uuid   id PK
     uuid   company_id FK
@@ -524,6 +533,7 @@ erDiagram
     uuid    id PK
     uuid    company_id FK
     uuid    form_id FK
+    uuid    category_id FK "문서성격(채번 대분류)"
     uuid    request_id FK
     string  doc_number
     string  title
@@ -596,6 +606,7 @@ erDiagram
     uuid   id PK
     uuid   company_id FK
     uuid   created_by_id FK
+    string scope "COMPANY(공용)/PERSONAL(개인)"
     string name
     jsonb  steps
     int    version
@@ -609,6 +620,8 @@ erDiagram
   document_forms ||--o{ form_access_rules : "restricts"
   document_forms ||--o{ document_number_rules : "has"
   document_forms ||--o{ documents : "used by"
+  companies ||--o{ document_categories : "defines"
+  document_categories ||--o{ documents : "classifies"
   employees ||--o{ documents : "drafts"
   documents ||--o{ document_attachments : "attaches"
   employees ||--o{ document_attachments : "uploads"
@@ -842,6 +855,7 @@ erDiagram
 | 52 | notification_logs | 알림 발송 이력 |
 | 53 | **document_attachments** | **기안 첨부파일 (MinIO 오브젝트 메타)** |
 | 54 | **form_categories** | **기안양식 분류(양식함)** |
+| 55 | **document_categories** | **문서성격(채번 대분류 — 사업/일반/인사/LABL CHINA)** |
 
 ---
 

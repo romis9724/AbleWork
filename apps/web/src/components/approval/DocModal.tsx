@@ -16,11 +16,15 @@ import { useAuthStore } from '@/stores/auth.store'
 import { readFormFields } from '@ablework/shared-constants'
 import {
   useAddCcSteps,
+  useAddDocumentOpinion,
   useCreateDocument,
   useDocument,
+  useDocumentCategories,
   useDocumentForms,
   useDocumentStepAction,
+  usePersonalApprovalLines,
   useRecallDocument,
+  useSavePersonalApprovalLine,
   useSharedApprovalLines,
   useSubmitDocument,
   useUpdateDocument,
@@ -74,6 +78,7 @@ const HISTORY_BADGE: Record<string, BadgeKind> = {
   BOUNCE: 'b-reject',
   RECALL: 'b-submit',
   CANCEL_APPROVAL: 'b-wait',
+  OPINION: 'b-prog',
 }
 
 /** 단계 상태 → 도장 마크(ok/rej/wait) */
@@ -153,7 +158,9 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   // 상세 (view/edit) — create는 미로드
   const { data: doc, isLoading } = useDocument(isCreate ? null : documentId)
   const { data: forms = [] } = useDocumentForms()
+  const { data: docCategories = [] } = useDocumentCategories()
   const { data: sharedLines = [] } = useSharedApprovalLines()
+  const { data: personalLines = [] } = usePersonalApprovalLines()
   const { data: empData } = useEmployees({ isActive: true, limit: 200 })
   const employees = empData?.items ?? []
 
@@ -163,24 +170,34 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const stepAction = useDocumentStepAction()
   const recallMutation = useRecallDocument()
   const addCcMutation = useAddCcSteps()
+  const savePersonalLine = useSavePersonalApprovalLine()
+  const addOpinionMutation = useAddDocumentOpinion()
 
   // ----- 편집/작성 폼 상태 -----
   const [formId, setFormId] = useState('')
+  const [categoryId, setCategoryId] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({})
   const [steps, setSteps] = useState<ApprovalStepInput[]>([])
   const [comment, setComment] = useState('')
+  // 결재 종료/진행 후 사후 의견
+  const [opinionText, setOpinionText] = useState('')
   // 공람/참조 사후 추가 picker (C-8) + 공용 결재선 선택 (C-6)
   const [ccEmpId, setCcEmpId] = useState('')
   const [ccRole, setCcRole] = useState<'VIEWER' | 'REFERENCE'>('VIEWER')
   const [sharedLineId, setSharedLineId] = useState('')
+  // 개인 결재선 (빠른 결재선 불러오기 / 저장)
+  const [personalLineId, setPersonalLineId] = useState('')
+  const [savingPersonal, setSavingPersonal] = useState(false)
+  const [personalLineName, setPersonalLineName] = useState('')
   const [initializedFor, setInitializedFor] = useState<string | null>(null)
 
   // 편집 모드 진입 시 원본으로 폼 채우기 (1회)
   useEffect(() => {
     if (!editable || !doc || initializedFor === `${doc.id}:${mode}`) return
     setFormId(doc.form?.id ?? '')
+    setCategoryId(doc.category?.id ?? '')
     setTitle(doc.title)
     setBody(typeof doc.content?.body === 'string' ? doc.content.body : '')
     const content = (doc.content ?? {}) as Record<string, unknown>
@@ -253,13 +270,24 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     (doc?.status === 'PENDING' || doc?.status === 'APPROVED') &&
     (isDrafter || isParticipant)
 
+  // 결재 종료/진행 후 사후 의견·첨부 — 상신된 문서의 기안자/결재 관계자(assignee·proxy)
+  const isAnyParticipant = detailSteps.some(
+    (s) => s.assignee?.id === myEmployeeId || s.proxy?.id === myEmployeeId,
+  )
+  const isSubmittedDoc = !isCreate && !!doc && doc.status !== 'DRAFT'
+  const canPostAttach = isSubmittedDoc && (isDrafter || isAnyParticipant)
+  // 결재 차례가 아닐 때만 사후 의견 입력 노출(결재 차례면 결재 처리 의견으로 전송)
+  const canAddOpinion = canPostAttach && !canApprove && !canConfirmView && !canReceive
+
   const busy =
     createMutation.isPending ||
     updateMutation.isPending ||
     submitMutation.isPending ||
     stepAction.isPending ||
     recallMutation.isPending ||
-    addCcMutation.isPending
+    addCcMutation.isPending ||
+    savePersonalLine.isPending ||
+    addOpinionMutation.isPending
 
   const stampLine: StampStep[] = useMemo(() => (doc ? buildStampLine(doc) : []), [doc])
 
@@ -291,6 +319,18 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
       onClose()
     } catch {
       toast('처리 중 오류가 발생했습니다')
+    }
+  }
+
+  /** 결재 종료/진행 후 사후 의견 등록 */
+  const handleAddOpinion = async () => {
+    if (!doc || !opinionText.trim()) return
+    try {
+      await addOpinionMutation.mutateAsync({ documentId: doc.id, comment: opinionText.trim() })
+      toast('의견을 등록했습니다')
+      setOpinionText('')
+    } catch {
+      toast('의견 등록 중 오류가 발생했습니다')
     }
   }
 
@@ -349,6 +389,7 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     try {
       const created = await createMutation.mutateAsync({
         formId,
+        categoryId: categoryId || null,
         title: title.trim(),
         content: { body, ...fieldValues },
       })
@@ -421,6 +462,43 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     setSharedLineId(lineId)
     const line = sharedLines.find((l) => l.id === lineId)
     if (line) setSteps(line.steps.map((s, i) => ({ ...s, stepOrder: i + 1 })))
+  }
+
+  /** 내 결재선 불러오기 → 작성 중 결재선(steps) prefill */
+  const applyPersonalLine = (lineId: string) => {
+    setPersonalLineId(lineId)
+    const line = personalLines.find((l) => l.id === lineId)
+    if (line) setSteps(line.steps.map((s, i) => ({ ...s, stepOrder: i + 1 })))
+  }
+
+  /** 현재 결재선 구성을 내 결재선으로 저장 */
+  const handleSavePersonalLine = async () => {
+    const name = personalLineName.trim()
+    if (!name) {
+      toast('결재선 이름을 입력해 주세요')
+      return
+    }
+    if (steps.length === 0) {
+      toast('저장할 결재 단계가 없습니다')
+      return
+    }
+    const incomplete = (s: ApprovalStepInput) =>
+      isDeptRole(s.role) ? !s.organizationId : !s.assigneeId
+    if (steps.some(incomplete)) {
+      toast('결재선 단계의 담당자(또는 부서)를 모두 지정해 주세요')
+      return
+    }
+    try {
+      await savePersonalLine.mutateAsync({
+        name,
+        steps: steps.map((s, i) => ({ ...s, stepOrder: i + 1 })),
+      })
+      toast('내 결재선으로 저장했습니다')
+      setSavingPersonal(false)
+      setPersonalLineName('')
+    } catch {
+      toast('저장 중 오류가 발생했습니다 (이름이 중복되지 않았는지 확인해 주세요)')
+    }
   }
 
   // ----- 헤더 텍스트 -----
@@ -527,21 +605,67 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
                 <div className="doc-sec-head"><span className="dot" /><span className="t">결재선</span><span className="en">Approval Line</span></div>
                 {isCreate ? (
                   <>
-                    {sharedLines.length > 0 && (
-                      <div style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {sharedLines.length > 0 && (
                         <select
                           className="sel"
-                          style={{ maxWidth: 320 }}
+                          style={{ maxWidth: 240 }}
                           value={sharedLineId}
                           onChange={(e) => applySharedLine(e.target.value)}
                         >
-                          <option value="">공용 결재선 선택 (선택 시 자동 구성)</option>
+                          <option value="">공용 결재선 선택</option>
                           {sharedLines.map((l) => (
                             <option key={l.id} value={l.id}>{l.name}</option>
                           ))}
                         </select>
-                      </div>
-                    )}
+                      )}
+                      {personalLines.length > 0 && (
+                        <select
+                          className="sel"
+                          style={{ maxWidth: 240 }}
+                          value={personalLineId}
+                          onChange={(e) => applyPersonalLine(e.target.value)}
+                        >
+                          <option value="">내 결재선 불러오기</option>
+                          {personalLines.map((l) => (
+                            <option key={l.id} value={l.id}>{l.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      {savingPersonal ? (
+                        <>
+                          <input
+                            className="inp-block"
+                            style={{ maxWidth: 180 }}
+                            placeholder="내 결재선 이름"
+                            value={personalLineName}
+                            onChange={(e) => setPersonalLineName(e.target.value)}
+                          />
+                          <button
+                            className="btn btn-primary btn-sm"
+                            disabled={busy || !personalLineName.trim()}
+                            onClick={handleSavePersonalLine}
+                          >
+                            저장
+                          </button>
+                          <button
+                            className="btn btn-line btn-sm"
+                            disabled={busy}
+                            onClick={() => { setSavingPersonal(false); setPersonalLineName('') }}
+                          >
+                            취소
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="btn btn-line btn-sm"
+                          disabled={busy || steps.length === 0}
+                          onClick={() => setSavingPersonal(true)}
+                        >
+                          내 결재선으로 저장
+                        </button>
+                      )}
+                    </div>
                     <ApprovalLineBuilder steps={steps} onChange={setSteps} disabled={busy} />
                   </>
                 ) : lineSet ? (
@@ -555,18 +679,32 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
               <div className="doc-section">
                 <div className="doc-sec-head"><span className="dot" /><span className="t">문서 정보</span><span className="en">Document Info</span></div>
                 {isCreate ? (
-                  <div className="doc-field">
-                    <span className="fk">기안양식<span className="req">*</span></span>
-                    <span className="fv">
-                      <select className="sel" value={formId} onChange={(e) => setFormId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
-                        <option value="">양식 선택</option>
-                        {forms.filter((f) => f.isActive).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                      </select>
-                    </span>
-                  </div>
+                  <>
+                    <div className="doc-field">
+                      <span className="fk">기안양식<span className="req">*</span></span>
+                      <span className="fv">
+                        <select className="sel" value={formId} onChange={(e) => setFormId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
+                          <option value="">양식 선택</option>
+                          {forms.filter((f) => f.isActive).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                      </span>
+                    </div>
+                    {docCategories.length > 0 && (
+                      <div className="doc-field">
+                        <span className="fk">문서성격</span>
+                        <span className="fv">
+                          <select className="sel" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
+                            <option value="">선택 안 함</option>
+                            {docCategories.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.abbreviation})</option>)}
+                          </select>
+                        </span>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="doc-meta">
                     <div className="cell"><div className="k">Doc No.</div><div className="v num">{doc?.docNumber ?? '미부여'}</div></div>
+                    {doc?.category && <div className="cell"><div className="k">문서성격</div><div className="v">{doc.category.name}</div></div>}
                     <div className="cell"><div className="k">기안양식</div><div className="v">{doc?.form?.name ?? '—'}</div></div>
                     <div className="cell"><div className="k">기안자</div><div className="v">{doc?.drafter?.name ?? '—'}</div></div>
                     <div className="cell"><div className="k">상신일시</div><div className="v">{dateTimeText(doc?.submittedAt)}</div></div>
@@ -656,12 +794,19 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
                 {isCreate ? (
                   <div className="muted" style={{ fontSize: 13 }}>첨부파일은 임시저장 후 등록할 수 있습니다.</div>
                 ) : doc ? (
-                  <AttachmentPanel
-                    documentId={doc.id}
-                    editable={mode === 'edit'}
-                    allowZipUpload={doc.form?.allowZipUpload}
-                    onError={(m) => toast(m)}
-                  />
+                  <>
+                    <AttachmentPanel
+                      documentId={doc.id}
+                      editable={mode === 'edit' || canPostAttach}
+                      allowZipUpload={doc.form?.allowZipUpload}
+                      onError={(m) => toast(m)}
+                    />
+                    {isView && canPostAttach && (
+                      <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                        결재 완료 후에도 최종 날인본 등 첨부파일을 추가할 수 있습니다.
+                      </div>
+                    )}
+                  </>
                 ) : null}
               </div>
 
@@ -691,6 +836,28 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
                         value={comment}
                         onChange={(e) => setComment(e.target.value)}
                       />
+                    </div>
+                  )}
+
+                  {/* 사후 의견 등록 — 결재 차례가 아닌 관계자/기안자 (계약 완료 후 코멘트 등) */}
+                  {canAddOpinion && (
+                    <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                      <input
+                        className="inp-block"
+                        placeholder="의견을 남기세요 (첨부는 위 첨부파일 영역에서)"
+                        value={opinionText}
+                        onChange={(e) => setOpinionText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleAddOpinion()
+                        }}
+                      />
+                      <button
+                        className="btn btn-line btn-sm"
+                        disabled={busy || !opinionText.trim()}
+                        onClick={handleAddOpinion}
+                      >
+                        의견 등록
+                      </button>
                     </div>
                   )}
                 </div>

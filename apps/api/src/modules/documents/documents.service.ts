@@ -24,6 +24,7 @@ import {
   UpdateDocumentDto,
   SubmitDocumentDto,
   AddCcStepsDto,
+  AddOpinionDto,
   DocumentBoxFilterDto,
   StepInput,
   StepInputSchema,
@@ -89,6 +90,7 @@ export class DocumentsService {
         data: {
           companyId,
           formId: dto.formId,
+          categoryId: dto.categoryId ?? null,
           title: dto.title,
           content: dto.content,
           drafterId: user.employeeId,
@@ -130,6 +132,7 @@ export class DocumentsService {
         data: {
           ...(dto.title !== undefined && { title: dto.title }),
           ...(dto.content !== undefined && { content: dto.content }),
+          ...(dto.categoryId !== undefined && { categoryId: dto.categoryId }),
         },
       })
     })
@@ -490,19 +493,55 @@ export class DocumentsService {
     return this.findOne(companyId, documentId, user)
   }
 
+  // ── 결재 종료/진행 후 사후 의견 등록 ─────────────────────────────────────────
+
+  /**
+   * 상신된 문서(DRAFT 제외)에 사후 의견을 남긴다 — 계약 기안 완료 후 코멘트 등.
+   * 권한: 기안자 본인 + 결재 관계자(assignee/proxy) + 관리자 (열람 권한과 동일).
+   * ApprovalHistory.comment(action=OPINION)로 기록되어 결재 의견 타임라인에 노출된다.
+   */
+  async addOpinion(companyId: string, documentId: string, dto: AddOpinionDto, user: JwtPayload) {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, companyId },
+      include: { approvalLines: { include: { steps: true } } },
+    })
+    if (!document) {
+      throw new NotFoundException({
+        code: 'DOCUMENT_NOT_FOUND',
+        message: '문서를 찾을 수 없습니다.',
+      })
+    }
+    if (document.status === DocStatus.DRAFT) {
+      throw new BadRequestException({
+        code: 'DOCUMENT_OPINION_NOT_ALLOWED',
+        message: '상신된 문서에만 의견을 남길 수 있습니다.',
+      })
+    }
+    // 기안자/결재 관계자/관리자만 (열람 권한과 동일 규칙)
+    this.assertCanRead(document, user)
+
+    await this.prisma.approvalHistory.create({
+      data: {
+        documentId,
+        actorId: user.employeeId,
+        action: HistoryAction.OPINION,
+        comment: dto.comment.trim(),
+      },
+    })
+
+    return this.findOne(companyId, documentId, user)
+  }
+
   // ── AP-04-01 문서함 목록 ─────────────────────────────────────────────────────
 
   async findAll(companyId: string, filter: DocumentBoxFilterDto, user: JwtPayload) {
-    const { page, limit, search } = filter
+    const { page, limit, search, searchField } = filter
     const skip = (page - 1) * limit
 
     const { where, myAssigneeIds } = await this.buildBoxWhere(companyId, filter, user)
 
-    if (search) {
-      where.OR = [
-        { title: { contains: search } },
-        { docNumber: { contains: search } },
-      ]
+    if (search?.trim()) {
+      where.OR = this.buildSearchOr(search.trim(), searchField ?? 'all')
     }
 
     const [rows, total] = await Promise.all([
@@ -513,6 +552,7 @@ export class DocumentsService {
         orderBy: { createdAt: 'desc' },
         include: {
           form: { select: { id: true, name: true, category: true } },
+          category: { select: { id: true, name: true, abbreviation: true } },
           drafter: { select: { id: true, name: true } },
           approvalLines: {
             select: {
@@ -550,6 +590,7 @@ export class DocumentsService {
         completedAt: doc.completedAt,
         createdAt: doc.createdAt,
         form: doc.form,
+        category: doc.category,
         drafter: doc.drafter,
         mySteps: steps.filter((s) => assigneeIdSet.has(s.assigneeId)),
         // 결재 현황용: 상신(미처리)/진행중(일부 승인) 구분 + 현재 결재자
@@ -559,6 +600,28 @@ export class DocumentsService {
     })
 
     return { items, total, page, limit }
+  }
+
+  /**
+   * 탭별 검색 OR 조건 — 제목/양식명(form.name)/기안자명(drafter.name).
+   * all(기본)은 문서번호까지 포함한 전체 필드 검색.
+   */
+  private buildSearchOr(search: string, field: string): Record<string, unknown>[] {
+    switch (field) {
+      case 'title':
+        return [{ title: { contains: search } }]
+      case 'form':
+        return [{ form: { name: { contains: search } } }]
+      case 'drafter':
+        return [{ drafter: { name: { contains: search } } }]
+      default:
+        return [
+          { title: { contains: search } },
+          { docNumber: { contains: search } },
+          { form: { name: { contains: search } } },
+          { drafter: { name: { contains: search } } },
+        ]
+    }
   }
 
   /** 결재 현황 phase: PENDING + 액티드 step 없음=상신 / 있음=진행중 / 그 외=null */
@@ -593,6 +656,7 @@ export class DocumentsService {
       where: { id: documentId, companyId },
       include: {
         form: true,
+        category: { select: { id: true, name: true, abbreviation: true } },
         drafter: { select: { id: true, name: true } },
         approvalLines: {
           include: {
@@ -629,7 +693,7 @@ export class DocumentsService {
 
   private async runSubmitTransaction(
     companyId: string,
-    document: { id: string; formId: string; docNumber: string | null },
+    document: { id: string; formId: string; docNumber: string | null; categoryId: string | null },
     steps: ResolvedStep[],
     sharedLineId: string | undefined,
     user: JwtPayload,
@@ -668,7 +732,8 @@ export class DocumentsService {
 
       // ③ 문서번호 채번 (없을 때만 — 재상신 시 기존 번호 유지)
       const docNumber =
-        document.docNumber ?? (await this.issueDocNumber(tx, companyId, document.formId))
+        document.docNumber ??
+        (await this.issueDocNumber(tx, companyId, document.formId, document.categoryId))
 
       // ④⑤ 상태 전이
       const updated = await tx.document.update({
@@ -770,8 +835,13 @@ export class DocumentsService {
    * - resetYearly: 올해 발급된 번호가 없으면 시퀀스를 0으로 리셋 (pattern에 연도 포함 가정)
    * - 규칙이 없으면 기본 'DOC-{YYYY}-{SEQ:4}' 패턴
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async issueDocNumber(tx: any, companyId: string, formId: string): Promise<string> {
+  private async issueDocNumber(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    companyId: string,
+    formId: string,
+    categoryId: string | null,
+  ): Promise<string> {
     const now = new Date()
     const year = now.getFullYear()
 
@@ -782,6 +852,15 @@ export class DocumentsService {
       select: { abbreviation: true },
     })
     const abbr = form?.abbreviation ?? ''
+    // {CATEGORY} 토큰 치환용 — 문서성격 약어 (기안 시 선택, 없으면 빈 문자열)
+    let categoryAbbr = ''
+    if (categoryId) {
+      const category = await tx.documentCategory.findFirst({
+        where: { id: categoryId, companyId },
+        select: { abbreviation: true },
+      })
+      categoryAbbr = category?.abbreviation ?? ''
+    }
 
     if (!rule) {
       const prefix = `DOC-${year}-`
@@ -816,14 +895,28 @@ export class DocumentsService {
     })
     const updatedRule = await tx.documentNumberRule.findFirst({ where: { id: rule.id } })
 
-    return this.renderDocNumber(rule.pattern, now, updatedRule.currentSeq, abbr)
+    return this.renderDocNumber(rule.pattern, now, updatedRule.currentSeq, abbr, categoryAbbr)
   }
 
-  /** pattern 토큰 치환: {YYYY}, {MM}, {SEQ:n}(0패딩 n자리, n 생략 시 패딩 없음), {ABBR}(양식 약어) */
-  private renderDocNumber(pattern: string, date: Date, seq: number, abbr = ''): string {
+  /**
+   * pattern 토큰 치환:
+   * - {CATEGORY}(문서성격 약어), {ABBR}(양식 약어)
+   * - {YYYY}(4자리 연도), {YY}(2자리 연도), {MM}(2자리 월)
+   * - {SEQ:n}(0패딩 n자리, n 생략 시 패딩 없음)
+   * 예) {CATEGORY}-{ABBR}-{YY}-{SEQ:4} → 사업-지출기안-26-0001
+   */
+  private renderDocNumber(
+    pattern: string,
+    date: Date,
+    seq: number,
+    abbr = '',
+    categoryAbbr = '',
+  ): string {
     return pattern
       .replace(/\{YYYY\}/g, String(date.getFullYear()))
+      .replace(/\{YY\}/g, String(date.getFullYear()).slice(-2))
       .replace(/\{MM\}/g, String(date.getMonth() + 1).padStart(2, '0'))
+      .replace(/\{CATEGORY\}/g, categoryAbbr)
       .replace(/\{ABBR\}/g, abbr)
       .replace(/\{SEQ(?::(\d+))?\}/g, (_match, width?: string) =>
         width ? String(seq).padStart(Number(width), '0') : String(seq),

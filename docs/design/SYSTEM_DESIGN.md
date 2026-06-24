@@ -948,6 +948,23 @@ notification_rules {
 **공용 결재선 정합(AP-01-08)**: `shared_approval_lines`에 작성자(`createdById`, SetNull)·작성일(`createdAt`)을 노출하고, 목록은 `search`(name contains) 필터를 지원한다.
 - **이름 중복 차단**: 같은 회사 내 동일 이름 결재선 생성/수정 시 `SHARED_LINE_DUPLICATE_NAME`(수정은 자기 자신 제외).
 - **최종결재자=협조자 금지**: 마지막 APPROVER 단계 담당자가 동일 결재선의 협조자(AGREEMENT/부서협조)로도 지정되면 `FINAL_APPROVER_IS_COLLABORATOR`.
+- **중복 인원 배치 허용**: 동일 인원을 서로 다른 결재 단계(APPROVER 등)에 중복 배치하는 것은 허용한다(위 금지 규칙만 예외).
+
+**개인 결재선(빠른 결재선 불러오기)**: `shared_approval_lines.scope`로 공용(`COMPANY`)/개인(`PERSONAL`)을 구분한다. 개인 결재선은 작성자 본인(`created_by_id`)만 조회·저장·수정·삭제한다.
+- 엔드포인트 `/personal-approval-lines`(GET·POST·PATCH·DELETE, 인증된 전 직원). 소유자 외 접근은 `PERSONAL_LINE_FORBIDDEN`, 미존재는 `PERSONAL_LINE_NOT_FOUND`.
+- 이름 중복은 본인(`created_by_id`)·`PERSONAL` 범위로만 판정 — 다른 직원과 같은 이름은 허용. 공용 목록(`/shared-approval-lines`)에는 `scope=COMPANY`만 노출된다.
+- 기안 작성 화면에서 "내 결재선으로 저장"으로 현재 결재선 구성을 보관하고, "내 결재선 불러오기"로 즉시 prefill 한다.
+
+**문서성격·문서번호 체계(채번 대분류)**: `document_categories`(이름·약어)를 회사 마스터로 관리(GENERAL_ADMIN, `/document-categories`)하고, 기안 작성 시 선택(`documents.categoryId`)한다. 양식함 분류(`form_categories`)와 별개 축이다.
+- 문서번호 패턴(`DocumentNumberRule.pattern`) 토큰: `{CATEGORY}`(문서성격 약어)·`{ABBR}`(양식 약어)·`{YYYY}`/`{YY}`(연도)·`{MM}`(월)·`{SEQ:n}`(n자리 0패딩). 예) `{CATEGORY}-{ABBR}-{YY}-{SEQ:4}` → `사업-지출기안-26-0001`.
+- 채번은 상신 시점에 문서의 `categoryId`로 약어를 해석해 치환한다(미지정이면 빈 문자열).
+- 사용 중(문서 참조) 문서성격은 삭제 차단(`DOCUMENT_CATEGORY_IN_USE`), 이름·약어 중복 차단(`DOCUMENT_CATEGORY_DUPLICATE`).
+
+**문서함 탭별 검색**: 문서함 목록(`/documents`)은 `searchField`(`all`/`title`/`form`/`drafter`)로 검색 대상을 지정한다. `all`(기본)은 제목·문서번호·양식명·기안자명 OR 검색, 나머지는 해당 단일 필드 검색. 모든 박스(기안함/결재함/문서대장 등)에 적용된다.
+
+**결재 종료/진행 후 의견·첨부**: 상신된 문서(DRAFT 제외)에 사후 의견·첨부를 추가할 수 있다(계약 기안 완료 후 최종 날인 스캔본 등).
+- 의견: `POST /documents/:id/opinions` → `ApprovalHistory(action=OPINION)`로 기록되어 결재 의견 타임라인에 함께 노출된다. 권한=기안자 + 결재 관계자(assignee/proxy) + 관리자. DRAFT 문서는 `DOCUMENT_OPINION_NOT_ALLOWED`.
+- 첨부: 업로드 권한을 상신 후에도 기안자·결재 관계자·관리자로 확대한다(본문·결재선은 잠금 유지, 첨부만 허용). 완료(APPROVED) 문서의 첨부는 삭제 차단(`ATTACHMENT_DELETE_LOCKED`); 그 외 삭제는 업로더 본인/작성 가능 상태의 기안자/관리자만(`ATTACHMENT_DELETE_FORBIDDEN`).
 - (follow-up) **소속부서 팀장 동적 결재자 토큰**: 상신 시 기안자 소속부서 팀장으로 해석되는 동적 단계는 `ApprovalStep.assigneeId` NOT NULL 제약 + 상신 시점 drafter-org 해석이 필요해 별도 단계로 보류.
 
 **전자결재 공통 관리 정책(AP-01 공통)**:

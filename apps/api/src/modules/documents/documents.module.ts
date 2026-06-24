@@ -8,6 +8,7 @@ import { ApprovalActionsService } from './approval-actions.service'
 import { DocumentFormsController } from './document-forms.controller'
 import { DocumentFormsService } from './document-forms.service'
 import { SharedApprovalLinesController } from './shared-approval-lines.controller'
+import { PersonalApprovalLinesController } from './personal-approval-lines.controller'
 import { SharedApprovalLinesService } from './shared-approval-lines.service'
 import { ProxySettingsController } from './proxy-settings.controller'
 import { ProxySettingsService } from './proxy-settings.service'
@@ -15,6 +16,8 @@ import { AttachmentsController } from './attachments.controller'
 import { AttachmentsService } from './attachments.service'
 import { FormCategoriesController } from './form-categories.controller'
 import { FormCategoriesService } from './form-categories.service'
+import { DocumentCategoriesController } from './document-categories.controller'
+import { DocumentCategoriesService } from './document-categories.service'
 
 /**
  * Phase 2 전자결재 (Goal 11~16)
@@ -28,7 +31,9 @@ import { FormCategoriesService } from './form-categories.service'
   controllers: [
     DocumentFormsController,
     FormCategoriesController,
+    DocumentCategoriesController,
     SharedApprovalLinesController,
+    PersonalApprovalLinesController,
     ProxySettingsController,
     AttachmentsController,
     DocumentsController,
@@ -38,6 +43,7 @@ import { FormCategoriesService } from './form-categories.service'
     ApprovalActionsService,
     DocumentFormsService,
     FormCategoriesService,
+    DocumentCategoriesService,
     SharedApprovalLinesService,
     ProxySettingsService,
     AttachmentsService,

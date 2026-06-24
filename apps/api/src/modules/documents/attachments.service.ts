@@ -59,7 +59,7 @@ export class AttachmentsService {
       })
     }
 
-    const document = await this.loadEditableByDrafter(companyId, documentId, user)
+    const document = await this.loadUploadableDocument(companyId, documentId, user)
 
     // 양식이 ZIP 업로드를 허용하지 않으면 압축파일 차단 (AP-01-06)
     if (!document.form.allowZipUpload && this.isZip(file)) {
@@ -128,7 +128,20 @@ export class AttachmentsService {
   }
 
   async remove(companyId: string, documentId: string, attachmentId: string, user: JwtPayload) {
-    await this.loadEditableByDrafter(companyId, documentId, user)
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, companyId },
+    })
+    if (!document) {
+      throw new NotFoundException({ code: 'DOCUMENT_NOT_FOUND', message: '문서를 찾을 수 없습니다.' })
+    }
+    // 완료(APPROVED) 문서의 첨부는 보존 — 최종 결재된 근거 자료 삭제 차단
+    if (document.status === DocStatus.APPROVED) {
+      throw new ForbiddenException({
+        code: 'ATTACHMENT_DELETE_LOCKED',
+        message: '완료된 문서의 첨부파일은 삭제할 수 없습니다.',
+      })
+    }
+
     const attachment = await this.prisma.documentAttachment.findFirst({
       where: { id: attachmentId, documentId, companyId },
     })
@@ -138,6 +151,18 @@ export class AttachmentsService {
         message: '첨부파일을 찾을 수 없습니다.',
       })
     }
+
+    // 삭제 권한: 업로더 본인 / 작성 가능 상태의 기안자 / 관리자
+    const isUploader = attachment.uploaderId === user.employeeId
+    const isDrafterEditable =
+      document.drafterId === user.employeeId && EDITABLE_STATUSES.includes(document.status)
+    if (!isUploader && !isDrafterEditable && !this.isCompanyAdmin(user)) {
+      throw new ForbiddenException({
+        code: 'ATTACHMENT_DELETE_FORBIDDEN',
+        message: '본인이 올린 첨부파일만 삭제할 수 있습니다.',
+      })
+    }
+
     await this.prisma.documentAttachment.delete({ where: { id: attachmentId } })
     await this.storage.removeObject(attachment.storageKey)
     return { deleted: true }
@@ -156,25 +181,46 @@ export class AttachmentsService {
     }
   }
 
-  /** 기안자 본인 + 작성 가능 상태 문서 로드 (업로드/삭제용) */
-  private async loadEditableByDrafter(companyId: string, documentId: string, user: JwtPayload) {
+  /**
+   * 첨부 업로드 가능 문서 로드.
+   * - 작성 가능 상태(DRAFT/RECALLED/REJECTED): 기안자 본인만.
+   * - 상신 후(PENDING/APPROVED 등): 기안자 + 결재 관계자(assignee/proxy) + 관리자.
+   *   계약 기안 완료 후 최종날인 스캔본 등 사후 첨부를 허용한다(본문·결재선은 잠금 유지).
+   */
+  private async loadUploadableDocument(companyId: string, documentId: string, user: JwtPayload) {
     const document = await this.prisma.document.findFirst({
       where: { id: documentId, companyId },
-      include: { form: { select: { allowZipUpload: true } } },
+      include: {
+        form: { select: { allowZipUpload: true } },
+        approvalLines: { select: { steps: { select: { assigneeId: true, proxyId: true } } } },
+      },
     })
     if (!document) {
       throw new NotFoundException({ code: 'DOCUMENT_NOT_FOUND', message: '문서를 찾을 수 없습니다.' })
     }
-    if (document.drafterId !== user.employeeId) {
-      throw new ForbiddenException({
-        code: 'DOCUMENT_NOT_DRAFTER',
-        message: '기안자 본인만 첨부를 변경할 수 있습니다.',
-      })
+
+    const isDrafter = document.drafterId === user.employeeId
+
+    // 작성 가능 상태 — 기안자만
+    if (EDITABLE_STATUSES.includes(document.status)) {
+      if (!isDrafter) {
+        throw new ForbiddenException({
+          code: 'DOCUMENT_NOT_DRAFTER',
+          message: '기안자 본인만 첨부를 변경할 수 있습니다.',
+        })
+      }
+      return document
     }
-    if (!EDITABLE_STATUSES.includes(document.status)) {
-      throw new BadRequestException({
-        code: 'DOCUMENT_ALREADY_SUBMITTED',
-        message: '상신된 문서의 첨부는 변경할 수 없습니다.',
+
+    // 상신 후 — 기안자/관리자/결재 관계자
+    if (isDrafter || this.isCompanyAdmin(user)) return document
+    const isParticipant = document.approvalLines
+      .flatMap((line: { steps: Array<{ assigneeId: string; proxyId: string | null }> }) => line.steps)
+      .some((s) => s.assigneeId === user.employeeId || s.proxyId === user.employeeId)
+    if (!isParticipant) {
+      throw new ForbiddenException({
+        code: 'DOCUMENT_ACCESS_FORBIDDEN',
+        message: '첨부파일을 추가할 권한이 없습니다.',
       })
     }
     return document

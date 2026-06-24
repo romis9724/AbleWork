@@ -46,6 +46,8 @@ export const StepInputSchema = z
 
 export const CreateDocumentSchema = z.object({
   formId: z.string().min(1),
+  // AP 문서성격(채번 대분류) — 기안 시 선택(미지정 가능)
+  categoryId: z.string().min(1).nullable().optional(),
   title: z.string().min(1, '제목을 입력하세요.').max(200),
   content: z.record(z.unknown()).default({}),
   steps: z.array(StepInputSchema).optional(),
@@ -53,6 +55,7 @@ export const CreateDocumentSchema = z.object({
 
 export const UpdateDocumentSchema = z
   .object({
+    categoryId: z.string().min(1).nullable().optional(),
     title: z.string().min(1).max(200).optional(),
     content: z.record(z.unknown()).optional(),
     steps: z.array(StepInputSchema).optional(),
@@ -68,6 +71,11 @@ export const SubmitDocumentSchema = z.object({
 
 export const ApprovalCommentSchema = z.object({
   comment: z.string().optional(),
+})
+
+// AP 결재 종료/진행 후 사후 의견 등록 — 의견 본문 필수
+export const AddOpinionSchema = z.object({
+  comment: z.string().min(1, '의견을 입력하세요.').max(2000),
 })
 
 // AP-02-08 공람/참조 사후 추가 — 진행중/완료 문서에 공람자·참조자 지정 (비차단, 개인만)
@@ -101,9 +109,13 @@ export const DOCUMENT_BOXES = [
   'ledger',
 ] as const
 
+// 탭별 검색 대상 필드 — 전체(제목+문서번호+양식+기안자) / 제목 / 양식 / 기안자
+export const DOCUMENT_SEARCH_FIELDS = ['all', 'title', 'form', 'drafter'] as const
+
 export const DocumentBoxFilterSchema = z.object({
   box: z.enum(DOCUMENT_BOXES).default('draft'),
   search: z.string().optional(),
+  searchField: z.enum(DOCUMENT_SEARCH_FIELDS).optional(),
   status: z.string().optional(), // ledger/status 박스 필터 (status: ''/SUBMITTED/IN_PROGRESS/REJECTED)
   formId: z.string().min(1).optional(), // 기안양식 필터 (status 박스)
   dateFrom: z.string().optional(), // 상신일 시작 (YYYY-MM-DD)
@@ -119,5 +131,6 @@ export type CreateDocumentDto = z.infer<typeof CreateDocumentSchema>
 export type UpdateDocumentDto = z.infer<typeof UpdateDocumentSchema>
 export type SubmitDocumentDto = z.infer<typeof SubmitDocumentSchema>
 export type ApprovalCommentDto = z.infer<typeof ApprovalCommentSchema>
+export type AddOpinionDto = z.infer<typeof AddOpinionSchema>
 export type AddCcStepsDto = z.infer<typeof AddCcStepsSchema>
 export type DocumentBoxFilterDto = z.infer<typeof DocumentBoxFilterSchema>

@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import {
   CreateSharedLineDto,
   UpdateSharedLineDto,
   SharedLineFilterDto,
+  PersonalLineFilterDto,
 } from './dto/document-form.dto'
 import { StepInput } from './dto/document.dto'
 import { StepRole } from './documents.constants'
@@ -11,9 +12,15 @@ import { StepRole } from './documents.constants'
 /** 협조 역할 — 최종결재자가 동시에 협조자로 지정되는 것을 금지 */
 const COLLAB_ROLES: string[] = [StepRole.AGREEMENT, StepRole.DEPT_COLLABORATOR]
 
+/** 결재선 범위 — COMPANY(공용, 관리자 관리) / PERSONAL(개인, 작성자 본인 관리) */
+export const LINE_SCOPE = { COMPANY: 'COMPANY', PERSONAL: 'PERSONAL' } as const
+
 /**
- * AP — 공용 결재선 (Goal 11)
- * steps는 SharedApprovalLine.steps Json 컬럼에 [{role, assigneeId, stepOrder}] 형태로 저장한다.
+ * AP — 결재선 (Goal 11)
+ * 공용(COMPANY)과 개인(PERSONAL) 결재선을 모두 SharedApprovalLine 테이블에 보관하며 scope로 구분한다.
+ * steps는 SharedApprovalLine.steps Json 컬럼에 [{role, assigneeId, organizationId, stepOrder}] 형태로 저장한다.
+ * - 공용: GENERAL_ADMIN이 관리, 전 직원이 사용. createdBy는 감사/표시용.
+ * - 개인: 작성자 본인(createdById)만 조회·수정·삭제. 빠른 결재선 불러오기 용도.
  */
 @Injectable()
 export class SharedApprovalLinesService {
@@ -45,6 +52,7 @@ export class SharedApprovalLinesService {
     const lines = await this.prisma.sharedApprovalLine.findMany({
       where: {
         companyId,
+        scope: LINE_SCOPE.COMPANY,
         ...(search ? { name: { contains: search } } : {}),
         ...(author
           ? {
@@ -85,22 +93,22 @@ export class SharedApprovalLinesService {
   async create(companyId: string, dto: CreateSharedLineDto, createdById: string) {
     await this.assertAssigneesInCompany(companyId, dto.steps)
     this.assertNoFinalApproverConflict(dto.steps)
-    await this.assertNameUnique(companyId, dto.name)
+    await this.assertNameUnique(companyId, LINE_SCOPE.COMPANY, dto.name)
 
     return this.prisma.sharedApprovalLine.create({
-      data: { companyId, name: dto.name, steps: dto.steps, createdById },
+      data: { companyId, name: dto.name, steps: dto.steps, createdById, scope: LINE_SCOPE.COMPANY },
     })
   }
 
   async update(companyId: string, lineId: string, dto: UpdateSharedLineDto) {
-    await this.assertLineBelongsToCompany(companyId, lineId)
+    await this.assertLineBelongsToCompany(companyId, lineId, LINE_SCOPE.COMPANY)
 
     if (dto.steps) {
       await this.assertAssigneesInCompany(companyId, dto.steps)
       this.assertNoFinalApproverConflict(dto.steps)
     }
     if (dto.name !== undefined) {
-      await this.assertNameUnique(companyId, dto.name, lineId)
+      await this.assertNameUnique(companyId, LINE_SCOPE.COMPANY, dto.name, undefined, lineId)
     }
 
     return this.prisma.sharedApprovalLine.update({
@@ -115,8 +123,76 @@ export class SharedApprovalLinesService {
   }
 
   async remove(companyId: string, lineId: string) {
-    await this.assertLineBelongsToCompany(companyId, lineId)
+    await this.assertLineBelongsToCompany(companyId, lineId, LINE_SCOPE.COMPANY)
+    return this.deleteLine(companyId, lineId)
+  }
 
+  // ── 개인 결재선 (PERSONAL) — 작성자 본인만 관리 ───────────────────────────────
+
+  /** 내 개인 결재선 목록 — 본인(ownerId) 소유분만. 결재선명 부분검색 지원. */
+  async findPersonal(companyId: string, ownerId: string, filter: PersonalLineFilterDto = {}) {
+    return this.prisma.sharedApprovalLine.findMany({
+      where: {
+        companyId,
+        scope: LINE_SCOPE.PERSONAL,
+        createdById: ownerId,
+        ...(filter.search ? { name: { contains: filter.search } } : {}),
+      },
+      orderBy: { name: 'asc' },
+    })
+  }
+
+  async createPersonal(companyId: string, dto: CreateSharedLineDto, ownerId: string) {
+    await this.assertAssigneesInCompany(companyId, dto.steps)
+    this.assertNoFinalApproverConflict(dto.steps)
+    await this.assertNameUnique(companyId, LINE_SCOPE.PERSONAL, dto.name, ownerId)
+
+    return this.prisma.sharedApprovalLine.create({
+      data: {
+        companyId,
+        name: dto.name,
+        steps: dto.steps,
+        createdById: ownerId,
+        scope: LINE_SCOPE.PERSONAL,
+      },
+    })
+  }
+
+  async updatePersonal(
+    companyId: string,
+    lineId: string,
+    dto: UpdateSharedLineDto,
+    ownerId: string,
+  ) {
+    await this.assertPersonalLineOwner(companyId, lineId, ownerId)
+
+    if (dto.steps) {
+      await this.assertAssigneesInCompany(companyId, dto.steps)
+      this.assertNoFinalApproverConflict(dto.steps)
+    }
+    if (dto.name !== undefined) {
+      await this.assertNameUnique(companyId, LINE_SCOPE.PERSONAL, dto.name, ownerId, lineId)
+    }
+
+    return this.prisma.sharedApprovalLine.update({
+      // 멀티테넌시 + 소유자 방어: where에 companyId·scope·소유자 포함
+      where: { id: lineId, companyId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.steps && { steps: dto.steps, version: { increment: 1 } }),
+      },
+    })
+  }
+
+  async removePersonal(companyId: string, lineId: string, ownerId: string) {
+    await this.assertPersonalLineOwner(companyId, lineId, ownerId)
+    return this.deleteLine(companyId, lineId)
+  }
+
+  // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
+
+  /** 결재선 삭제 — 문서가 참조 중(P2003)이면 거부. 공용/개인 공통. */
+  private async deleteLine(companyId: string, lineId: string) {
     try {
       // 멀티테넌시 방어: where에 companyId 포함 — 타 회사 라인 삭제 차단
       await this.prisma.sharedApprovalLine.delete({ where: { id: lineId, companyId } })
@@ -125,27 +201,42 @@ export class SharedApprovalLinesService {
       if ((error as { code?: string }).code === 'P2003') {
         throw new BadRequestException({
           code: 'SHARED_LINE_IN_USE',
-          message: '문서에서 사용 중인 공용 결재선은 삭제할 수 없습니다.',
+          message: '문서에서 사용 중인 결재선은 삭제할 수 없습니다.',
         })
       }
       throw error
     }
-
     return { deleted: true }
   }
 
-  // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
-
-  /** 같은 회사 내 결재선 이름 중복 차단 (수정 시 자기 자신 제외) */
-  private async assertNameUnique(companyId: string, name: string, excludeId?: string) {
+  /**
+   * 같은 회사·범위 내 결재선 이름 중복 차단 (수정 시 자기 자신 제외).
+   * 개인(PERSONAL) 범위는 소유자(ownerId)별로 중복을 판정한다 — 다른 사람과 같은 이름은 허용.
+   */
+  private async assertNameUnique(
+    companyId: string,
+    scope: string,
+    name: string,
+    ownerId?: string,
+    excludeId?: string,
+  ) {
     const existing = await this.prisma.sharedApprovalLine.findFirst({
-      where: { companyId, name, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      where: {
+        companyId,
+        scope,
+        name,
+        ...(scope === LINE_SCOPE.PERSONAL ? { createdById: ownerId } : {}),
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
       select: { id: true },
     })
     if (existing) {
       throw new BadRequestException({
         code: 'SHARED_LINE_DUPLICATE_NAME',
-        message: '같은 이름의 공용 결재선이 이미 있습니다.',
+        message:
+          scope === LINE_SCOPE.PERSONAL
+            ? '같은 이름의 내 결재선이 이미 있습니다.'
+            : '같은 이름의 공용 결재선이 이미 있습니다.',
       })
     }
   }
@@ -153,6 +244,7 @@ export class SharedApprovalLinesService {
   /**
    * 최종 결재자(마지막 APPROVER/AGREEMENT 흐름 단계 중 최대 stepOrder의 APPROVER)가
    * 동일 결재선에서 협조자(AGREEMENT/부서협조)로도 지정되면 거부한다.
+   * 동일 인원을 서로 다른 결재 단계에 중복 배치하는 것 자체는 허용한다(요구사항).
    */
   private assertNoFinalApproverConflict(steps: StepInput[]) {
     const approvers = steps
@@ -174,14 +266,35 @@ export class SharedApprovalLinesService {
     }
   }
 
-  private async assertLineBelongsToCompany(companyId: string, lineId: string) {
+  /** 공용 결재선이 자사 소속인지 검증 (scope=COMPANY 한정) */
+  private async assertLineBelongsToCompany(companyId: string, lineId: string, scope: string) {
     const line = await this.prisma.sharedApprovalLine.findFirst({
-      where: { id: lineId, companyId },
+      where: { id: lineId, companyId, scope },
     })
     if (!line) {
       throw new NotFoundException({
         code: 'SHARED_LINE_NOT_FOUND',
         message: '공용 결재선을 찾을 수 없습니다.',
+      })
+    }
+    return line
+  }
+
+  /** 개인 결재선 소유자 검증 — 타인 결재선 접근 차단 */
+  private async assertPersonalLineOwner(companyId: string, lineId: string, ownerId: string) {
+    const line = await this.prisma.sharedApprovalLine.findFirst({
+      where: { id: lineId, companyId, scope: LINE_SCOPE.PERSONAL },
+    })
+    if (!line) {
+      throw new NotFoundException({
+        code: 'PERSONAL_LINE_NOT_FOUND',
+        message: '내 결재선을 찾을 수 없습니다.',
+      })
+    }
+    if (line.createdById !== ownerId) {
+      throw new ForbiddenException({
+        code: 'PERSONAL_LINE_FORBIDDEN',
+        message: '본인의 결재선만 관리할 수 있습니다.',
       })
     }
     return line

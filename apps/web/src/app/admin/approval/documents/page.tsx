@@ -25,6 +25,7 @@ export default function DocumentLedgerPage() {
   const [limit, setLimit] = useState(20)
   const [status, setStatus] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  const [searchField, setSearchField] = useState<'all' | 'title' | 'form' | 'drafter'>('all')
   const search = useDebounce(searchInput, 300)
   // 행 클릭 — 라우트 이동 대신 DocModal(view)
   const [docId, setDocId] = useState<string | null>(null)
@@ -33,7 +34,7 @@ export default function DocumentLedgerPage() {
     page,
     limit,
     ...(status ? { status } : {}),
-    ...(search ? { search } : {}),
+    ...(search ? { search, searchField } : {}),
   })
 
   const items = data?.items ?? []
@@ -47,10 +48,24 @@ export default function DocumentLedgerPage() {
         title="문서대장"
         right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select
+              className="sel"
+              value={searchField}
+              onChange={(e) => {
+                setSearchField(e.target.value as typeof searchField)
+                setPage(1)
+              }}
+              aria-label="검색 대상"
+            >
+              <option value="all">전체</option>
+              <option value="title">제목</option>
+              <option value="form">양식</option>
+              <option value="drafter">기안자</option>
+            </select>
             <input
               className="inp"
               type="search"
-              placeholder="제목·문서번호 검색"
+              placeholder={searchField === 'drafter' ? '기안자명 검색' : searchField === 'form' ? '양식명 검색' : '제목·문서번호 검색'}
               value={searchInput}
               onChange={(e) => {
                 setSearchInput(e.target.value)

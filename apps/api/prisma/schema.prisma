@@ -70,6 +70,7 @@ model Company {
   employeeCustomFields EmployeeCustomField[]
   documentAttachments  DocumentAttachment[]
   formCategories       FormCategory[]
+  documentCategories   DocumentCategory[]
   auditLogs            AuditLog[]
   messengerAccounts    MessengerAccount[]
   errorAnalysisLogs    ErrorAnalysisLog[]
@@ -782,6 +783,27 @@ model FormCategory {
   @@map("form_categories")
 }
 
+// AP — 문서성격(채번 대분류). 예: 사업관리/일반관리/인사관리/LABL CHINA.
+// 양식함 분류(FormCategory)와 별개 축 — 기안 작성 시 선택하며 문서번호 {CATEGORY} 약어로 쓰인다.
+model DocumentCategory {
+  id           String   @id @default(uuid())
+  companyId    String   @map("company_id")
+  name         String   @db.VarChar(100)
+  abbreviation String   @db.VarChar(20)
+  sortOrder    Int      @default(0) @map("sort_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  company   Company    @relation(fields: [companyId], references: [id])
+  documents Document[]
+
+  @@unique([companyId, name])
+  @@unique([companyId, abbreviation])
+  @@index([companyId, isActive])
+  @@map("document_categories")
+}
+
 model DocumentForm {
   id              String  @id @default(uuid())
   companyId       String  @map("company_id")
@@ -846,6 +868,8 @@ model Document {
   id              String    @id @default(uuid())
   companyId       String    @map("company_id")
   formId          String    @map("form_id")
+  // AP 문서성격(채번 대분류) — 기안 시 선택. 양식함 분류와 별개.
+  categoryId      String?   @map("category_id")
   requestId       String?   @unique @map("request_id")
   docNumber       String?   @unique @map("doc_number") @db.VarChar(100)
   title           String    @db.VarChar(200)
@@ -862,6 +886,7 @@ model Document {
   // 양식 삭제로 문서가 연쇄삭제되지 않도록 Restrict 명시(기존 DB 기본값과 동일 — 마이그레이션 무발생).
   // 운영상 양식은 soft-delete만 사용하고 FORM_IN_USE 가드로 사용 중 삭제를 차단한다.
   form          DocumentForm     @relation(fields: [formId], references: [id], onDelete: Restrict)
+  category      DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   request       Request?
   drafter       Employee         @relation("DocumentDrafter", fields: [drafterId], references: [id])
   approvalLines ApprovalLine[]
@@ -972,7 +997,9 @@ model SharedApprovalLine {
   name        String   @db.VarChar(100)
   steps       Json
   version     Int      @default(1)
-  // 작성자 (감사/표시용) — 직원 삭제 시 SetNull
+  // 결재선 범위 — COMPANY(공용, 관리자 관리·전 직원 사용) | PERSONAL(개인, 작성자 본인만 관리·사용)
+  scope       String   @default("COMPANY") @db.VarChar(20)
+  // 작성자 (공용: 감사/표시용 · 개인: 소유자) — 직원 삭제 시 SetNull
   createdById String?  @map("created_by_id")
   updatedAt   DateTime @updatedAt @map("updated_at")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -982,6 +1009,7 @@ model SharedApprovalLine {
   approvalLines ApprovalLine[]
   defaultForForms DocumentForm[] @relation("FormDefaultLine")
 
+  @@index([companyId, scope, createdById])
   @@map("shared_approval_lines")
 }
 

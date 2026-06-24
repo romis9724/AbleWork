@@ -37,6 +37,7 @@ export default function AdminApprovalInboxPage() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
+  const [searchField, setSearchField] = useState<'all' | 'title' | 'form' | 'drafter'>('all')
   const [proxyOpen, setProxyOpen] = useState(false)
   const [docModal, setDocModal] = useState<DocModalState | null>(null)
 
@@ -52,7 +53,7 @@ export default function AdminApprovalInboxPage() {
   const { data, isLoading, refetch } = useDocuments(box as DocumentBox, {
     page,
     limit: PAGE_LIMIT,
-    ...(appliedSearch ? { search: appliedSearch } : {}),
+    ...(appliedSearch ? { search: appliedSearch, searchField } : {}),
   })
 
   const items = data?.items ?? []
@@ -110,9 +111,21 @@ export default function AdminApprovalInboxPage() {
       {/* 표 상단 — 건수 + 검색 */}
       <div className="tbl-bar">
         <span className="tbl-count">총 <b>{total.toLocaleString()}</b>건</span>
-        <div className="tbl-tools" style={{ minWidth: 260 }}>
+        <div className="tbl-tools" style={{ minWidth: 340, display: 'flex', gap: 8 }}>
+          <select
+            className="sel"
+            style={{ maxWidth: 100 }}
+            value={searchField}
+            onChange={(e) => setSearchField(e.target.value as typeof searchField)}
+            aria-label="검색 대상"
+          >
+            <option value="all">전체</option>
+            <option value="title">제목</option>
+            <option value="form">양식</option>
+            <option value="drafter">기안자</option>
+          </select>
           <TextInput
-            placeholder="제목 · 문서번호 검색"
+            placeholder={searchField === 'drafter' ? '기안자명 검색' : searchField === 'form' ? '양식명 검색' : '제목 · 문서번호 검색'}
             icon={I.search()}
             value={search}
             onChange={setSearch}
