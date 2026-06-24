@@ -540,6 +540,22 @@ describe('SharedApprovalLinesService', () => {
       await expect(service.createPersonal(COMPANY_ID, dupDto, 'owner-1')).resolves.toBeDefined()
       expect(mockPrisma.sharedApprovalLine.create).toHaveBeenCalled()
     })
+
+    it('[완화] 개인 결재선은 최종 승인자를 협조자로도 지정할 수 있다 (공용과 달리 허용)', async () => {
+      const collabDto: CreateSharedLineDto = {
+        name: '협조 겸 최종승인',
+        steps: [
+          { role: 'AGREEMENT', assigneeId: 'emp-1', stepOrder: 0 },
+          { role: 'APPROVER', assigneeId: 'emp-1', stepOrder: 1 },
+        ],
+      }
+      mockPrisma.employee.count.mockResolvedValue(1)
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(null)
+      mockPrisma.sharedApprovalLine.create.mockResolvedValue(baseLine)
+
+      await expect(service.createPersonal(COMPANY_ID, collabDto, 'owner-1')).resolves.toBeDefined()
+      expect(mockPrisma.sharedApprovalLine.create).toHaveBeenCalled()
+    })
   })
 
   describe('updatePersonal / removePersonal — 소유자 격리', () => {

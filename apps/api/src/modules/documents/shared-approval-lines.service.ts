@@ -143,8 +143,9 @@ export class SharedApprovalLinesService {
   }
 
   async createPersonal(companyId: string, dto: CreateSharedLineDto, ownerId: string) {
+    // 개인 결재선은 개인 템플릿(빠른 불러오기용)이라 '최종 결재자=협조자' 제약을 적용하지 않는다.
+    // (중복 인원 배치 자유 · 상신 시점에는 어차피 이 검증이 없음). 공용 결재선만 표준 검증 유지.
     await this.assertAssigneesInCompany(companyId, dto.steps)
-    this.assertNoFinalApproverConflict(dto.steps)
     await this.assertNameUnique(companyId, LINE_SCOPE.PERSONAL, dto.name, ownerId)
 
     return this.prisma.sharedApprovalLine.create({
@@ -166,9 +167,9 @@ export class SharedApprovalLinesService {
   ) {
     await this.assertPersonalLineOwner(companyId, lineId, ownerId)
 
+    // 개인 결재선은 '최종 결재자=협조자' 제약 미적용 (createPersonal 주석 참조)
     if (dto.steps) {
       await this.assertAssigneesInCompany(companyId, dto.steps)
-      this.assertNoFinalApproverConflict(dto.steps)
     }
     if (dto.name !== undefined) {
       await this.assertNameUnique(companyId, LINE_SCOPE.PERSONAL, dto.name, ownerId, lineId)
