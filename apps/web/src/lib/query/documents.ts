@@ -620,6 +620,19 @@ export const useRecallDocument = () => {
   })
 }
 
+/** 결재 종료/진행 후 사후 의견 등록 (기안자/결재 관계자) */
+export const useAddDocumentOpinion = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ documentId, comment }: { documentId: string; comment: string }) =>
+      apiClient.post(`/documents/${documentId}/opinions`, { comment }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: [...DOCS_KEY, 'detail', vars.documentId] })
+      qc.invalidateQueries({ queryKey: DOCS_KEY })
+    },
+  })
+}
+
 export const useDocumentStepAction = () => {
   const qc = useQueryClient()
   return useMutation({

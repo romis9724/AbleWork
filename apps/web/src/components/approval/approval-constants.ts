@@ -127,6 +127,7 @@ export const HISTORY_ACTION_LABEL: Record<string, string> = {
   RECEIVE: '수신 처리',
   DEPT_COLLAB: '부서협조',
   BOUNCE: '부서수신 반송',
+  OPINION: '의견',
 }
 
 export const dateTimeText = (value?: string | null) =>

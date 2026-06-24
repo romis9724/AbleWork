@@ -32,6 +32,8 @@ import {
   SubmitDocumentSchema,
   AddCcStepsDto,
   AddCcStepsSchema,
+  AddOpinionDto,
+  AddOpinionSchema,
   ApprovalCommentDto,
   ApprovalCommentSchema,
   DocumentBoxFilterDto,
@@ -180,6 +182,20 @@ export class DocumentsController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.documentsService.addCcSteps(companyId, id, dto, user)
+  }
+
+  // 결재 종료/진행 후 사후 의견 등록 (기안자/결재 관계자/관리자)
+  @Post(':id/opinions')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '사후 의견 등록 (상신된 문서, 기안자/결재 관계자)' })
+  @ApiParam({ name: 'id', type: String })
+  addOpinion(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AddOpinionSchema)) dto: AddOpinionDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.documentsService.addOpinion(companyId, id, dto, user)
   }
 
   // ── 결재 처리 ────────────────────────────────────────────────────────────────

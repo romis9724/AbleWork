@@ -961,6 +961,10 @@ notification_rules {
 - 사용 중(문서 참조) 문서성격은 삭제 차단(`DOCUMENT_CATEGORY_IN_USE`), 이름·약어 중복 차단(`DOCUMENT_CATEGORY_DUPLICATE`).
 
 **문서함 탭별 검색**: 문서함 목록(`/documents`)은 `searchField`(`all`/`title`/`form`/`drafter`)로 검색 대상을 지정한다. `all`(기본)은 제목·문서번호·양식명·기안자명 OR 검색, 나머지는 해당 단일 필드 검색. 모든 박스(기안함/결재함/문서대장 등)에 적용된다.
+
+**결재 종료/진행 후 의견·첨부**: 상신된 문서(DRAFT 제외)에 사후 의견·첨부를 추가할 수 있다(계약 기안 완료 후 최종 날인 스캔본 등).
+- 의견: `POST /documents/:id/opinions` → `ApprovalHistory(action=OPINION)`로 기록되어 결재 의견 타임라인에 함께 노출된다. 권한=기안자 + 결재 관계자(assignee/proxy) + 관리자. DRAFT 문서는 `DOCUMENT_OPINION_NOT_ALLOWED`.
+- 첨부: 업로드 권한을 상신 후에도 기안자·결재 관계자·관리자로 확대한다(본문·결재선은 잠금 유지, 첨부만 허용). 완료(APPROVED) 문서의 첨부는 삭제 차단(`ATTACHMENT_DELETE_LOCKED`); 그 외 삭제는 업로더 본인/작성 가능 상태의 기안자/관리자만(`ATTACHMENT_DELETE_FORBIDDEN`).
 - (follow-up) **소속부서 팀장 동적 결재자 토큰**: 상신 시 기안자 소속부서 팀장으로 해석되는 동적 단계는 `ApprovalStep.assigneeId` NOT NULL 제약 + 상신 시점 drafter-org 해석이 필요해 별도 단계로 보류.
 
 **전자결재 공통 관리 정책(AP-01 공통)**:

@@ -24,6 +24,7 @@ import {
   UpdateDocumentDto,
   SubmitDocumentDto,
   AddCcStepsDto,
+  AddOpinionDto,
   DocumentBoxFilterDto,
   StepInput,
   StepInputSchema,
@@ -488,6 +489,45 @@ export class DocumentsService {
         assigneeId: s.assigneeId,
       })
     }
+
+    return this.findOne(companyId, documentId, user)
+  }
+
+  // ── 결재 종료/진행 후 사후 의견 등록 ─────────────────────────────────────────
+
+  /**
+   * 상신된 문서(DRAFT 제외)에 사후 의견을 남긴다 — 계약 기안 완료 후 코멘트 등.
+   * 권한: 기안자 본인 + 결재 관계자(assignee/proxy) + 관리자 (열람 권한과 동일).
+   * ApprovalHistory.comment(action=OPINION)로 기록되어 결재 의견 타임라인에 노출된다.
+   */
+  async addOpinion(companyId: string, documentId: string, dto: AddOpinionDto, user: JwtPayload) {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, companyId },
+      include: { approvalLines: { include: { steps: true } } },
+    })
+    if (!document) {
+      throw new NotFoundException({
+        code: 'DOCUMENT_NOT_FOUND',
+        message: '문서를 찾을 수 없습니다.',
+      })
+    }
+    if (document.status === DocStatus.DRAFT) {
+      throw new BadRequestException({
+        code: 'DOCUMENT_OPINION_NOT_ALLOWED',
+        message: '상신된 문서에만 의견을 남길 수 있습니다.',
+      })
+    }
+    // 기안자/결재 관계자/관리자만 (열람 권한과 동일 규칙)
+    this.assertCanRead(document, user)
+
+    await this.prisma.approvalHistory.create({
+      data: {
+        documentId,
+        actorId: user.employeeId,
+        action: HistoryAction.OPINION,
+        comment: dto.comment.trim(),
+      },
+    })
 
     return this.findOne(companyId, documentId, user)
   }

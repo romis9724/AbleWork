@@ -73,6 +73,11 @@ export const ApprovalCommentSchema = z.object({
   comment: z.string().optional(),
 })
 
+// AP 결재 종료/진행 후 사후 의견 등록 — 의견 본문 필수
+export const AddOpinionSchema = z.object({
+  comment: z.string().min(1, '의견을 입력하세요.').max(2000),
+})
+
 // AP-02-08 공람/참조 사후 추가 — 진행중/완료 문서에 공람자·참조자 지정 (비차단, 개인만)
 export const AddCcStepsSchema = z.object({
   steps: z
@@ -126,5 +131,6 @@ export type CreateDocumentDto = z.infer<typeof CreateDocumentSchema>
 export type UpdateDocumentDto = z.infer<typeof UpdateDocumentSchema>
 export type SubmitDocumentDto = z.infer<typeof SubmitDocumentSchema>
 export type ApprovalCommentDto = z.infer<typeof ApprovalCommentSchema>
+export type AddOpinionDto = z.infer<typeof AddOpinionSchema>
 export type AddCcStepsDto = z.infer<typeof AddCcStepsSchema>
 export type DocumentBoxFilterDto = z.infer<typeof DocumentBoxFilterSchema>

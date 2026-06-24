@@ -624,6 +624,59 @@ describe('DocumentsService', () => {
     })
   })
 
+  // ── addOpinion (결재 후 사후 의견) ───────────────────────────────────────────
+
+  describe('addOpinion', () => {
+    it('상신된 문서에 사후 의견을 OPINION 이력으로 기록한다', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(
+        makeDocument({ status: 'APPROVED', approvalLines: [] }),
+      )
+      mockPrisma.approvalHistory.create.mockResolvedValue({})
+
+      await service.addOpinion(
+        COMPANY_ID,
+        DOCUMENT_ID,
+        { comment: '최종 날인본 첨부합니다.' },
+        makeUser(),
+      )
+
+      expect(mockPrisma.approvalHistory.create).toHaveBeenCalledWith({
+        data: {
+          documentId: DOCUMENT_ID,
+          actorId: DRAFTER_ID,
+          action: 'OPINION',
+          comment: '최종 날인본 첨부합니다.',
+        },
+      })
+    })
+
+    it('DRAFT 문서면 DOCUMENT_OPINION_NOT_ALLOWED', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(makeDocument({ status: 'DRAFT' }))
+      await expect(
+        service.addOpinion(COMPANY_ID, DOCUMENT_ID, { comment: 'x' }, makeUser()),
+      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_OPINION_NOT_ALLOWED' } })
+      expect(mockPrisma.approvalHistory.create).not.toHaveBeenCalled()
+    })
+
+    it('기안자/관계자/관리자가 아니면 의견 등록을 거부한다', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(
+        makeDocument({
+          status: 'APPROVED',
+          approvalLines: [{ steps: [{ assigneeId: 'approver-1', proxyId: null }] }],
+        }),
+      )
+      await expect(
+        service.addOpinion(
+          COMPANY_ID,
+          DOCUMENT_ID,
+          { comment: 'x' },
+          makeUser(AccessLevel.EMPLOYEE, 'stranger'),
+        ),
+      ).rejects.toThrow(ForbiddenException)
+      expect(mockPrisma.approvalHistory.create).not.toHaveBeenCalled()
+    })
+  })
+
   // ── findAll (문서함) ─────────────────────────────────────────────────────────
 
   describe('findAll', () => {

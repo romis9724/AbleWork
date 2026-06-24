@@ -86,6 +86,7 @@ export const HistoryAction = {
   RECEIVE: 'RECEIVE',
   DEPT_COLLAB: 'DEPT_COLLAB', // 부서협조 완료
   BOUNCE: 'BOUNCE', // 부서수신 반송
+  OPINION: 'OPINION', // 결재 종료/진행 후 사후 의견 등록
 } as const
 
 export type HistoryAction = (typeof HistoryAction)[keyof typeof HistoryAction]

@@ -66,6 +66,7 @@ describe('AttachmentsService', () => {
     drafterId: DRAFTER_ID,
     status: 'DRAFT',
     form: { allowZipUpload: false },
+    approvalLines: [],
     ...overrides,
   })
 
@@ -90,11 +91,42 @@ describe('AttachmentsService', () => {
       ).rejects.toMatchObject({ response: { code: 'DOCUMENT_NOT_DRAFTER' } })
     })
 
-    it('상신된 문서면 400', async () => {
+    it('상신된 문서(PENDING)도 기안자는 사후 첨부할 수 있다', async () => {
       mockPrisma.document.findFirst.mockResolvedValue(draftDoc({ status: 'PENDING' }))
+      mockPrisma.documentAttachment.count.mockResolvedValue(0)
+      mockPrisma.documentAttachment.create.mockResolvedValue({ id: 'att-1' })
+      await service.upload(COMPANY_ID, DOCUMENT_ID, makeFile(), makeUser())
+      expect(mockPrisma.documentAttachment.create).toHaveBeenCalled()
+    })
+
+    it('상신된 문서에 결재 관계자는 사후 첨부 가능 (최종날인 스캔 등)', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(
+        draftDoc({
+          status: 'APPROVED',
+          approvalLines: [{ steps: [{ assigneeId: 'approver-1', proxyId: null }] }],
+        }),
+      )
+      mockPrisma.documentAttachment.count.mockResolvedValue(0)
+      mockPrisma.documentAttachment.create.mockResolvedValue({ id: 'att-2' })
+      await service.upload(
+        COMPANY_ID,
+        DOCUMENT_ID,
+        makeFile(),
+        makeUser(AccessLevel.EMPLOYEE, 'approver-1'),
+      )
+      expect(mockPrisma.documentAttachment.create).toHaveBeenCalled()
+    })
+
+    it('상신된 문서에 비관계자(타인)는 첨부 불가 403', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(
+        draftDoc({
+          status: 'PENDING',
+          approvalLines: [{ steps: [{ assigneeId: 'approver-1', proxyId: null }] }],
+        }),
+      )
       await expect(
-        service.upload(COMPANY_ID, DOCUMENT_ID, makeFile(), makeUser()),
-      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_ALREADY_SUBMITTED' } })
+        service.upload(COMPANY_ID, DOCUMENT_ID, makeFile(), makeUser(AccessLevel.EMPLOYEE, 'stranger')),
+      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_ACCESS_FORBIDDEN' } })
     })
 
     it('zip 비허용 양식에 zip 업로드 시 400', async () => {
@@ -216,7 +248,7 @@ describe('AttachmentsService', () => {
       expect(mockStorage.removeObject).toHaveBeenCalledWith('documents/document-1/abc')
     })
 
-    it('기안자가 아니면 403 (스토리지 미접근)', async () => {
+    it('업로더도 기안자도 아니면 403 (스토리지 미접근)', async () => {
       mockPrisma.document.findFirst.mockResolvedValue({
         id: DOCUMENT_ID,
         companyId: COMPANY_ID,
@@ -224,9 +256,28 @@ describe('AttachmentsService', () => {
         status: 'DRAFT',
         form: { allowZipUpload: false },
       })
+      mockPrisma.documentAttachment.findFirst.mockResolvedValue({
+        id: 'att-1',
+        storageKey: 'documents/document-1/abc',
+        uploaderId: DRAFTER_ID,
+      })
       await expect(
         service.remove(COMPANY_ID, DOCUMENT_ID, 'att-1', makeUser(AccessLevel.EMPLOYEE, 'other')),
       ).rejects.toThrow(ForbiddenException)
+      expect(mockStorage.removeObject).not.toHaveBeenCalled()
+    })
+
+    it('완료(APPROVED) 문서의 첨부는 삭제할 수 없다 (보존)', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue({
+        id: DOCUMENT_ID,
+        companyId: COMPANY_ID,
+        drafterId: DRAFTER_ID,
+        status: 'APPROVED',
+        form: { allowZipUpload: false },
+      })
+      await expect(
+        service.remove(COMPANY_ID, DOCUMENT_ID, 'att-1', makeUser()),
+      ).rejects.toMatchObject({ response: { code: 'ATTACHMENT_DELETE_LOCKED' } })
       expect(mockStorage.removeObject).not.toHaveBeenCalled()
     })
   })

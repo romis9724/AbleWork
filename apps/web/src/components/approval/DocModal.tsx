@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { readFormFields } from '@ablework/shared-constants'
 import {
   useAddCcSteps,
+  useAddDocumentOpinion,
   useCreateDocument,
   useDocument,
   useDocumentCategories,
@@ -77,6 +78,7 @@ const HISTORY_BADGE: Record<string, BadgeKind> = {
   BOUNCE: 'b-reject',
   RECALL: 'b-submit',
   CANCEL_APPROVAL: 'b-wait',
+  OPINION: 'b-prog',
 }
 
 /** 단계 상태 → 도장 마크(ok/rej/wait) */
@@ -169,6 +171,7 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const recallMutation = useRecallDocument()
   const addCcMutation = useAddCcSteps()
   const savePersonalLine = useSavePersonalApprovalLine()
+  const addOpinionMutation = useAddDocumentOpinion()
 
   // ----- 편집/작성 폼 상태 -----
   const [formId, setFormId] = useState('')
@@ -178,6 +181,8 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({})
   const [steps, setSteps] = useState<ApprovalStepInput[]>([])
   const [comment, setComment] = useState('')
+  // 결재 종료/진행 후 사후 의견
+  const [opinionText, setOpinionText] = useState('')
   // 공람/참조 사후 추가 picker (C-8) + 공용 결재선 선택 (C-6)
   const [ccEmpId, setCcEmpId] = useState('')
   const [ccRole, setCcRole] = useState<'VIEWER' | 'REFERENCE'>('VIEWER')
@@ -265,6 +270,15 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     (doc?.status === 'PENDING' || doc?.status === 'APPROVED') &&
     (isDrafter || isParticipant)
 
+  // 결재 종료/진행 후 사후 의견·첨부 — 상신된 문서의 기안자/결재 관계자(assignee·proxy)
+  const isAnyParticipant = detailSteps.some(
+    (s) => s.assignee?.id === myEmployeeId || s.proxy?.id === myEmployeeId,
+  )
+  const isSubmittedDoc = !isCreate && !!doc && doc.status !== 'DRAFT'
+  const canPostAttach = isSubmittedDoc && (isDrafter || isAnyParticipant)
+  // 결재 차례가 아닐 때만 사후 의견 입력 노출(결재 차례면 결재 처리 의견으로 전송)
+  const canAddOpinion = canPostAttach && !canApprove && !canConfirmView && !canReceive
+
   const busy =
     createMutation.isPending ||
     updateMutation.isPending ||
@@ -272,7 +286,8 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     stepAction.isPending ||
     recallMutation.isPending ||
     addCcMutation.isPending ||
-    savePersonalLine.isPending
+    savePersonalLine.isPending ||
+    addOpinionMutation.isPending
 
   const stampLine: StampStep[] = useMemo(() => (doc ? buildStampLine(doc) : []), [doc])
 
@@ -304,6 +319,18 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
       onClose()
     } catch {
       toast('처리 중 오류가 발생했습니다')
+    }
+  }
+
+  /** 결재 종료/진행 후 사후 의견 등록 */
+  const handleAddOpinion = async () => {
+    if (!doc || !opinionText.trim()) return
+    try {
+      await addOpinionMutation.mutateAsync({ documentId: doc.id, comment: opinionText.trim() })
+      toast('의견을 등록했습니다')
+      setOpinionText('')
+    } catch {
+      toast('의견 등록 중 오류가 발생했습니다')
     }
   }
 
@@ -767,12 +794,19 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
                 {isCreate ? (
                   <div className="muted" style={{ fontSize: 13 }}>첨부파일은 임시저장 후 등록할 수 있습니다.</div>
                 ) : doc ? (
-                  <AttachmentPanel
-                    documentId={doc.id}
-                    editable={mode === 'edit'}
-                    allowZipUpload={doc.form?.allowZipUpload}
-                    onError={(m) => toast(m)}
-                  />
+                  <>
+                    <AttachmentPanel
+                      documentId={doc.id}
+                      editable={mode === 'edit' || canPostAttach}
+                      allowZipUpload={doc.form?.allowZipUpload}
+                      onError={(m) => toast(m)}
+                    />
+                    {isView && canPostAttach && (
+                      <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                        결재 완료 후에도 최종 날인본 등 첨부파일을 추가할 수 있습니다.
+                      </div>
+                    )}
+                  </>
                 ) : null}
               </div>
 
@@ -802,6 +836,28 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
                         value={comment}
                         onChange={(e) => setComment(e.target.value)}
                       />
+                    </div>
+                  )}
+
+                  {/* 사후 의견 등록 — 결재 차례가 아닌 관계자/기안자 (계약 완료 후 코멘트 등) */}
+                  {canAddOpinion && (
+                    <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                      <input
+                        className="inp-block"
+                        placeholder="의견을 남기세요 (첨부는 위 첨부파일 영역에서)"
+                        value={opinionText}
+                        onChange={(e) => setOpinionText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleAddOpinion()
+                        }}
+                      />
+                      <button
+                        className="btn btn-line btn-sm"
+                        disabled={busy || !opinionText.trim()}
+                        onClick={handleAddOpinion}
+                      >
+                        의견 등록
+                      </button>
                     </div>
                   )}
                 </div>
