@@ -362,6 +362,14 @@ export class AttendancesService {
 
   // ── 출퇴근 수정 (관리자) ─────────────────────────────────────────────────────
 
+  /**
+   * 출퇴근 기록을 수정한다.
+   *
+   * 보안 주의: 이 라우트(PATCH /attendances/:id)는 컨트롤러에서 @Roles(GENERAL_ADMIN)로 보호되어
+   * ORG_ADMIN은 진입할 수 없으므로 조직 경계 가드(guardOrgScope)를 의도적으로 생략한다.
+   * GENERAL_ADMIN/SUPER_ADMIN은 전사 권한이라 조직 경계 검사 대상이 아니다.
+   * 만약 @Roles를 ORG_ADMIN으로 낮춘다면(updateBreaks처럼) 반드시 guardOrgScope를 추가해야 한다.
+   */
   async update(
     companyId: string,
     id: string,
@@ -416,8 +424,14 @@ export class AttendancesService {
    * 휴게 기록을 전달된 목록으로 전체 교체한다 (ORG_ADMIN 이상, $transaction).
    * 확정된 기록은 수정할 수 없다.
    */
-  async updateBreaks(companyId: string, id: string, dto: UpdateBreaksDto) {
+  async updateBreaks(
+    companyId: string,
+    id: string,
+    dto: UpdateBreaksDto,
+    requester: JwtPayload,
+  ) {
     const attendance = await this.assertAttendance(companyId, id)
+    await this.guardOrgScope(requester, attendance)
     this.assertNotConfirmed(attendance)
 
     return this.prisma.$transaction(async (tx) => {
@@ -444,6 +458,14 @@ export class AttendancesService {
 
   // ── 삭제 (관리자) ────────────────────────────────────────────────────────────
 
+  /**
+   * 출퇴근 기록을 삭제한다.
+   *
+   * 보안 주의: 이 라우트(DELETE /attendances/:id)는 컨트롤러에서 @Roles(GENERAL_ADMIN)로 보호되어
+   * ORG_ADMIN은 진입할 수 없으므로 조직 경계 가드(guardOrgScope)를 의도적으로 생략한다.
+   * GENERAL_ADMIN/SUPER_ADMIN은 전사 권한이라 조직 경계 검사 대상이 아니다.
+   * 만약 @Roles를 ORG_ADMIN으로 낮춘다면(updateBreaks처럼) 반드시 guardOrgScope를 추가해야 한다.
+   */
   async remove(companyId: string, id: string) {
     const attendance = await this.assertAttendance(companyId, id)
     this.assertNotConfirmed(attendance)
@@ -454,14 +476,23 @@ export class AttendancesService {
   // ── 내 오늘 출근 상태 ────────────────────────────────────────────────────────
 
   /**
-   * 직원 본인의 현재 출근 상태를 반환한다 (me/home 새로고침 시 상태 복원용).
+   * 직원 본인의 오늘 출퇴근 기록을 반환한다 (me/home 새로고침 시 상태 복원용).
    *
-   * - attendance: 미퇴근(clockOutAt null) 레코드 (없으면 null)
+   * - attendance: 오늘(clockInAt 당일) 최신 출퇴근 기록. 근무중·퇴근완료 모두 포함 (없으면 null)
    * - openBreak: 진행 중(endAt null)인 휴게 (없으면 null)
    */
   async getMyToday(companyId: string, employeeId: string) {
+    const dayStart = new Date()
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date()
+    dayEnd.setHours(23, 59, 59, 999)
+
     const attendance = await this.prisma.attendance.findFirst({
-      where: { employeeId, employee: { companyId }, clockOutAt: null },
+      where: {
+        employeeId,
+        employee: { companyId },
+        clockInAt: { gte: dayStart, lte: dayEnd },
+      },
       orderBy: { clockInAt: 'desc' },
       include: { breaks: { orderBy: { startAt: 'asc' } } },
     })
@@ -689,6 +720,51 @@ export class AttendancesService {
       })
     }
     return attendance
+  }
+
+  /**
+   * 조직 경계 가드 (보안): ORG_ADMIN이 동일 회사 내 타 조직 출퇴근 기록을 수정하지 못하도록 막는다.
+   * (employees.service.guardOrgScope 와 동일 정책 — 대상 직원 소속 조직 ∩ 요청자 소속 조직)
+   *
+   * - SUPER_ADMIN / GENERAL_ADMIN → 통과 (전사)
+   * - EMPLOYEE → 본인 기록만 (admin 게이트 경로라 통상 도달하지 않으나 방어)
+   * - ORG_ADMIN → 대상 기록 직원의 소속 조직과 요청자 소속 조직 교집합이 있으면 통과, 없으면 Forbidden
+   */
+  private async guardOrgScope(requester: JwtPayload, attendance: { employeeId: string }) {
+    if (
+      requester.accessLevel === AccessLevel.SUPER_ADMIN ||
+      requester.accessLevel === AccessLevel.GENERAL_ADMIN
+    ) {
+      return
+    }
+
+    if (requester.accessLevel === AccessLevel.EMPLOYEE) {
+      if (requester.employeeId !== attendance.employeeId) {
+        throw new ForbiddenException('해당 출퇴근 기록에 대한 접근 권한이 없습니다.')
+      }
+      return
+    }
+
+    const [requesterOrgs, targetOrgs] = await Promise.all([
+      this.prisma.employeeOrganization.findMany({
+        where: { employeeId: requester.employeeId },
+        select: { organizationId: true },
+      }),
+      this.prisma.employeeOrganization.findMany({
+        where: { employeeId: attendance.employeeId },
+        select: { organizationId: true },
+      }),
+    ])
+
+    const requesterOrgIds = new Set(
+      requesterOrgs.map((o: { organizationId: string }) => o.organizationId),
+    )
+    const hasOverlap = targetOrgs.some((o: { organizationId: string }) =>
+      requesterOrgIds.has(o.organizationId),
+    )
+    if (!hasOverlap) {
+      throw new ForbiddenException('해당 출퇴근 기록에 대한 접근 권한이 없습니다.')
+    }
   }
 
   private async assertOpenAttendance(companyId: string, id: string) {

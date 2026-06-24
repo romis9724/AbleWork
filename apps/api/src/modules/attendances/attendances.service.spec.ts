@@ -19,6 +19,7 @@ import { JwtPayload } from '../../common/types/jwt-payload.type'
 const COMPANY_ID = 'company-1'
 const EMPLOYEE_ID = 'emp-1'
 const ATTENDANCE_ID = 'att-1'
+const ORG_ID = 'org-1'
 
 const baseEmployee = {
   id: EMPLOYEE_ID,
@@ -42,6 +43,13 @@ const baseAttendance = {
   updatedAt: new Date(),
 }
 
+const makeRequester = (accessLevel: AccessLevel, employeeId = 'req-emp-1'): JwtPayload => ({
+  sub: 'user-1',
+  employeeId,
+  companyId: COMPANY_ID,
+  accessLevel,
+})
+
 // ── 목 ──────────────────────────────────────────────────────────────────────
 
 const mockPrisma = {
@@ -64,6 +72,9 @@ const mockPrisma = {
   },
   employee: {
     findFirst: jest.fn(),
+  },
+  employeeOrganization: {
+    findMany: jest.fn(),
   },
   shift: {
     findFirst: jest.fn(),
@@ -116,6 +127,8 @@ describe('AttendancesService', () => {
       (_companyId: string, _section: string, _key: string, defaultValue: unknown) =>
         Promise.resolve(defaultValue),
     )
+    // 조직 경계 가드 기본 통과: 요청자·대상 모두 ORG_ID 소속으로 간주
+    mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: ORG_ID }])
   })
 
   // ── determineStatus ──────────────────────────────────────────────────────
@@ -628,13 +641,6 @@ describe('AttendancesService', () => {
   // ── unconfirm ────────────────────────────────────────────────────────────
 
   describe('unconfirm', () => {
-    const makeRequester = (accessLevel: AccessLevel): JwtPayload => ({
-      sub: 'user-1',
-      employeeId: 'req-emp-1',
-      companyId: COMPANY_ID,
-      accessLevel,
-    })
-
     it('GENERAL_ADMIN이 ID 목록으로 확정을 해제한다', async () => {
       mockPrisma.attendance.updateMany.mockResolvedValue({ count: 2 })
 
@@ -748,12 +754,17 @@ describe('AttendancesService', () => {
       ]
       mockPrisma.attendanceBreak.findMany.mockResolvedValue(replaced)
 
-      const result = await service.updateBreaks(COMPANY_ID, ATTENDANCE_ID, {
-        breaks: [
-          { breakType: 'rest', startAt: '2024-06-10T12:00:00.000Z', endAt: '2024-06-10T13:00:00.000Z' },
-          { breakType: 'meal', startAt: '2024-06-10T15:00:00.000Z' },
-        ],
-      })
+      const result = await service.updateBreaks(
+        COMPANY_ID,
+        ATTENDANCE_ID,
+        {
+          breaks: [
+            { breakType: 'rest', startAt: '2024-06-10T12:00:00.000Z', endAt: '2024-06-10T13:00:00.000Z' },
+            { breakType: 'meal', startAt: '2024-06-10T15:00:00.000Z' },
+          ],
+        },
+        makeRequester(AccessLevel.GENERAL_ADMIN),
+      )
 
       expect(result).toEqual(replaced)
       expect(mockPrisma.attendanceBreak.deleteMany).toHaveBeenCalledWith({
@@ -774,8 +785,52 @@ describe('AttendancesService', () => {
         isConfirmed: true,
       })
       await expect(
-        service.updateBreaks(COMPANY_ID, ATTENDANCE_ID, { breaks: [] }),
+        service.updateBreaks(
+          COMPANY_ID,
+          ATTENDANCE_ID,
+          { breaks: [] },
+          makeRequester(AccessLevel.GENERAL_ADMIN),
+        ),
       ).rejects.toThrow(BadRequestException)
+    })
+
+    it('ORG_ADMIN이 타 조직 출퇴근 휴게를 교체하면 ForbiddenException을 던진다', async () => {
+      mockPrisma.attendance.findFirst.mockResolvedValue(baseAttendance) // 대상 직원 EMPLOYEE_ID
+      // 요청자 org-A, 대상 org-B → 교집합 없음
+      mockPrisma.employeeOrganization.findMany.mockImplementation(
+        ({ where }: { where: { employeeId: string } }) =>
+          Promise.resolve(
+            where.employeeId === 'admin-1'
+              ? [{ organizationId: 'org-A' }]
+              : [{ organizationId: 'org-B' }],
+          ),
+      )
+
+      await expect(
+        service.updateBreaks(
+          COMPANY_ID,
+          ATTENDANCE_ID,
+          { breaks: [] },
+          makeRequester(AccessLevel.ORG_ADMIN, 'admin-1'),
+        ),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('ORG_ADMIN이 본인 조직 출퇴근 휴게를 교체하면 통과한다', async () => {
+      mockPrisma.attendance.findFirst.mockResolvedValue(baseAttendance)
+      mockPrisma.attendanceBreak.deleteMany.mockResolvedValue({ count: 0 })
+      mockPrisma.attendanceBreak.findMany.mockResolvedValue([])
+      // 요청자·대상 모두 org-B 공유 → 통과
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: 'org-B' }])
+
+      await expect(
+        service.updateBreaks(
+          COMPANY_ID,
+          ATTENDANCE_ID,
+          { breaks: [] },
+          makeRequester(AccessLevel.ORG_ADMIN, 'admin-1'),
+        ),
+      ).resolves.toEqual([])
     })
   })
 

@@ -50,6 +50,7 @@ export function OffsiteWorkDialog({ open, submitting, onClose, onSubmit }: Reque
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           disabled={!date || !destination.trim() || !reason.trim() || submitting}
           onClick={() => onSubmit('OFFSITE_WORK', { date, destination: destination.trim(), reason: reason.trim() })}
@@ -93,6 +94,7 @@ export function CustomRequestDialog({ open, submitting, onClose, onSubmit }: Req
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           disabled={!title.trim() || !content.trim() || submitting}
           onClick={() => onSubmit('CUSTOM', { title: title.trim(), content: content.trim() })}

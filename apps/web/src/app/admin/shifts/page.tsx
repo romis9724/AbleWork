@@ -401,10 +401,10 @@ export default function ShiftsPage() {
         title="근무일정"
         right={
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-line btn-sm" onClick={() => setBulkOpen(true)}>
+            <button data-testid="shifts-bulk-btn" className="btn btn-line btn-sm" onClick={() => setBulkOpen(true)}>
               {I.plus({ style: { marginRight: 6 } })} 일괄 생성
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={openCreate}>
+            <button data-testid="shifts-add-btn" className="btn btn-ghost btn-sm" onClick={openCreate}>
               {I.plus({ style: { marginRight: 6 } })} 근무일정 추가
             </button>
           </div>
@@ -414,14 +414,14 @@ export default function ShiftsPage() {
       {/* 주 이동 + 조직 필터 */}
       <div className="roster-toolbar">
         <div className="wk-nav">
-          <button className="nb" onClick={() => setWeekStart(addDays(weekStart, -DAYS_PER_WEEK))} aria-label="이전 주">
+          <button data-testid="shifts-prev-week" className="nb" onClick={() => setWeekStart(addDays(weekStart, -DAYS_PER_WEEK))} aria-label="이전 주">
             {I.chevL()}
           </button>
           <span className="wk-label">{weekLabel(weekStart)}</span>
-          <button className="nb" onClick={() => setWeekStart(addDays(weekStart, DAYS_PER_WEEK))} aria-label="다음 주">
+          <button data-testid="shifts-next-week" className="nb" onClick={() => setWeekStart(addDays(weekStart, DAYS_PER_WEEK))} aria-label="다음 주">
             {I.chevR()}
           </button>
-          <button className="btn btn-line btn-sm" onClick={() => setWeekStart(getMonday(new Date()))}>
+          <button data-testid="shifts-this-week" className="btn btn-line btn-sm" onClick={() => setWeekStart(getMonday(new Date()))}>
             오늘
           </button>
         </div>
@@ -540,6 +540,7 @@ export default function ShiftsPage() {
                                     </span>
                                     {!confirmed && (
                                       <span
+                                        data-testid="shift-confirm-btn"
                                         className="tbl-link"
                                         role="button"
                                         tabIndex={0}
@@ -561,6 +562,7 @@ export default function ShiftsPage() {
                                     )}
                                     {confirmed && canUnconfirm && (
                                       <span
+                                        data-testid="shift-unconfirm-btn"
                                         className="tbl-link"
                                         role="button"
                                         tabIndex={0}

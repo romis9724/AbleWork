@@ -68,6 +68,7 @@ function AttendanceTimeFormDialog({
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           disabled={!canSubmit || submitting}
           onClick={() => onSubmit(requestType, { date, clockInAt, clockOutAt, ...(reason && { reason }) })}
@@ -120,6 +121,7 @@ export function AttendanceDeleteDialog({ open, employeeId, submitting, onClose, 
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           color="error"
           disabled={!attendanceId || submitting}

@@ -14,6 +14,7 @@ import {
   type DocumentListItem,
 } from '@/lib/query/documents'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { usePermission } from '@/hooks/usePermission'
 
 /** 결재 현황 phase → 네이티브 Badge 종류 (상신=회색 / 진행중=오렌지 / 반려=레드) */
 const PHASE_BADGE: Record<DocPhase, BadgeKind> = {
@@ -54,6 +55,9 @@ const PAGE_SIZES = [10, 20, 50] as const
 
 export default function ApprovalStatusPage() {
   const toast = useToast()
+  // 일괄 강제삭제(POST /documents/bulk-force-delete)는 백엔드 @Roles(GENERAL_ADMIN)로 막혀 있다.
+  // 방어심층: UI에서도 GENERAL_ADMIN 미만에게는 "선택 삭제" 버튼을 노출하지 않는다.
+  const { isGeneralAdmin } = usePermission()
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   // 필터: 입력값(form) / 적용값(applied) 분리 — [조회] 버튼으로 적용
@@ -187,13 +191,16 @@ export default function ApprovalStatusPage() {
           {isFetching && <span className="ab-spin" style={{ marginLeft: 10, verticalAlign: 'middle' }} />}
         </span>
         <div className="tbl-tools">
-          <button
-            className="btn btn-line btn-sm"
-            disabled={selected.length === 0 || bulkDelete.isPending}
-            onClick={() => setConfirmBulk(true)}
-          >
-            선택 삭제
-          </button>
+          {isGeneralAdmin && (
+            <button
+              className="btn btn-line btn-sm"
+              data-testid="estatus-bulk-delete-btn"
+              disabled={selected.length === 0 || bulkDelete.isPending}
+              onClick={() => setConfirmBulk(true)}
+            >
+              선택 삭제
+            </button>
+          )}
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => setDocModal({ documentId: null, mode: 'create' })}

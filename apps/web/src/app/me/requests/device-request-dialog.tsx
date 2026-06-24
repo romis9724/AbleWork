@@ -36,6 +36,7 @@ export function DeviceChangeDialog({ open, submitting, onClose, onSubmit }: Requ
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           disabled={!reason.trim() || submitting}
           onClick={() => onSubmit('DEVICE_CHANGE', { reason: reason.trim() })}

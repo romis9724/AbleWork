@@ -60,7 +60,7 @@ export default function MyLeavesPage() {
         eyebrow="Leave"
         title="내 휴가"
         right={
-          <button className="btn btn-primary btn-sm" onClick={() => setDialogOpen(true)}>
+          <button data-testid="me-leave-request-btn" className="btn btn-primary btn-sm" onClick={() => setDialogOpen(true)}>
             {I.plus()} 휴가 신청
           </button>
         }
@@ -107,7 +107,7 @@ export default function MyLeavesPage() {
         footer={
           <>
             <button className="btn btn-ghost" onClick={resetDialog}>취소</button>
-            <button className="btn btn-primary" disabled={!canSubmit} onClick={handleSubmit}>
+            <button data-testid="me-leave-submit-btn" className="btn btn-primary" disabled={!canSubmit} onClick={handleSubmit}>
               {createRequest.isPending ? '신청 중…' : '신청'}
             </button>
           </>

@@ -169,27 +169,27 @@ export default function HomePage() {
 
         <div className="me-clock-actions">
           {!clockedIn && !clockedOut && (
-            <button className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockIn}>
+            <button data-testid="me-clock-in-btn" className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockIn}>
               {clockInMutation.isPending ? '처리 중…' : '출근하기'}
             </button>
           )}
 
           {clockedIn && !onBreak && (
             <>
-              <button className="btn btn-line btn-lg" disabled={busy} onClick={() => handleBreakStart('rest')}>
+              <button data-testid="me-break-rest-btn" className="btn btn-line btn-lg" disabled={busy} onClick={() => handleBreakStart('rest')}>
                 {breakStartMutation.isPending ? '처리 중…' : '휴게 시작'}
               </button>
-              <button className="btn btn-line btn-lg" disabled={busy} onClick={() => handleBreakStart('meal')}>
+              <button data-testid="me-break-meal-btn" className="btn btn-line btn-lg" disabled={busy} onClick={() => handleBreakStart('meal')}>
                 식사 시작
               </button>
-              <button className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockOut}>
+              <button data-testid="me-clock-out-btn" className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockOut}>
                 {clockOutMutation.isPending ? '처리 중…' : '퇴근하기'}
               </button>
             </>
           )}
 
           {clockedIn && onBreak && (
-            <button className="btn btn-primary btn-lg" disabled={busy} onClick={handleBreakEnd}>
+            <button data-testid="me-break-end-btn" className="btn btn-primary btn-lg" disabled={busy} onClick={handleBreakEnd}>
               {breakEndMutation.isPending ? '처리 중…' : '휴게 종료'}
             </button>
           )}

@@ -84,6 +84,8 @@ export class ShiftsService {
   async create(companyId: string, dto: CreateShiftDto, requester: JwtPayload) {
     await this.validateRelations(companyId, dto.organizationId, dto.shiftTypeId, dto.templateId)
     await this.validateEmployeesBelongToCompany(companyId, [dto.employeeId])
+    // 보안: ORG_ADMIN이 타 조직 직원의 근무일정을 생성하지 못하도록 조직 경계를 검증한다.
+    await this.guardOrgScope(requester, { employeeId: dto.employeeId })
 
     const shift = await this.prisma.shift.create({
       data: {
@@ -125,6 +127,9 @@ export class ShiftsService {
 
     await this.validateOrganizationBelongsToCompany(companyId, dto.organizationId)
     await this.validateEmployeesBelongToCompany(companyId, dto.employeeIds)
+    // 보안: ORG_ADMIN이 타 조직 직원을 일괄 대상에 포함하지 못하도록 조직 경계를 검증한다.
+    // 한 명이라도 요청자 소속 조직과 무관하면 ForbiddenException.
+    await this.guardOrgScopeBulk(requester, dto.employeeIds)
 
     const dates = dateRange(dto.startDate, dto.endDate)
     if (dates.length === 0) {
@@ -194,8 +199,9 @@ export class ShiftsService {
 
   // ── 수정 ────────────────────────────────────────────────────────────────────
 
-  async update(companyId: string, id: string, dto: UpdateShiftDto) {
+  async update(companyId: string, id: string, dto: UpdateShiftDto, requester: JwtPayload) {
     const existing = await this.assertShift(companyId, id)
+    await this.guardOrgScope(requester, existing)
     this.guardConfirmed(existing)
 
     if (dto.shiftTypeId) {
@@ -223,8 +229,9 @@ export class ShiftsService {
 
   // ── 삭제 ────────────────────────────────────────────────────────────────────
 
-  async remove(companyId: string, id: string) {
+  async remove(companyId: string, id: string, requester: JwtPayload) {
     const existing = await this.assertShift(companyId, id)
+    await this.guardOrgScope(requester, existing)
     this.guardConfirmed(existing)
 
     return this.prisma.shift.delete({ where: { id } })
@@ -234,6 +241,7 @@ export class ShiftsService {
 
   async confirm(companyId: string, id: string, requester: JwtPayload) {
     const existing = await this.assertShift(companyId, id)
+    await this.guardOrgScope(requester, existing)
 
     if (existing.status === ShiftStatus.CONFIRMED) {
       throw new BadRequestException({
@@ -310,8 +318,11 @@ export class ShiftsService {
   }
 
   async assertShift(companyId: string, id: string) {
+    // 가드(guardOrgScope)·확정 검사(guardConfirmed)·주52h 경고가 소비하는 필드를 명시적으로 select 하여
+    // 반환 계약을 고정한다 (Prisma 기본 스칼라 반환에 의존하지 않음).
     const shift = await this.prisma.shift.findFirst({
       where: { id, organization: { companyId } },
+      select: { id: true, employeeId: true, status: true, startAt: true },
     })
     if (!shift) {
       throw new NotFoundException({
@@ -320,6 +331,102 @@ export class ShiftsService {
       })
     }
     return shift
+  }
+
+  /**
+   * 조직 경계 가드 (보안): ORG_ADMIN이 동일 회사 내 타 조직 근무일정을 수정·삭제·확정하지 못하도록 막는다.
+   * (employees.service.guardOrgScope 와 동일 정책 — 대상 직원 소속 조직 ∩ 요청자 소속 조직)
+   *
+   * - SUPER_ADMIN / GENERAL_ADMIN → 통과 (전사)
+   * - EMPLOYEE → 본인 일정만 (admin 게이트 경로라 통상 도달하지 않으나 방어)
+   * - ORG_ADMIN → 대상 근무일정 직원의 소속 조직과 요청자 소속 조직 교집합이 있으면 통과, 없으면 Forbidden
+   */
+  private async guardOrgScope(requester: JwtPayload, shift: { employeeId: string }) {
+    if (
+      requester.accessLevel === AccessLevel.SUPER_ADMIN ||
+      requester.accessLevel === AccessLevel.GENERAL_ADMIN
+    ) {
+      return
+    }
+
+    if (requester.accessLevel === AccessLevel.EMPLOYEE) {
+      if (requester.employeeId !== shift.employeeId) {
+        throw new ForbiddenException('해당 근무일정에 대한 접근 권한이 없습니다.')
+      }
+      return
+    }
+
+    const [requesterOrgs, targetOrgs] = await Promise.all([
+      this.prisma.employeeOrganization.findMany({
+        where: { employeeId: requester.employeeId },
+        select: { organizationId: true },
+      }),
+      this.prisma.employeeOrganization.findMany({
+        where: { employeeId: shift.employeeId },
+        select: { organizationId: true },
+      }),
+    ])
+
+    const requesterOrgIds = new Set(
+      requesterOrgs.map((o: { organizationId: string }) => o.organizationId),
+    )
+    const hasOverlap = targetOrgs.some((o: { organizationId: string }) =>
+      requesterOrgIds.has(o.organizationId),
+    )
+    if (!hasOverlap) {
+      throw new ForbiddenException('해당 근무일정에 대한 접근 권한이 없습니다.')
+    }
+  }
+
+  /**
+   * 조직 경계 가드 (일괄/배치): bulkCreate 등 다수 직원 대상 작업에서 요청자 소속 조직과
+   * 교집합이 없는 직원이 한 명이라도 포함되면 ForbiddenException.
+   *
+   * - SUPER_ADMIN / GENERAL_ADMIN → 통과 (전사)
+   * - ORG_ADMIN → 요청자 소속 조직 집합을 1회만 조회한 뒤, 고유 직원들의 소속 조직과 교집합 검사
+   *   (guardOrgScope를 직원마다 호출하면 요청자 조직을 N회 재조회하므로 배치 전용 헬퍼로 분리)
+   */
+  private async guardOrgScopeBulk(requester: JwtPayload, employeeIds: string[]) {
+    if (
+      requester.accessLevel === AccessLevel.SUPER_ADMIN ||
+      requester.accessLevel === AccessLevel.GENERAL_ADMIN
+    ) {
+      return
+    }
+
+    const uniqueEmployeeIds = [...new Set(employeeIds)]
+
+    const requesterOrgs = await this.prisma.employeeOrganization.findMany({
+      where: { employeeId: requester.employeeId },
+      select: { organizationId: true },
+    })
+    const requesterOrgIds = new Set(
+      requesterOrgs.map((o: { organizationId: string }) => o.organizationId),
+    )
+
+    const targetOrgs = await this.prisma.employeeOrganization.findMany({
+      where: { employeeId: { in: uniqueEmployeeIds } },
+      select: { employeeId: true, organizationId: true },
+    })
+
+    const targetOrgsByEmployee = new Map<string, Set<string>>()
+    for (const { employeeId, organizationId } of targetOrgs as {
+      employeeId: string
+      organizationId: string
+    }[]) {
+      const set = targetOrgsByEmployee.get(employeeId) ?? new Set<string>()
+      set.add(organizationId)
+      targetOrgsByEmployee.set(employeeId, set)
+    }
+
+    for (const employeeId of uniqueEmployeeIds) {
+      const orgIds = targetOrgsByEmployee.get(employeeId)
+      const hasOverlap =
+        orgIds !== undefined && [...orgIds].some((id) => requesterOrgIds.has(id))
+      if (!hasOverlap) {
+        throw new ForbiddenException('해당 근무일정에 대한 접근 권한이 없습니다.')
+      }
+    }
   }
 
   private guardConfirmed(shift: { status: string }) {

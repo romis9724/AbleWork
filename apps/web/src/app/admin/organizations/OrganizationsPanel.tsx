@@ -151,7 +151,7 @@ function OrgDialog({ open, initial, organizations, employees, loading, onSubmit,
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>취소</Button>
-        <Button onClick={handleSubmit(onSubmit)} variant="contained" disabled={loading}>
+        <Button onClick={handleSubmit(onSubmit)} variant="contained" disabled={loading} data-testid="org-submit-btn">
           {loading ? <CircularProgress size={20} /> : initial ? '수정' : '추가'}
         </Button>
       </DialogActions>
@@ -257,6 +257,7 @@ export default function OrganizationsPanel() {
       <div key={org.id}>
         <div
           className={`tree-node lvl${lvl}` + (isSelected ? ' on' : '')}
+          data-testid="org-tree-node"
           onClick={() => setSelectedOrg(org)}
           role="treeitem"
           aria-selected={isSelected}
@@ -265,6 +266,7 @@ export default function OrganizationsPanel() {
           {hasChildren ? (
             <span
               className="tw"
+              data-testid="org-expand-toggle"
               onClick={(e) => { e.stopPropagation(); toggleExpand(org.id) }}
               style={{ cursor: 'pointer', userSelect: 'none' }}
             >
@@ -278,6 +280,7 @@ export default function OrganizationsPanel() {
           </span>
           <IconButton
             size="small"
+            data-testid="org-edit-btn"
             onClick={(e) => { e.stopPropagation(); setEditTarget(org) }}
             sx={{ p: 0.25, color: 'inherit', opacity: 0.55, '&:hover': { opacity: 1 } }}
             aria-label={`${org.name} 수정`}
@@ -286,6 +289,7 @@ export default function OrganizationsPanel() {
           </IconButton>
           <IconButton
             size="small"
+            data-testid="org-delete-btn"
             onClick={(e) => { e.stopPropagation(); setDeleteTarget(org) }}
             sx={{ p: 0.25, color: 'inherit', opacity: 0.55, '&:hover': { opacity: 1, color: 'error.main' } }}
             aria-label={`${org.name} 삭제`}
@@ -314,6 +318,7 @@ export default function OrganizationsPanel() {
           variant="contained"
           startIcon={<AddIcon />}
           onClick={() => setDialogOpen(true)}
+          data-testid="org-add-btn"
         >
           조직 추가
         </Button>
@@ -347,7 +352,7 @@ export default function OrganizationsPanel() {
                   aria-expanded={!collapsed.has(ROOT_KEY)}
                   style={{ cursor: 'pointer' }}
                 >
-                  <span className="tw" style={{ userSelect: 'none' }}>
+                  <span className="tw" data-testid="org-expand-toggle" style={{ userSelect: 'none' }}>
                     {collapsed.has(ROOT_KEY) ? '▸' : '▾'}
                   </span>
                   <span style={{ flex: 1, fontWeight: 700 }}>조직도</span>

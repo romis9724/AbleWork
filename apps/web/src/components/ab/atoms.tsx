@@ -69,14 +69,16 @@ interface TextInputProps {
   defaultValue?: string
   onChange?: (v: string) => void
   type?: string
+  testId?: string
 }
-export function TextInput({ placeholder, icon, value, defaultValue, onChange, type = 'text' }: TextInputProps) {
+export function TextInput({ placeholder, icon, value, defaultValue, onChange, type = 'text', testId }: TextInputProps) {
   // value·defaultValue 동시 전달(React 경고) 방지: controlled면 value만, 아니면 defaultValue만.
   const isControlled = value !== undefined
   return (
     <div className="inp-wrap">
       <input
         className="inp"
+        data-testid={testId}
         type={type}
         placeholder={placeholder}
         {...(isControlled ? { value } : { defaultValue })}

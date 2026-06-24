@@ -70,14 +70,16 @@ export class ShiftsController {
 
   // HR-04-07 근무일정 수정
   @Patch(':id')
-  @ApiOperation({ summary: '근무일정 수정 (확정된 일정 불가)' })
+  @Roles(AccessLevel.ORG_ADMIN)
+  @ApiOperation({ summary: '근무일정 수정 (확정된 일정 불가, ORG_ADMIN 이상)' })
   @ApiParam({ name: 'id', type: String })
   update(
     @CompanyId() companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(UpdateShiftSchema)) dto: UpdateShiftDto,
+    @CurrentUser() requester: JwtPayload,
   ) {
-    return this.shiftsService.update(companyId, id, dto)
+    return this.shiftsService.update(companyId, id, dto, requester)
   }
 
   // HR-04-08 근무일정 삭제
@@ -89,8 +91,9 @@ export class ShiftsController {
   remove(
     @CompanyId() companyId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() requester: JwtPayload,
   ) {
-    return this.shiftsService.remove(companyId, id)
+    return this.shiftsService.remove(companyId, id, requester)
   }
 
   // HR-04-09 근무일정 확정

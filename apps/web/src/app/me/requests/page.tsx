@@ -170,7 +170,7 @@ export default function RequestsPage() {
         eyebrow="Requests"
         title="내 요청"
         right={
-          <button className="btn btn-primary btn-sm" onClick={() => setDialogMode('menu')}>
+          <button data-testid="req-new-btn" className="btn btn-primary btn-sm" onClick={() => setDialogMode('menu')}>
             {I.plus()} 새 요청
           </button>
         }
@@ -211,7 +211,7 @@ export default function RequestsPage() {
                     <td className="c"><Badge kind={st.kind}>{st.label}</Badge></td>
                     <td className="c">
                       {isCancellable(r) ? (
-                        <button className="btn btn-line btn-sm" onClick={() => setCancelTargetId(r.id)}>
+                        <button data-testid="req-cancel-btn" className="btn btn-line btn-sm" onClick={() => setCancelTargetId(r.id)}>
                           신청 취소
                         </button>
                       ) : (
@@ -237,7 +237,7 @@ export default function RequestsPage() {
               </div>
               <div className="me-req-group-items">
                 {group.items.map((item) => (
-                  <button key={item.type} className="me-req-item" onClick={() => setDialogMode(item.type)}>
+                  <button key={item.type} data-testid={`req-type-${item.type}`} className="me-req-item" onClick={() => setDialogMode(item.type)}>
                     {item.label}
                     <span className="arr">{I.arrow()}</span>
                   </button>

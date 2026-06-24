@@ -68,6 +68,7 @@ export function ShiftCreateDialog({ open, submitting, onClose, onSubmit }: Reque
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           disabled={!canSubmit || submitting}
           onClick={() => onSubmit('SHIFT_CREATE', { date, startTime, endTime, ...(reason && { reason }) })}
@@ -128,6 +129,7 @@ export function ShiftModifyDialog({ open, employeeId, submitting, onClose, onSub
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           disabled={!canSubmit || submitting}
           onClick={() => onSubmit('SHIFT_MODIFY', { shiftId, date, startTime, endTime, ...(reason && { reason }) })}
@@ -168,6 +170,7 @@ export function ShiftDeleteDialog({ open, employeeId, submitting, onClose, onSub
       <DialogActions>
         <Button onClick={onClose}>취소</Button>
         <Button
+          data-testid="req-submit-btn"
           variant="contained"
           color="error"
           disabled={!shiftId || submitting}

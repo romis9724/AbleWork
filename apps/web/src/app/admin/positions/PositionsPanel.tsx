@@ -26,6 +26,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { usePermission } from '@/hooks/usePermission'
 import {
   usePositions,
   useCreatePosition,
@@ -111,7 +112,7 @@ function PositionDialog({ open, initial, loading, onSubmit, onClose }: PositionD
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>취소</Button>
-        <Button onClick={handleSubmit(onSubmit)} variant="contained" disabled={loading}>
+        <Button onClick={handleSubmit(onSubmit)} variant="contained" disabled={loading} data-testid="pos-submit-btn">
           {loading ? <CircularProgress size={20} /> : initial ? '수정' : '추가'}
         </Button>
       </DialogActions>
@@ -124,6 +125,7 @@ function PositionDialog({ open, initial, loading, onSubmit, onClose }: PositionD
 // 단독 페이지(/admin/positions)와 회사 설정 '직무' 탭에서 공통 사용한다.
 // ──────────────────────────────────────────────
 export default function PositionsPanel() {
+  const { isGeneralAdmin } = usePermission()
   const { data: positions = [], isLoading } = usePositions()
 
   const createMutation = useCreatePosition()
@@ -175,25 +177,34 @@ export default function PositionsPanel() {
   return (
     <>
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
-          직무 추가
-        </Button>
+        {isGeneralAdmin && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setDialogOpen(true)}
+            data-testid="pos-add-btn"
+          >
+            직무 추가
+          </Button>
+        )}
       </Box>
 
       {positions.length === 0 ? (
         <EmptyState
           message="등록된 직무가 없습니다."
           action={
-            <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
-              첫 번째 직무 추가
-            </Button>
+            isGeneralAdmin ? (
+              <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
+                첫 번째 직무 추가
+              </Button>
+            ) : undefined
           }
         />
       ) : (
         <Grid container spacing={2}>
           {positions.map((pos) => (
             <Grid item xs={12} sm={6} md={3} key={pos.id}>
-              <Card variant="outlined">
+              <Card variant="outlined" data-testid="pos-card">
                 <CardContent sx={{ pb: 0.5 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                     {pos.color && (
@@ -217,15 +228,19 @@ export default function PositionsPanel() {
                     </Typography>
                   )}
                 </CardContent>
-                <Divider />
-                <CardActions sx={{ justifyContent: 'flex-end', py: 0.5 }}>
-                  <IconButton size="small" onClick={() => setEditTarget(pos)}>
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton size="small" color="error" onClick={() => setDeleteTarget(pos)}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </CardActions>
+                {isGeneralAdmin && (
+                  <>
+                    <Divider />
+                    <CardActions sx={{ justifyContent: 'flex-end', py: 0.5 }}>
+                      <IconButton size="small" data-testid="pos-edit-btn" onClick={() => setEditTarget(pos)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" color="error" data-testid="pos-delete-btn" onClick={() => setDeleteTarget(pos)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </CardActions>
+                  </>
+                )}
               </Card>
             </Grid>
           ))}

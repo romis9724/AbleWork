@@ -133,8 +133,10 @@ export default function AttendancesPage() {
   const unconfirmMutation = useUnconfirmAttendances()
 
   const { user } = useAuthStore()
-  const canUnconfirm =
+  // 확정 기록 관리(기간 확정·일괄 삭제·확정 해제)는 GENERAL_ADMIN 이상 전용 백엔드 API다.
+  const isGeneralAdmin =
     !!user && ACCESS_LEVEL_HIERARCHY[user.accessLevel] >= ACCESS_LEVEL_HIERARCHY.GENERAL_ADMIN
+  const canUnconfirm = isGeneralAdmin
 
   // 선택
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -339,12 +341,14 @@ export default function AttendancesPage() {
         title="출퇴근기록"
         right={
           <div className="head-actions">
-            <button className="btn btn-line btn-sm" onClick={() => setCreateOpen(true)}>
+            <button data-testid="att-create-btn" className="btn btn-line btn-sm" onClick={() => setCreateOpen(true)}>
               {I.plus({ style: { marginRight: 6 } })} 기록 추가
             </button>
-            <button className="btn btn-line btn-sm" onClick={() => setConfirmPeriodOpen(true)}>
-              기간 확정
-            </button>
+            {isGeneralAdmin && (
+              <button data-testid="att-confirm-period-btn" className="btn btn-line btn-sm" onClick={() => setConfirmPeriodOpen(true)}>
+                기간 확정
+              </button>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={handleExportDownload}>
               {I.down({ style: { marginRight: 7 } })}다운로드
             </button>
@@ -371,13 +375,14 @@ export default function AttendancesPage() {
           ))}
         </select>
         <button
+          data-testid="att-filter-chip"
           className="fchip"
           onClick={() => handleMissingToggle(!missingOnly)}
           style={missingOnly ? { borderColor: 'var(--ab-orange)', color: 'var(--ab-orange)' } : undefined}
         >
           {HRI.filter({ className: 'ic' })} 퇴근 누락만
         </button>
-        <button className="btn btn-primary btn-sm" onClick={handleSearch}>
+        <button data-testid="att-search-btn" className="btn btn-primary btn-sm" onClick={handleSearch}>
           {I.search({ style: { marginRight: 6 } })}조회
         </button>
         <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--fg-3)' }}>
@@ -394,17 +399,19 @@ export default function AttendancesPage() {
             <b>{selectedVisible.length}</b>건 선택됨
           </span>
           <div className="tbl-tools" style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-line btn-sm" disabled={isBulkPending} onClick={handleBulkConfirm}>
+            <button data-testid="att-bulk-confirm-btn" className="btn btn-line btn-sm" disabled={isBulkPending} onClick={handleBulkConfirm}>
               일괄 확정
             </button>
-            {canUnconfirm && (
-              <button className="btn btn-line btn-sm" disabled={isBulkPending} onClick={handleBulkUnconfirm}>
+            {isGeneralAdmin && (
+              <button data-testid="att-bulk-unconfirm-btn" className="btn btn-line btn-sm" disabled={isBulkPending} onClick={handleBulkUnconfirm}>
                 일괄 해제
               </button>
             )}
-            <button className="btn btn-line btn-sm" disabled={isBulkPending} onClick={() => setBulkDeleteOpen(true)}>
-              {I.trash({ style: { marginRight: 6 } })}일괄 삭제
-            </button>
+            {isGeneralAdmin && (
+              <button data-testid="att-bulk-delete-btn" className="btn btn-line btn-sm" disabled={isBulkPending} onClick={() => setBulkDeleteOpen(true)}>
+                {I.trash({ style: { marginRight: 6 } })}일괄 삭제
+              </button>
+            )}
             <button className="btn btn-dark btn-sm" onClick={() => setSelectedIds([])}>
               선택 해제
             </button>
