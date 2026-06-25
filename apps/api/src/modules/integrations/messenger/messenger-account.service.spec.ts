@@ -9,7 +9,9 @@ const mockPrisma = {
     findMany: jest.fn(),
     findFirst: jest.fn(),
     delete: jest.fn(),
+    deleteMany: jest.fn(),
   },
+  $transaction: jest.fn(),
 }
 
 describe('MessengerAccountService', () => {
@@ -21,11 +23,21 @@ describe('MessengerAccountService', () => {
     }).compile()
     service = module.get(MessengerAccountService)
     jest.clearAllMocks()
+    // $transaction은 콜백에 tx(=mockPrisma)를 그대로 전달
+    mockPrisma.$transaction.mockImplementation(
+      async (cb: (tx: typeof mockPrisma) => Promise<unknown>) => cb(mockPrisma),
+    )
+    mockPrisma.messengerAccount.deleteMany.mockResolvedValue({ count: 0 })
   })
 
-  it('link — 복합 유니크키로 upsert(등록/갱신)', async () => {
+  it('link — 같은 메신저 계정의 타 직원 매핑 제거 후 upsert(소유권 이전)', async () => {
     mockPrisma.messengerAccount.upsert.mockResolvedValue({ id: 'a' })
     await service.link('c1', 'e1', { platform: 'discord', externalUserId: 'd1' })
+
+    // 같은 platform+externalUserId가 다른 (회사,직원)에 있으면 제거 (P2002 방지)
+    expect(mockPrisma.messengerAccount.deleteMany).toHaveBeenCalledWith({
+      where: { platform: 'discord', externalUserId: 'd1', NOT: { companyId: 'c1', employeeId: 'e1' } },
+    })
     expect(mockPrisma.messengerAccount.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { companyId_employeeId_platform: { companyId: 'c1', employeeId: 'e1', platform: 'discord' } },
