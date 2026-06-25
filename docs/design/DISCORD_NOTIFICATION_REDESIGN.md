@@ -102,9 +102,20 @@
 
 ### 4.2 필요 설정 / 환경변수
 
-- 기존: `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID` (이미 `.env.prod`에 존재)
-- 추가: `DISCORD_CLIENT_ID`(=application id), `DISCORD_CLIENT_SECRET`, `DISCORD_OAUTH_REDIRECT_URI`
-- Discord 개발자 포털: OAuth2 Redirect URI 등록, scope `identify`(필요 시 `guilds.join`으로 회사 서버 자동 초대)
+> **AWS는 `.env` 파일이 아니라 SSM Parameter Store(`/ablework/api/prod/*`)로 관리**한다.
+> 배포 시 `deploy/aws/app/fetch-env.sh`가 경로 전체를 `--with-decryption`으로 읽어 컨테이너 env로 주입하므로,
+> SSM에 키만 추가하면 코드 수정 없이 반영된다(반영하려면 **재배포** 필요).
+
+- 기존(SSM에 이미 존재): `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID`
+- **추가할 키**:
+  | 키 | 타입 | 값 |
+  |---|---|---|
+  | `DISCORD_CLIENT_SECRET` | SecureString | Discord 포털 OAuth2 Client Secret |
+  | `DISCORD_OAUTH_REDIRECT_URI` | String | `https://work.abmwc.net/api/v1/integrations/discord/oauth/callback` ← **globalPrefix `api/v1` 포함** |
+  | `DISCORD_GUILD_ID` | String | 회사 Discord 서버 ID (guilds.join 대상) |
+  | `WEB_BASE_URL` | String | `https://work.abmwc.net` (콜백 후 FE 리다이렉트, 기본값 동일) |
+  | `DISCORD_CLIENT_ID` | String | 생략 시 `DISCORD_APPLICATION_ID` 재사용 |
+- Discord 개발자 포털: OAuth2 → Redirects에 위 redirect URI 등록 + Client Secret 발급, scope `identify guilds.join`.
 
 ### 4.3 봇 DM 전제 (중요 제약)
 
