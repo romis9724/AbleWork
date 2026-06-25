@@ -94,6 +94,31 @@ export class DiscordProvider implements MessengerProvider {
     return this.sendApprovalRequest(dmChannelId, payload)
   }
 
+  /**
+   * 회사 길드(서버)에 사용자를 합류시킨다 (OAuth `guilds.join` scope 필요).
+   * 봇이 DM을 보내려면 사용자와 같은 길드에 있어야 하므로 연동 시 자동 합류시킨다.
+   * 이미 멤버(204)면 성공, 길드 미설정/권한 부족 등은 경고만 — 연동 자체는 막지 않는다.
+   */
+  async addGuildMember(userId: string, accessToken: string): Promise<boolean> {
+    const guildId = process.env.DISCORD_GUILD_ID
+    if (!guildId) {
+      this.logger.warn('DISCORD_GUILD_ID 미설정 — 길드 자동 합류 skip')
+      return false
+    }
+    try {
+      await axios.put(
+        `${DISCORD_API}/guilds/${guildId}/members/${userId}`,
+        { access_token: accessToken },
+        { headers: { Authorization: `Bot ${this.token}`, 'Content-Type': 'application/json' } },
+      )
+      return true
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      this.logger.warn(`길드 자동 합류 실패 (연동은 유지): ${msg}`)
+      return false
+    }
+  }
+
   /** Bot↔사용자 1:1 DM 채널 개설 — Discord는 동일 사용자에 대해 멱등(기존 채널 재사용) */
   private async openDmChannel(recipientUserId: string): Promise<string> {
     const res = await axios.post(

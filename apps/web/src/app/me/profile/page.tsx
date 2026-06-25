@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 import { useEmployee, useUpdateEmployee } from '@/lib/query/employees'
+import { useMyMessengerAccounts, useUnlinkMessenger, startDiscordLink } from '@/lib/query/messenger'
 import apiClient from '@/lib/api-client'
 import { PageHead } from '@/components/ab/Page'
 import { Avatar } from '@/components/ab/atoms'
@@ -37,12 +38,43 @@ export default function ProfilePage() {
   const { data: employee, isLoading } = useEmployee(user?.employeeId ?? '')
   const updateEmployee = useUpdateEmployee()
 
+  const { data: messengerAccounts = [] } = useMyMessengerAccounts()
+  const unlinkMessenger = useUnlinkMessenger()
+  const discordAccount = messengerAccounts.find((a) => a.platform === 'discord')
+
   useEffect(() => {
     if (employee) {
       setName(employee.name ?? '')
       setPhone(employee.phone ?? '')
     }
   }, [employee])
+
+  // OAuth 콜백 결과(?discord=linked|error) 처리 후 쿼리스트링 제거
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get('discord')
+    if (!result) return
+    if (result === 'linked') toast('Discord 연동이 완료됐습니다')
+    else if (result === 'error') toast('Discord 연동에 실패했습니다. 다시 시도해 주세요')
+    window.history.replaceState({}, '', '/me/profile')
+  }, [toast])
+
+  const handleLinkDiscord = async () => {
+    try {
+      await startDiscordLink()
+    } catch {
+      toast('연동을 시작하지 못했습니다')
+    }
+  }
+
+  const handleUnlinkDiscord = async () => {
+    if (!discordAccount) return
+    try {
+      await unlinkMessenger.mutateAsync(discordAccount.id)
+      toast('Discord 연동을 해제했습니다')
+    } catch {
+      toast('연동 해제 중 오류가 발생했습니다')
+    }
+  }
 
   const handleSaveProfile = async () => {
     if (!user?.employeeId) return
@@ -168,6 +200,43 @@ export default function ProfilePage() {
           <div className="doc-field">
             <span className="fk">입사일</span>
             <span className="fv">{dateLabel(employee?.joinedAt)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 메신저 연동 */}
+      <div className="set-block">
+        <div className="set-block-head">메신저 연동</div>
+        <div style={{ padding: '6px 24px 14px' }}>
+          <div className="doc-field">
+            <span className="fk">Discord</span>
+            <span className="fv" style={{ width: '100%' }}>
+              {discordAccount ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: '#3fb950', fontWeight: 600 }}>● 연동됨</span>
+                    <span className="tek" style={{ fontSize: 12, opacity: 0.7 }}>ID {discordAccount.externalUserId}</span>
+                  </span>
+                  <button
+                    className="btn btn-line btn-sm"
+                    disabled={unlinkMessenger.isPending}
+                    onClick={handleUnlinkDiscord}
+                  >
+                    연동 해제
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <button className="btn btn-primary btn-sm" onClick={handleLinkDiscord}>
+                    Discord로 연동
+                  </button>
+                  <div className="me-field-hint">
+                    연동하면 결재 요청·휴가/근태 결과·지각 알림을 Discord DM으로 받습니다.
+                    연동 시 회사 Discord 서버에 자동 참여됩니다.
+                  </div>
+                </div>
+              )}
+            </span>
           </div>
         </div>
       </div>

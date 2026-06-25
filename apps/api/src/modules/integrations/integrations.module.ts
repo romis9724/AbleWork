@@ -3,6 +3,8 @@ import { RequestsModule } from '../requests/requests.module'
 import { IntegrationsController } from './integrations.controller'
 import { DiscordInteractionService } from './messenger/discord/discord-interaction.service'
 import { DiscordProvider } from './messenger/discord/discord.provider'
+import { DiscordOAuthController } from './messenger/discord/discord-oauth.controller'
+import { DiscordOAuthService } from './messenger/discord/discord-oauth.service'
 import { MESSENGER_PROVIDER } from './messenger/messenger-provider.interface'
 import { MessengerAccountController } from './messenger/messenger-account.controller'
 import { MessengerAccountService } from './messenger/messenger-account.service'
@@ -16,10 +18,11 @@ import { LlmModule } from './llm/llm.module'
  */
 @Module({
   imports: [RequestsModule, LlmModule],
-  controllers: [IntegrationsController, MessengerAccountController],
+  controllers: [IntegrationsController, DiscordOAuthController, MessengerAccountController],
   providers: [
     DiscordInteractionService,
     DiscordProvider,
+    DiscordOAuthService,
     MessengerAccountService,
     MessengerApprovalListener,
     { provide: MESSENGER_PROVIDER, useExisting: DiscordProvider },
