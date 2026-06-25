@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common'
+import { Controller, Get, Query, Res, UseGuards, Logger } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiExcludeEndpoint } from '@nestjs/swagger'
 import type { Response } from 'express'
 import { JwtAuthGuard } from '../../../../common/guards/jwt-auth.guard'
@@ -19,6 +19,8 @@ const RESULT_PATH = '/me/profile'
 @ApiTags('integrations')
 @Controller('integrations/discord/oauth')
 export class DiscordOAuthController {
+  private readonly logger = new Logger(DiscordOAuthController.name)
+
   constructor(private readonly oauth: DiscordOAuthService) {}
 
   @Get('start')
@@ -39,8 +41,18 @@ export class DiscordOAuthController {
     try {
       await this.oauth.handleCallback(code, state)
       res.redirect(`${WEB_BASE_URL}${RESULT_PATH}?discord=linked`)
-    } catch {
-      // 실패 사유는 서버 로그로, 사용자에겐 결과 플래그만 전달
+    } catch (error: unknown) {
+      // 실패 사유를 서버 로그로 남긴다(앱 에러코드 / Axios 응답 / Prisma 코드 구분).
+      const e = error as {
+        message?: string
+        code?: string
+        response?: { code?: string; status?: number; data?: unknown }
+      }
+      this.logger.error(
+        `Discord OAuth 콜백 실패: appCode=${e?.response?.code ?? e?.code ?? '-'} ` +
+          `httpStatus=${e?.response?.status ?? '-'} msg=${e?.message ?? String(error)} ` +
+          `discordResp=${JSON.stringify(e?.response?.data ?? null)}`,
+      )
       res.redirect(`${WEB_BASE_URL}${RESULT_PATH}?discord=error`)
     }
   }
