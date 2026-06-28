@@ -101,6 +101,7 @@ const mockPrisma = {
   request: {
     count: jest.fn(),
     findMany: jest.fn(),
+    updateMany: jest.fn(),
     deleteMany: jest.fn(),
   },
   document: {
@@ -820,6 +821,25 @@ describe('EmployeesService', () => {
         where: { employeeId: TARGET_ID },
       })
       expect(mockPrisma.employee.delete).toHaveBeenCalledWith({ where: { id: TARGET_ID } })
+    })
+
+    it('force=true: 본인 요청에 달린 결재 승인(타 결재자 포함)을 requestId 기준으로 먼저 삭제한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.attendance.count.mockResolvedValue(0)
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: typeof mockPrisma) => unknown) =>
+        fn(mockPrisma),
+      )
+      mockPrisma.document.findMany.mockResolvedValue([]) // 연결 문서 없음
+      mockPrisma.request.findMany.mockResolvedValue([{ id: 'req-1' }, { id: 'req-2' }])
+      mockPrisma.approvalStep.findMany.mockResolvedValue([])
+
+      await service.remove(COMPANY_ID, TARGET_ID, requester, true)
+
+      // request 삭제 전, 해당 요청들의 모든 승인을 requestId로 일괄 삭제해야 FK 위반이 없다
+      expect(mockPrisma.requestApproval.deleteMany).toHaveBeenCalledWith({
+        where: { requestId: { in: ['req-1', 'req-2'] } },
+      })
+      expect(mockPrisma.request.deleteMany).toHaveBeenCalledWith({ where: { requesterId: TARGET_ID } })
     })
   })
 

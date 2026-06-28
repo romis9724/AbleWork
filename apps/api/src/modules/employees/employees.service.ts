@@ -690,12 +690,21 @@ export class EmployeesService {
       const reqs = await tx.request.findMany({ where: { requesterId: id }, select: { id: true } })
       const reqIds = reqs.map((r) => r.id)
       if (reqIds.length > 0) {
+        // 5-a) 요청에 달린 모든 결재 승인 먼저 삭제 (RequestApproval.request = Restrict).
+        //      670번은 '본인이 결재자'인 승인만 지우므로, 타 결재자의 승인이 남아 FK 위반이 난다.
+        await tx.requestApproval.deleteMany({ where: { requestId: { in: reqIds } } })
+        // 5-b) 요청-문서 양방향 참조 끊기: 먼저 requests.documentId를 null로(요청→문서 FK),
+        //      그 다음 문서를 삭제(문서→요청 FK는 문서 삭제로 해소).
         const reqDocs = await tx.document.findMany({
           where: { requestId: { in: reqIds } },
           select: { id: true },
         })
         const reqDocIds = reqDocs.map((d) => d.id)
         if (reqDocIds.length > 0) {
+          await tx.request.updateMany({
+            where: { id: { in: reqIds }, documentId: { in: reqDocIds } },
+            data: { documentId: null },
+          })
           await tx.approvalHistory.deleteMany({ where: { documentId: { in: reqDocIds } } })
           await tx.document.deleteMany({ where: { id: { in: reqDocIds } } })
         }
