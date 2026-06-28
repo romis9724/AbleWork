@@ -2,36 +2,49 @@
 
 > 대상 GitLab: `http://59.29.231.14:20350/`
 > 원본 GitHub: `https://github.com/romis9724/AbleWork.git`
-> 작성일: 2026-06-29 · 상태: **실행 중**
+> 작성일: 2026-06-29 · 상태: **완료 (운영 전환됨)**
 
-## 진행 로그
+## 진행 로그 (최종)
 
 | 단계 | 상태 | 비고 |
 |---|---|---|
-| Phase 1 — 그룹/프로젝트/미러 | ✅ 완료 | 그룹 `abmwc`(id 44, dhkim=Owner), 프로젝트 `abmwc/AbleWork`(id 5), 브랜치 17개 푸시, **G1 통과**(main HEAD `e43602f` 일치) |
-| Phase 2 — Runner/IAM(arm64) | ✅ 완료 | **A-2 채택**(전용 t4g.medium). 아래 "A-2 실제 구성" 참조. 러너 online, 검증 valid |
-| Phase 3·4 — `.gitlab-ci.yml` | ✅ 완료 | 루트 `.gitlab-ci.yml` + CI Lint 통과. MR !1로 test 잡 E2E 검증 |
-| Phase 5 — CI/CD 변수 | ✅ N/A | A-2 인스턴스 프로파일 인증 → 정적 변수 없음 |
-| Phase 6 — GitHub push mirror | ❌ 제외 | 사용자 결정으로 미러 미설정(2026-06-29). GitLab 단독 정본 |
-| Phase 7 — 로컬 remote 전환 | ⏳ 대기 | 컷오버 시 |
+| Phase 1 — 그룹/프로젝트/미러 | ✅ | 그룹 `abmwc`(id 44, dhkim=Owner), 프로젝트 `abmwc/AbleWork`(id 5), 브랜치 17개, **G1 통과** |
+| Phase 2 — Runner/IAM | ✅ | **A-2**(전용 t4g.medium). 아래 "A-2 실제 구성" |
+| Phase 3·4 — `.gitlab-ci.yml` | ✅ | CI(test) + deploy 이식, CI Lint 통과 |
+| Phase 5 — CI/CD 변수 | ✅ N/A | 인스턴스 프로파일 인증 → 정적 변수 없음 |
+| Phase 6 — GitHub push mirror | ❌ 제외 | 결정상 미설정. **GitHub Actions 비활성**(`enabled:false`), `.github/workflows` 제거 |
+| Phase 7 — 로컬 remote 전환 | ✅ | 로컬 `origin`=GitLab, GitHub=`github-backup`. **컷오버 완료** |
+| 배포 E2E (G3·G4) | ✅ | deploy success, ECR 푸시 + SSM 재배포, `work.abmwc.net` 307/200 |
+
+### 검증 게이트: G1 ✅ · G2 ✅(integration-test는 기존 앱테스트 2건 실패로 `allow_failure`, GHA와 동일) · G3 ✅ · G4 ✅ · G5 제외 · G6 ⏳(AWS_OPERATIONS.md 배포 트리거 갱신 권장)
 
 ### A-2 실제 구성 (생성 리소스 — 운영 인계용)
 
 | 리소스 | 식별자 |
 |---|---|
-| 빌드 인스턴스 | `i-05a7153e5318c5098` (t4g.medium, arm64, AL2023, 30GB gp3), Name=`ablework-ci-build` |
-| 태그 | Project=ablework, Role=ci-build (**Env=prod 미부여** — deploy의 describe-instances가 운영 인스턴스만 찾도록) |
-| 보안그룹 | `sg-0a8284c7c84faf282` (`ablework-ci-sg`, 인바운드 없음·아웃바운드 전체) |
-| IAM 역할 | `ablework-ci-build-role` (인라인 `ablework-ci-deploy-inline` = gha-inline 복사 + `AmazonSSMManagedInstanceCore`) |
-| 인스턴스 프로파일 | `ablework-ci-build-profile` |
-| IMDS | hop limit **2** (도커 컨테이너 내 aws-cli가 인스턴스 역할 자격증명 획득하도록 필수) |
-| GitLab 러너 | project runner id 1, `ablework-ci-arm64`, tags `test,arm64,aws-deploy`, run_untagged=false, docker executor + privileged |
+| 빌드 인스턴스 | `i-05a7153e5318c5098` (t4g.medium 2vCPU/4GB, arm64, AL2023, 30GB gp3), Name=`ablework-ci-build`, Project=ablework·Role=ci-build (**Env=prod 미부여**) |
+| 보안그룹 | `sg-0a8284c7c84faf282` (인바운드 없음·아웃바운드 전체) |
+| IAM 역할 | `ablework-ci-build-role` (인라인 = gha-inline 복사 + `AmazonSSMManagedInstanceCore`), 프로파일 `ablework-ci-build-profile` |
+| IMDS | hop limit **2** (필수) |
+| 러너 1 | `ablework-ci-arm64` (id 1), **docker executor**, tags `test` |
+| 러너 2 | `ablework-ci-shell-deploy` (id 2), **shell executor**, tags `arm64,aws-deploy` |
+| 러너 host 패키지 | docker·buildx·**git**·aws-cli v2, `concurrent = 3`, 양 러너 `clone_url=http://59.29.231.14:20350` |
+| 비용절감 | EventBridge Scheduler `ablework-ci-stop`(매일 22시 KST)·`ablework-ci-start`(평일 08시 KST), 역할 `ablework-ci-scheduler-role`. 수동 start: `aws ec2 start-instances --instance-ids i-05a7153e5318c5098 --profile ablework` |
 
-> **트러블슈팅 기록**: GitLab `external_url`이 내부 LAN IP `192.168.10.153`이라 CI 소스 클론이 AWS에서 실패(`Failed to connect to 192.168.10.153 port 80`). **해결**: 러너 `config.toml`에 `clone_url = "http://59.29.231.14:20350"` 추가(서버 전역 설정 미변경, 러너 로컬 한정). 신규 러너 추가 시 동일 설정 필요.
+### 성능 (GitHub 대비)
 
-> **비용 메모**: t4g.medium 상시 가동 시 월 ~$24 + EBS 30GB. 절감하려면 배포 빈도가 낮으므로 유휴 시 인스턴스 stop, 배포 직전 start 자동화(추후). 현재는 상시 online.
+| 구간 | 비고 |
+|---|---|
+| deploy 잡 콜드 | 564초 (최초 1회, ECR 캐시·로컬 캐시 모두 없음) |
+| **deploy 잡 워밍업** | **54초** (영속 buildkit 로컬 캐시 전 레이어 CACHED) — GHA(~5분) 대비 우수 |
+| 핵심 튜닝 | ① deploy `needs: []`(test 안 기다리고 즉시) ② ECR 레지스트리 캐시 제거→영속 호스트 로컬 buildkit 캐시(EBS가 stop/start로 보존) ③ `concurrent=3` |
+| 추가 여지 | 코드변경(콜드성) 빌드까지 GHA급으로 빠르게 하려면 t4g.xlarge(4vCPU/16GB) 업(비용↑) |
 
-> **정정**: 실제 GitHub 브랜치는 **17개**(초기 인벤토리의 34개는 로컬 stale 원격추적 ref였음). PR 머지 ref(`refs/pull/*` 119개)는 방침대로 제외.
+> **트러블슈팅(클론)**: GitLab `external_url`이 내부 LAN IP `192.168.10.153`이라 CI 클론 실패 → 러너 `config.toml`에 `clone_url` 공인주소 오버라이드(서버 전역 미변경). 신규 러너 추가 시 동일 필요.
+
+> **deploy executor 결정**: docker executor(`docker:27`+dind)는 Alpine python/expat 깨짐(`pyexpat symbol not found`)으로 컨테이너 aws-cli 전멸 → **shell executor**로 호스트 도구 직접 사용. shell executor는 호스트에 git 필요.
+
+> **정정**: 실제 GitHub 브랜치 **17개**(초기 34는 stale ref). PR ref(`refs/pull/*`)는 제외.
 
 ---
 
