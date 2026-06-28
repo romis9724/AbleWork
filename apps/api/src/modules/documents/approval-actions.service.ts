@@ -699,10 +699,18 @@ export class ApprovalActionsService {
       return
     }
     if (result.nextAssigneeId) {
+      // 다음 결재자에게 차례 도래 알림
       this.events.emit(EVENTS.DOCUMENT_STEP_PENDING, {
         documentId: document.id,
         companyId,
         assigneeId: result.nextAssigneeId,
+      })
+      // 기안자에게 결재 단계 승인(진행) 알림
+      this.events.emit(EVENTS.DOCUMENT_STEP_APPROVED, {
+        documentId: document.id,
+        companyId,
+        drafterId: document.drafterId,
+        title: document.title,
       })
     }
   }

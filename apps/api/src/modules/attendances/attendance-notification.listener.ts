@@ -50,6 +50,18 @@ export class AttendanceNotificationListener {
     )
   }
 
+  @OnEvent(EVENTS.ATTENDANCE_CLOCK_OUT)
+  async onClockOut(payload: ClockEventPayload) {
+    const name = await this.employeeName(payload.employeeId)
+    await this.notifyManager(
+      payload.companyId,
+      payload.employeeId,
+      EVENTS.ATTENDANCE_CLOCK_OUT,
+      '퇴근 알림',
+      `${name}님이 퇴근했습니다.`,
+    )
+  }
+
   @OnEvent(EVENTS.ATTENDANCE_LATE)
   async onLate(payload: ClockEventPayload) {
     const name = await this.employeeName(payload.employeeId)

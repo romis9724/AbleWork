@@ -29,8 +29,22 @@ export function MeShell({ children }: { children: ReactNode }) {
   return (
     <div className="me-shell">
       <header className="me-head">
-        <Sigil size={22} />
-        <span className="hd-wordmark tek">AbleWork</span>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => router.push(isAdmin ? '/admin/dashboard' : '/me/home')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              router.push(isAdmin ? '/admin/dashboard' : '/me/home')
+            }
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+          title="홈"
+        >
+          <Sigil size={22} />
+          <span className="hd-wordmark tek">AbleWork</span>
+        </div>
         <div className="me-head-right">
           {isAdmin && (
             <span
@@ -49,7 +63,22 @@ export function MeShell({ children }: { children: ReactNode }) {
             </span>
           )}
           <ThemeSwitcher className="me-head-switch" />
-          <span className="me-head-avatar">{I.user()}</span>
+          <span
+            className="me-head-avatar"
+            role="button"
+            tabIndex={0}
+            onClick={() => router.push('/me/profile')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                router.push('/me/profile')
+              }
+            }}
+            style={{ cursor: 'pointer' }}
+            title="내 프로필"
+          >
+            {I.user()}
+          </span>
         </div>
       </header>
 

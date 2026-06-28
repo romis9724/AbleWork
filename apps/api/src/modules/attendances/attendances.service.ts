@@ -291,7 +291,7 @@ export class AttendancesService {
     // 조퇴(early_leave) 판정: 연결된 Shift 종료 전 퇴근 시
     const earlyLeaveStatus = await this.resolveClockOutStatus(attendance, clockOutAt)
 
-    return this.prisma.attendance.update({
+    const updated = await this.prisma.attendance.update({
       where: { id: attendance.id },
       data: {
         clockOutAt,
@@ -302,6 +302,16 @@ export class AttendancesService {
         ...(earlyLeaveStatus && { status: earlyLeaveStatus }),
       },
     })
+
+    // 퇴근 이벤트 — 소속 부서 팀장에게 알림(AttendanceNotificationListener)
+    this.eventEmitter.emit(EVENTS.ATTENDANCE_CLOCK_OUT, {
+      companyId,
+      employeeId,
+      timestamp: updated.clockOutAt,
+      status: updated.status,
+    })
+
+    return updated
   }
 
   // ── 휴게 시작 ───────────────────────────────────────────────────────────────
