@@ -51,6 +51,7 @@ export interface NotifiableEvent {
 
 export const NOTIFIABLE_EVENTS: readonly NotifiableEvent[] = [
   { event: 'attendance.clock_in', label: '출근', group: 'attendance', groupLabel: '출퇴근' },
+  { event: 'attendance.clock_out', label: '퇴근', group: 'attendance', groupLabel: '출퇴근' },
   { event: 'attendance.late', label: '지각', group: 'attendance', groupLabel: '출퇴근' },
   { event: 'attendance.no_show_reminder', label: '미출근 독촉', group: 'attendance', groupLabel: '출퇴근' },
 
@@ -80,6 +81,7 @@ export const NOTIFIABLE_EVENTS: readonly NotifiableEvent[] = [
   { event: 'document.rejected', label: '문서 반려', group: 'approval', groupLabel: '전자결재' },
   { event: 'document.recalled', label: '문서 회수', group: 'approval', groupLabel: '전자결재' },
   { event: 'document.step_pending', label: '결재 차례 도래', group: 'approval', groupLabel: '전자결재' },
+  { event: 'document.step_approved', label: '결재 단계 승인(진행)', group: 'approval', groupLabel: '전자결재' },
   { event: 'document.bounced', label: '부서수신 반송', group: 'approval', groupLabel: '전자결재' },
 ] as const
 

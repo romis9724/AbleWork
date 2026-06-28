@@ -49,6 +49,7 @@ export const EVENTS = {
   DOCUMENT_REJECTED: 'document.rejected',
   DOCUMENT_RECALLED: 'document.recalled',
   DOCUMENT_STEP_PENDING: 'document.step_pending', // 다음 결재자 차례 알림
+  DOCUMENT_STEP_APPROVED: 'document.step_approved', // 중간 단계 승인 → 기안자에게 진행 알림
   DOCUMENT_BOUNCED: 'document.bounced', // 부서수신 반송 → 기안자 통지
 
   // 시스템 — API 에러 감지(GlobalExceptionFilter 발행 → ErrorAnalysisService 구독)
