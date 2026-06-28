@@ -904,8 +904,10 @@ notification_rules {
 - 휴가유형 `deductionDays` 변경 → 이미 승인된 휴가의 `daysUsed`는 불변(미래 신청부터 적용).
 - 휴가 차감일수 계산(유형 `timeOption` 분기):
   - **full_day**: `daysUsed = 영업일수 × deductionDays`. 영업일수는 시작~종료(양 끝 포함)에서 주말(토·일)·회사 공휴일(`company_holidays`, `is_annual_repeat`=매년반복) 제외(최소 1영업일).
-  - **hourly(시간 단위)**: **당일만**(시작일=종료일). 시작/종료 시간으로 시간 산정 후 **8시간=1일** 환산(소수 2자리), `Leave.startTime/endTime`(@db.Time) 저장. 위반 시 `LEAVE_TIME_SAME_DAY_ONLY`/`LEAVE_TIME_INVALID`.
-  - LEAVE_CREATE 사전검증·승인반영·LEAVE_MODIFY 모두 동일 계산.
+  - **hourly(시간 단위)**: **당일만**(시작일=종료일). 시작/종료 시간으로 시간 산정 후 **8시간=1일** 환산(소수 2자리), `Leave.startTime/endTime`(@db.Time) 저장. 신청 시간은 유형 설정 시간(`paidHours`) 초과 불가. 위반 시 `LEAVE_TIME_SAME_DAY_ONLY`/`LEAVE_TIME_INVALID`/`LEAVE_TIME_EXCEEDS_LIMIT`.
+  - **잔액은 그룹 단위**: 발생(accrual)은 그룹 대표 유형(`deductionDays=1`·`full_day`)에만 생성되므로, 시간/반일 등 비대표 유형 신청도 **같은 그룹 대표 유형의 잔액**에서 차감한다(`resolveBalanceTypeId`). Leave 레코드는 실제 신청 유형으로 기록.
+  - LEAVE_CREATE 사전검증·승인반영·LEAVE_MODIFY/DELETE 모두 동일 계산·잔액 해석.
+  - 양식(DocumentForm) 미설정 시에도 소속 부서 팀장에게 상신 알림(DM/이메일/인앱) 발송.
 - 커스텀 요청유형 `fields` 교체 → 기존 요청의 `payload` 스냅샷 보존.
 - 승인규칙 변경의 진행 중 요청 소급 방지(규칙 스냅샷)는 §6.6 향후 과제.
 

@@ -388,10 +388,27 @@ export class RequestsService {
       })
 
       if (!form) {
-        // DocumentForm 미설정 시 → 요청만 생성하고 관리자가 수동 처리
+        // DocumentForm 미설정 시 → 전자결재 문서는 만들지 않되, 소속 부서 팀장에게 상신 알림은 보낸다.
+        // (양식 미설정으로 결재함 라우팅이 안 되더라도 팀장이 요청을 인지할 수 있도록)
+        const noFormPrimaryOrg = await tx.employeeOrganization.findFirst({
+          where: { employeeId: requesterId, organization: { companyId } },
+          orderBy: { isPrimary: 'desc' },
+          select: { organization: { select: { approverId: true } } },
+        })
+        const noFormTeamLeadId = noFormPrimaryOrg?.organization?.approverId ?? null
         await tx.request.update({
           where: { id: request.id },
           data: { status: 'PENDING' },
+        })
+        const eventName =
+          REQUEST_TYPE_REQUESTED_EVENT[dto.type] ?? `${dto.type.toLowerCase()}.requested`
+        this.events.emit(eventName, {
+          requestId: request.id,
+          requesterId,
+          companyId,
+          assigneeId:
+            noFormTeamLeadId && noFormTeamLeadId !== requesterId ? noFormTeamLeadId : undefined,
+          payload: dto.payload,
         })
         return request
       }
@@ -1021,9 +1038,11 @@ export class RequestsService {
       endTime,
     )
 
+    // 잔액은 그룹 대표 유형에만 발생하므로 대표 유형 기준으로 검증
+    const balanceTypeId = await this.resolveBalanceTypeId(this.prisma, leaveTypeId)
     await this.leavesService.validateBalance({
       employeeId,
-      leaveTypeId,
+      leaveTypeId: balanceTypeId,
       daysUsed,
       startDate: start,
       year: start.getFullYear(),
@@ -1112,7 +1131,7 @@ export class RequestsService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     client: any,
     companyId: string,
-    leaveType: { timeOption: string; deductionDays: unknown },
+    leaveType: { timeOption: string; deductionDays: unknown; paidHours?: number | null },
     startDate: string,
     endDate: string,
     startTime?: string | null,
@@ -1127,9 +1146,41 @@ export class RequestsService {
           message: '시간 단위 휴가는 종료 시간이 시작 시간보다 늦어야 합니다.',
         })
       }
+      // 신청 시간은 유형에 설정된 시간(paidHours)을 초과할 수 없다.
+      if (leaveType.paidHours != null && hours > Number(leaveType.paidHours)) {
+        throw new BadRequestException({
+          code: 'LEAVE_TIME_EXCEEDS_LIMIT',
+          message: `신청 시간(${hours}시간)이 휴가 유형의 설정 시간(${leaveType.paidHours}시간)을 초과할 수 없습니다.`,
+        })
+      }
       return Math.round((hours / HOURS_PER_DAY) * 100) / 100
     }
     return this.calcLeaveDaysUsed(client, companyId, startDate, endDate, Number(leaveType.deductionDays))
+  }
+
+  /**
+   * 잔액 차감 대상 유형 해석 — 잔액은 그룹의 대표 유형(deductionDays=1·full_day)에만 발생하므로,
+   * 시간/반일 등 비대표 유형 신청도 같은 그룹의 대표 유형 잔액에서 차감한다.
+   */
+  private async resolveBalanceTypeId(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    client: any,
+    leaveTypeId: string,
+  ): Promise<string> {
+    const lt = await client.leaveType.findUnique({
+      where: { id: leaveTypeId },
+      select: { groupId: true },
+    })
+    if (!lt?.groupId) return leaveTypeId
+    const types: Array<{ id: string; deductionDays: unknown; timeOption: string; isActive: boolean }> =
+      await client.leaveType.findMany({
+        where: { groupId: lt.groupId },
+        select: { id: true, deductionDays: true, timeOption: true, isActive: true },
+      })
+    const pool = types.some((t) => t.isActive) ? types.filter((t) => t.isActive) : types
+    const rep =
+      pool.find((t) => Number(t.deductionDays) === 1 && t.timeOption === 'full_day') ?? pool[0]
+    return rep?.id ?? leaveTypeId
   }
 
   /** LEAVE_CREATE 승인 → Leave 생성 + 잔액 차감 */
@@ -1172,8 +1223,10 @@ export class RequestsService {
     const year = new Date(startDate).getFullYear()
 
     // 잔액 재검증 (신청~승인 사이 잔액 변동 가능) — 부족하면 승인 트랜잭션 롤백
+    // 잔액은 그룹 대표 유형에만 발생하므로 대표 유형 잔액에서 차감한다.
+    const balanceTypeId = await this.resolveBalanceTypeId(tx, leaveTypeId)
     const balance = await tx.leaveBalance.findUnique({
-      where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } },
+      where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId: balanceTypeId, year } },
     })
     if (!balance) {
       throw new BadRequestException({
@@ -1237,7 +1290,7 @@ export class RequestsService {
     // 소유권 검증: 요청자 본인의 휴가만 수정 가능 (타 직원 레코드 조작 차단)
     const leave = await tx.leave.findFirst({
       where: { id: leaveId, employeeId, employee: { companyId } },
-      include: { leaveType: { select: { deductionDays: true, timeOption: true } } },
+      include: { leaveType: { select: { deductionDays: true, timeOption: true, paidHours: true } } },
     })
     if (!leave) {
       throw new NotFoundException({ code: 'LEAVE_NOT_FOUND', message: '휴가를 찾을 수 없습니다.' })
@@ -1274,8 +1327,9 @@ export class RequestsService {
 
     if (delta !== 0) {
       const year = leave.startDate.getFullYear()
+      const balanceTypeId = await this.resolveBalanceTypeId(tx, leave.leaveTypeId)
       await tx.leaveBalance.updateMany({
-        where: { employeeId, leaveTypeId: leave.leaveTypeId, year },
+        where: { employeeId, leaveTypeId: balanceTypeId, year },
         data: {
           usedDays: { increment: delta },
           remainingDays: { decrement: delta },
@@ -1305,10 +1359,11 @@ export class RequestsService {
     await tx.leave.delete({ where: { id: leaveId } })
 
     const restored = Number(leave.daysUsed)
+    const balanceTypeId = await this.resolveBalanceTypeId(tx, leave.leaveTypeId)
     await tx.leaveBalance.updateMany({
       where: {
         employeeId: leave.employeeId,
-        leaveTypeId: leave.leaveTypeId,
+        leaveTypeId: balanceTypeId,
         year: leave.startDate.getFullYear(),
       },
       data: {
