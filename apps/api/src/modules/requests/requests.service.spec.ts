@@ -379,6 +379,49 @@ describe('RequestsService', () => {
       )
     })
 
+    it('시간 단위(hourly) 휴가는 당일 시작/종료 시간으로 8시간=1일 환산해 차감한다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      // 09:00~13:00 = 4시간 → 4/8 = 0.5일
+      const dto = {
+        type: 'LEAVE_CREATE' as const,
+        payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15', startTime: '09:00', endTime: '13:00' },
+      }
+
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.request.create.mockResolvedValue({ ...basePendingRequest, documentId: null })
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        id: EMPLOYEE_ID,
+        companyId: COMPANY_ID,
+        name: '홍길동',
+        organizations: [{ organizationId: 'org-1' }],
+        positions: [],
+      })
+      // 시간 단위 유형
+      mockPrisma.leaveType.findFirst.mockResolvedValue({
+        id: 'lt-1',
+        groupId: 'lg-1',
+        deductionDays: 1,
+        isActive: true,
+        timeOption: 'hourly',
+      })
+      mockPrisma.approvalRule.findMany.mockResolvedValue([{ ...baseApprovalRule, isAutoApprove: true }])
+      mockPrisma.request.update.mockResolvedValue({
+        ...basePendingRequest,
+        status: 'APPROVED',
+        type: 'LEAVE_CREATE',
+        requesterId: EMPLOYEE_ID,
+        payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15', startTime: '09:00', endTime: '13:00' },
+      })
+
+      await service.createRequest(COMPANY_ID, dto, requester)
+
+      expect(mockPrisma.leave.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ daysUsed: 0.5 }) }),
+      )
+    })
+
     it('DEVICE_CHANGE 자동승인: payload.newDeviceId가 있으면 기기를 즉시 바인딩한다 (L1)', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
       const dto = { type: 'DEVICE_CHANGE' as const, payload: { newDeviceId: 'device-XYZ', reason: '기기 교체' } }

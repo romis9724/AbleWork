@@ -902,7 +902,10 @@ notification_rules {
 **수정(update) 정책**: 기초 데이터 수정은 차단하지 않되, **기존 데이터는 스냅샷으로 보존**한다.
 - 기안양식 `fieldsSchema` 변경 → 기존 문서의 `content`는 작성 시점 값으로 보존(양식 스키마 변경이 과거 문서를 손상시키지 않음). `fieldsSchema`는 `{ fields: DocumentFieldDef[] }` 구조(AP-01-02) — `DocumentFieldDef`/`readFormFields` 단일 출처는 `@ablework/shared-constants`. 필드 타입: text/textarea/number/date/select. 작성 시 `DynamicFormFields`로 렌더해 값을 `content`의 `field.key`별로 저장한다.
 - 휴가유형 `deductionDays` 변경 → 이미 승인된 휴가의 `daysUsed`는 불변(미래 신청부터 적용).
-- 휴가 차감일수 계산: `daysUsed = 영업일수 × deductionDays`. **영업일수**는 시작~종료(양 끝 포함)에서 주말(토·일)과 회사 공휴일(`company_holidays`, `is_annual_repeat`=매년반복)을 제외해 센다(최소 1영업일). LEAVE_CREATE 사전검증·승인반영·LEAVE_MODIFY 모두 동일 계산.
+- 휴가 차감일수 계산(유형 `timeOption` 분기):
+  - **full_day**: `daysUsed = 영업일수 × deductionDays`. 영업일수는 시작~종료(양 끝 포함)에서 주말(토·일)·회사 공휴일(`company_holidays`, `is_annual_repeat`=매년반복) 제외(최소 1영업일).
+  - **hourly(시간 단위)**: **당일만**(시작일=종료일). 시작/종료 시간으로 시간 산정 후 **8시간=1일** 환산(소수 2자리), `Leave.startTime/endTime`(@db.Time) 저장. 위반 시 `LEAVE_TIME_SAME_DAY_ONLY`/`LEAVE_TIME_INVALID`.
+  - LEAVE_CREATE 사전검증·승인반영·LEAVE_MODIFY 모두 동일 계산.
 - 커스텀 요청유형 `fields` 교체 → 기존 요청의 `payload` 스냅샷 보존.
 - 승인규칙 변경의 진행 중 요청 소급 방지(규칙 스냅샷)는 §6.6 향후 과제.
 

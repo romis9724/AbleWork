@@ -974,10 +974,12 @@ export class RequestsService {
     employeeId: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const { leaveTypeId, startDate, endDate } = payload as {
+    const { leaveTypeId, startDate, endDate, startTime, endTime } = payload as {
       leaveTypeId?: string
       startDate?: string
       endDate?: string
+      startTime?: string
+      endTime?: string
     }
     if (!leaveTypeId || !startDate || !endDate) {
       throw new BadRequestException({
@@ -1000,14 +1002,23 @@ export class RequestsService {
         message: '비활성화된 휴가 유형으로는 신청할 수 없습니다.',
       })
     }
+    // 시간 단위 휴가는 당일(시작일=종료일)만 허용
+    if (leaveType.timeOption === 'hourly' && startDate.slice(0, 10) !== endDate.slice(0, 10)) {
+      throw new BadRequestException({
+        code: 'LEAVE_TIME_SAME_DAY_ONLY',
+        message: '시간 단위 휴가는 당일만 신청할 수 있습니다.',
+      })
+    }
 
     const start = new Date(startDate)
-    const daysUsed = await this.calcLeaveDaysUsed(
+    const daysUsed = await this.computeLeaveDaysUsed(
       this.prisma,
       companyId,
+      leaveType,
       startDate,
       endDate,
-      Number(leaveType.deductionDays),
+      startTime,
+      endTime,
     )
 
     await this.leavesService.validateBalance({
@@ -1077,6 +1088,50 @@ export class RequestsService {
     return businessDays * (deductionDays > 0 ? deductionDays : 1)
   }
 
+  /** 'HH:MM' → 1970-01-01 기준 UTC Date (@db.Time 저장용). 형식 오류면 null. */
+  private parseTimeToDate(time?: string | null): Date | null {
+    if (!time || !/^\d{1,2}:\d{2}$/.test(time)) return null
+    return new Date(`1970-01-01T${time.padStart(5, '0')}:00.000Z`)
+  }
+
+  /** 'HH:MM' 두 값의 시간 차이(시간 단위). 음수/오류면 0. */
+  private hoursBetween(start?: string | null, end?: string | null): number {
+    if (!start || !end) return 0
+    const [sh, sm] = start.split(':').map(Number)
+    const [eh, em] = end.split(':').map(Number)
+    if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return 0
+    return (eh * 60 + em - (sh * 60 + sm)) / 60
+  }
+
+  /**
+   * 휴가 차감 일수 — 유형 단위(timeOption)에 따라 분기.
+   * - hourly(시간 단위): 당일(시작=종료) 시작/종료 시간으로 시간 산정, **8시간=1일** 환산(소수 2자리).
+   * - full_day: 영업일(주말·공휴일 제외) × 차감 단위.
+   */
+  private async computeLeaveDaysUsed(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    client: any,
+    companyId: string,
+    leaveType: { timeOption: string; deductionDays: unknown },
+    startDate: string,
+    endDate: string,
+    startTime?: string | null,
+    endTime?: string | null,
+  ): Promise<number> {
+    const HOURS_PER_DAY = 8
+    if (leaveType.timeOption === 'hourly') {
+      const hours = this.hoursBetween(startTime, endTime)
+      if (hours <= 0) {
+        throw new BadRequestException({
+          code: 'LEAVE_TIME_INVALID',
+          message: '시간 단위 휴가는 종료 시간이 시작 시간보다 늦어야 합니다.',
+        })
+      }
+      return Math.round((hours / HOURS_PER_DAY) * 100) / 100
+    }
+    return this.calcLeaveDaysUsed(client, companyId, startDate, endDate, Number(leaveType.deductionDays))
+  }
+
   /** LEAVE_CREATE 승인 → Leave 생성 + 잔액 차감 */
   private async applyLeaveCreate(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1085,11 +1140,13 @@ export class RequestsService {
     employeeId: string,
     payload: Record<string, unknown>,
   ) {
-    const { leaveTypeId, startDate, endDate, reason } = payload as {
+    const { leaveTypeId, startDate, endDate, reason, startTime, endTime } = payload as {
       leaveTypeId: string
       startDate: string
       endDate: string
       reason?: string
+      startTime?: string
+      endTime?: string
     }
 
     const leaveType = await tx.leaveType.findFirst({ where: { id: leaveTypeId } })
@@ -1100,12 +1157,17 @@ export class RequestsService {
       })
     }
 
-    const daysUsed = await this.calcLeaveDaysUsed(
+    // 시간 단위 휴가는 당일(시작일=종료일)로 강제
+    const isHourly = leaveType.timeOption === 'hourly'
+    const effectiveEndDate = isHourly ? startDate : endDate
+    const daysUsed = await this.computeLeaveDaysUsed(
       tx,
       companyId,
+      leaveType,
       startDate,
-      endDate,
-      Number(leaveType.deductionDays),
+      effectiveEndDate,
+      startTime,
+      endTime,
     )
     const year = new Date(startDate).getFullYear()
 
@@ -1137,7 +1199,9 @@ export class RequestsService {
         employeeId,
         leaveTypeId,
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: new Date(effectiveEndDate),
+        startTime: isHourly ? this.parseTimeToDate(startTime) : null,
+        endTime: isHourly ? this.parseTimeToDate(endTime) : null,
         daysUsed,
         status: 'APPROVED',
         reason: (reason as string) ?? null,
@@ -1161,30 +1225,36 @@ export class RequestsService {
     employeeId: string,
     payload: Record<string, unknown>,
   ) {
-    const { leaveId, startDate, endDate, reason } = payload as {
+    const { leaveId, startDate, endDate, reason, startTime, endTime } = payload as {
       leaveId: string
       startDate?: string
       endDate?: string
       reason?: string
+      startTime?: string
+      endTime?: string
     }
 
     // 소유권 검증: 요청자 본인의 휴가만 수정 가능 (타 직원 레코드 조작 차단)
     const leave = await tx.leave.findFirst({
       where: { id: leaveId, employeeId, employee: { companyId } },
-      include: { leaveType: { select: { deductionDays: true } } },
+      include: { leaveType: { select: { deductionDays: true, timeOption: true } } },
     })
     if (!leave) {
       throw new NotFoundException({ code: 'LEAVE_NOT_FOUND', message: '휴가를 찾을 수 없습니다.' })
     }
 
+    const isHourly = leave.leaveType.timeOption === 'hourly'
     const newStart = startDate ?? leave.startDate.toISOString()
-    const newEnd = endDate ?? leave.endDate.toISOString()
-    const newDaysUsed = await this.calcLeaveDaysUsed(
+    // 시간 단위 휴가는 당일(시작=종료)로 강제
+    const newEnd = isHourly ? newStart : (endDate ?? leave.endDate.toISOString())
+    const newDaysUsed = await this.computeLeaveDaysUsed(
       tx,
       companyId,
+      leave.leaveType,
       newStart,
       newEnd,
-      Number(leave.leaveType.deductionDays),
+      startTime,
+      endTime,
     )
     const delta = newDaysUsed - Number(leave.daysUsed)
 
@@ -1193,6 +1263,10 @@ export class RequestsService {
       data: {
         startDate: new Date(newStart),
         endDate: new Date(newEnd),
+        ...(isHourly && {
+          startTime: this.parseTimeToDate(startTime),
+          endTime: this.parseTimeToDate(endTime),
+        }),
         daysUsed: newDaysUsed,
         ...(reason !== undefined && { reason }),
       },
