@@ -119,6 +119,20 @@ export class EmployeesController {
     return this.employeesService.update(companyId, id, dto, requester)
   }
 
+  // HR-03-06 직원 완전 삭제 (이력 없는 경우만 — 총괄/최고관리자)
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '직원 완전 삭제 (이력 없을 때만, GENERAL_ADMIN 이상)' })
+  @ApiParam({ name: 'id', type: String })
+  remove(
+    @CompanyId() companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.employeesService.remove(companyId, id, requester)
+  }
+
   // HR-03-05 퇴사 처리
   @Post(':id/deactivate')
   @HttpCode(HttpStatus.OK)

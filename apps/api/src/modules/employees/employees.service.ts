@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -7,9 +8,11 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { Prisma } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
+import { randomBytes, createHash } from 'crypto'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { CompanySettingsService } from '../companies/company-settings.service'
+import { MailService } from '../mail/mail.service'
 import { AccessLevel, ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
 import { CreateEmployeeDto, type BulkCreateEmployeeDto } from './dto/create-employee.dto'
 import { UpdateEmployeeDto } from './dto/update-employee.dto'
@@ -18,20 +21,36 @@ import { CreateWageInfoDto } from '../wage-info/dto/create-wage-info.dto'
 import { EVENTS } from '../../events/domain-events'
 import { AuditService } from '../audit/audit.service'
 
+// 계정 설정(초대) 토큰 유효기간 — 대량 등록 직원이 메일을 늦게 열어도 되도록 7일
+const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const INVITE_TOKEN_BYTES = 32
+
 @Injectable()
 export class EmployeesService {
+  private readonly logger = new Logger(EmployeesService.name)
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
     private readonly settingsService: CompanySettingsService,
     private readonly audit: AuditService,
+    private readonly mail: MailService,
   ) {}
 
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
 
   async findAll(companyId: string, filter: EmployeeFilterDto, requester: JwtPayload) {
-    const { search, organizationId, positionId, organizationIds, positionIds, isActive, page, limit } =
-      filter
+    const {
+      search,
+      organizationId,
+      positionId,
+      organizationIds,
+      positionIds,
+      excludeSuperAdmin,
+      isActive,
+      page,
+      limit,
+    } = filter
     const skip = (page - 1) * limit
 
     // ORG_ADMIN은 자신의 조직 소속 직원만 볼 수 있다
@@ -56,6 +75,8 @@ export class EmployeesService {
     const where: Record<string, unknown> = {
       companyId,
       ...(isActive !== undefined && { isActive }),
+      // 인사관리 목록 전용: 최고관리자 제외 (별도 관계 키와 충돌 없어 직접 지정)
+      ...(excludeSuperAdmin && { accessLevel: { not: AccessLevel.SUPER_ADMIN } }),
       ...(and.length > 0 && { AND: and }),
       ...(search && {
         OR: [
@@ -124,6 +145,29 @@ export class EmployeesService {
 
     // 조직이 같은 회사 소속인지 확인
     await this.validateOrganizationsBelongToCompany(companyId, organizationIds)
+
+    // 같은 회사에 같은 이메일(계정)의 직원이 이미 있으면:
+    //  - 재직 중: 중복 등록 차단
+    //  - 퇴사(비활성): 재입사로 보고 기존 레코드를 재활성화 + 새 정보로 갱신
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    })
+    if (existingUser) {
+      const existingEmp = await this.prisma.employee.findFirst({
+        where: { companyId, userId: existingUser.id },
+        select: { id: true, isActive: true },
+      })
+      if (existingEmp?.isActive) {
+        throw new BadRequestException({
+          code: 'EMPLOYEE_ALREADY_EXISTS',
+          message: '이미 등록된 직원입니다. (동일 이메일이 재직 중)',
+        })
+      }
+      if (existingEmp) {
+        return this.reactivateForReentry(existingEmp.id, dto)
+      }
+    }
 
     // 초기 비밀번호가 있으면 즉시 로그인 가능한 활성 계정을 만든다.
     // 없으면 비활성 계정으로 생성하고, 추후 비밀번호 재설정으로 활성화한다.
@@ -195,6 +239,69 @@ export class EmployeesService {
     return created
   }
 
+  /**
+   * 퇴사(비활성) 직원의 재입사 처리 — 기존 Employee 레코드를 재활성화하고
+   * 새 정보(이름·입사일·고용형태·권한·조직·직위 등)로 갱신한다.
+   * 과거 이력(출퇴근·결재 등)은 같은 레코드에 그대로 연결되어 보존된다.
+   */
+  private async reactivateForReentry(id: string, dto: CreateEmployeeDto) {
+    const {
+      initialPassword,
+      organizationIds,
+      primaryOrganizationId,
+      positionIds,
+      joinedAt,
+      // email은 기존 계정과 동일하므로 갱신 대상에서 제외
+      email: _email,
+      ...rest
+    } = dto
+    const passwordHash = initialPassword ? await bcrypt.hash(initialPassword, 10) : undefined
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const employee = await tx.employee.update({
+        where: { id },
+        data: {
+          ...rest, // name, employmentType, accessLevel, phone?, employeeNumber?
+          joinedAt: new Date(joinedAt),
+          isActive: true,
+          resignedAt: null,
+        },
+      })
+
+      // 조직 재설정
+      await tx.employeeOrganization.deleteMany({ where: { employeeId: id } })
+      await tx.employeeOrganization.createMany({
+        data: organizationIds.map((orgId) => ({
+          employeeId: id,
+          organizationId: orgId,
+          isPrimary: orgId === primaryOrganizationId,
+        })),
+      })
+
+      // 직위 재설정
+      await tx.employeePosition.deleteMany({ where: { employeeId: id } })
+      if (positionIds.length > 0) {
+        await tx.employeePosition.createMany({
+          data: positionIds.map((positionId) => ({ employeeId: id, positionId })),
+        })
+      }
+
+      // 연결된 User 동기화 (이름/전화, 비밀번호 지정 시 활성화)
+      if (employee.userId) {
+        await tx.user.update({
+          where: { id: employee.userId },
+          data: {
+            name: rest.name,
+            ...(rest.phone !== undefined && { phone: rest.phone }),
+            ...(passwordHash !== undefined && { passwordHash, isActive: true }),
+          },
+        })
+      }
+
+      return employee
+    })
+  }
+
   // ── 직원 일괄 등록 (CSV) ────────────────────────────────────────────────────
 
   async bulkCreate(
@@ -207,12 +314,31 @@ export class EmployeesService {
       select: { id: true, name: true },
     })
     const orgByName = new Map(orgs.map((o) => [o.name.trim(), o.id]))
+
+    // 직위(이름→id) — 활성 직위만
+    const positions = await this.prisma.position.findMany({
+      where: { companyId, isActive: true },
+      select: { id: true, name: true },
+    })
+    const posByName = new Map(positions.map((p) => [p.name.trim(), p.id]))
+
     const employmentMap: Record<string, 'regular' | 'contract' | 'part_time' | 'daily'> = {
       regular: 'regular', 정규직: 'regular',
       contract: 'contract', 계약직: 'contract',
       part_time: 'part_time', 단시간: 'part_time', 파트타임: 'part_time',
       daily: 'daily', 일용직: 'daily',
     }
+    // 권한 라벨 → AccessLevel (최고관리자는 업로드 불가)
+    const accessLevelMap: Record<string, AccessLevel> = {
+      직원: AccessLevel.EMPLOYEE,
+      사원: AccessLevel.EMPLOYEE,
+      조직관리자: AccessLevel.ORG_ADMIN,
+      총괄관리자: AccessLevel.GENERAL_ADMIN,
+    }
+
+    // 세미콜론(또는 콤마) 구분 다중 값 → trim 배열
+    const splitMulti = (v: string | undefined): string[] =>
+      (v ?? '').split(/[;,]/).map((s) => s.trim()).filter(Boolean)
 
     let created = 0
     const errors: { row: number; message: string }[] = []
@@ -221,28 +347,55 @@ export class EmployeesService {
       const r = rows[i]
       const rowNo = i + 2 // CSV 헤더(1행) + 1-기준
       try {
-        const orgId = orgByName.get((r.organizationName ?? '').trim())
-        if (!orgId) {
-          throw new Error(`조직 '${r.organizationName ?? ''}'을(를) 찾을 수 없습니다.`)
+        // 조직(다중) — 첫 번째가 본조직
+        const orgNames = splitMulti(r.organizationName)
+        if (orgNames.length === 0) throw new Error('조직을 입력하세요.')
+        const orgIds: string[] = []
+        for (const n of orgNames) {
+          const id = orgByName.get(n)
+          if (!id) throw new Error(`조직 '${n}'을(를) 찾을 수 없습니다.`)
+          orgIds.push(id)
         }
+
+        // 직위(다중) — 이름 매칭
+        const positionIds: string[] = []
+        for (const n of splitMulti(r.positionName)) {
+          const id = posByName.get(n)
+          if (!id) throw new Error(`직위 '${n}'을(를) 찾을 수 없습니다.`)
+          positionIds.push(id)
+        }
+
+        // 권한 — 라벨 매핑(최고관리자 거부, 미지정 시 직원)
+        const levelLabel = (r.accessLevel ?? '').trim()
+        if (levelLabel === '최고관리자') {
+          throw new Error('최고관리자는 업로드로 등록할 수 없습니다.')
+        }
+        const accessLevel =
+          levelLabel === '' ? AccessLevel.EMPLOYEE : accessLevelMap[levelLabel]
+        if (!accessLevel) throw new Error(`권한 '${levelLabel}'을(를) 인식할 수 없습니다.`)
+
         const employmentType = employmentMap[(r.employmentType ?? '').trim()] ?? 'regular'
-        await this.create(
+        const employee = await this.create(
           companyId,
           {
             name: r.name.trim(),
             email: r.email.trim(),
             joinedAt: r.joinedAt,
             employmentType,
-            accessLevel: 'EMPLOYEE',
-            organizationIds: [orgId],
-            primaryOrganizationId: orgId,
-            positionIds: [],
+            accessLevel,
+            organizationIds: orgIds,
+            primaryOrganizationId: orgIds[0],
+            positionIds,
             ...(r.employeeNumber ? { employeeNumber: r.employeeNumber.trim() } : {}),
             ...(r.phone ? { phone: r.phone.trim() } : {}),
           } as CreateEmployeeDto,
           requester,
         )
         created++
+        // 비활성 계정 → 비밀번호 설정(초대) 메일 발송 (실패해도 등록은 유지)
+        if (employee.userId) {
+          await this.sendSetupInvite(employee.userId, r.email.trim(), r.name.trim())
+        }
       } catch (e: unknown) {
         const msg =
           (e as { response?: { message?: string }; message?: string })?.response?.message ??
@@ -252,6 +405,28 @@ export class EmployeesService {
     }
 
     return { created, errors }
+  }
+
+  /**
+   * 계정 설정(초대) 메일 발송 — 비활성 계정에 비밀번호 설정 링크를 보낸다.
+   * 토큰은 비밀번호 재설정 토큰과 동일 체계(직원이 설정 시 계정 활성화).
+   * 발송 실패는 로깅만 하고 throw 하지 않는다(등록 자체는 유지).
+   */
+  private async sendSetupInvite(userId: string, email: string, name: string): Promise<void> {
+    try {
+      const token = randomBytes(INVITE_TOKEN_BYTES).toString('hex')
+      const tokenHash = createHash('sha256').update(token).digest('hex')
+      await this.prisma.passwordResetToken.create({
+        data: {
+          userId,
+          tokenHash,
+          expiresAt: new Date(Date.now() + INVITE_TOKEN_TTL_MS),
+        },
+      })
+      await this.mail.sendAccountSetup(email, token, name)
+    } catch (error) {
+      this.logger.error(`계정 설정 메일 발송 실패 (userId: ${userId})`, error)
+    }
   }
 
   // ── 직원 수정 ───────────────────────────────────────────────────────────────
@@ -396,6 +571,71 @@ export class EmployeesService {
         isActive: true,
         resignedAt: null,
       },
+    })
+  }
+
+  // ── 완전 삭제 (hard delete) ──────────────────────────────────────────────────
+
+  /**
+   * 직원 완전 삭제 — 출퇴근·근무일정·휴가·결재 등 이력성 참조가 없을 때만 허용한다.
+   * (오등록 정리 용도) 이력이 있으면 차단하고 비활성화(퇴사)를 안내한다.
+   * 부속 관계(조직·직위·커스텀필드·휴가잔액·근로정보)는 함께 정리한다.
+   */
+  async remove(companyId: string, id: string, requester: JwtPayload) {
+    const existing = await this.assertEmployee(companyId, id)
+    await this.guardOrgScope(requester, existing)
+
+    // 이력성 참조 검사 — 하나라도 있으면 완전 삭제 불가
+    const [att, shift, leave, req, doc, step, hist] = await Promise.all([
+      this.prisma.attendance.count({ where: { OR: [{ employeeId: id }, { confirmedBy: id }] } }),
+      this.prisma.shift.count({
+        where: { OR: [{ employeeId: id }, { confirmedBy: id }, { createdBy: id }] },
+      }),
+      this.prisma.leave.count({ where: { employeeId: id } }),
+      this.prisma.request.count({ where: { requesterId: id } }),
+      this.prisma.document.count({ where: { drafterId: id } }),
+      this.prisma.approvalStep.count({ where: { OR: [{ assigneeId: id }, { proxyId: id }] } }),
+      this.prisma.approvalHistory.count({ where: { actorId: id } }),
+    ])
+    if (att + shift + leave + req + doc + step + hist > 0) {
+      throw new ForbiddenException({
+        code: 'EMPLOYEE_HAS_REFERENCES',
+        message:
+          '출퇴근·근무일정·휴가·결재 이력이 있어 완전 삭제할 수 없습니다. 비활성화(퇴사)를 사용하세요.',
+      })
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        // 조직 결재자/문서담당 참조 해제
+        await tx.organization.updateMany({ where: { approverId: id, companyId }, data: { approverId: null } })
+        await tx.organization.updateMany({ where: { docManagerId: id, companyId }, data: { docManagerId: null } })
+        // 부속 관계 정리 (messengerAccount·organizationDocManager는 Cascade로 자동 삭제)
+        await tx.employeeOrganization.deleteMany({ where: { employeeId: id } })
+        await tx.employeePosition.deleteMany({ where: { employeeId: id } })
+        await tx.employeeCustomFieldValue.deleteMany({ where: { employeeId: id } })
+        await tx.leaveBalance.deleteMany({ where: { employeeId: id } })
+        await tx.wageInfo.deleteMany({ where: { employeeId: id } })
+        await tx.employee.delete({ where: { id } })
+      })
+    } catch (e) {
+      // 미처 거르지 못한 Restrict 참조가 남아 있으면 FK 위반(P2003) — 안전하게 차단 안내
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
+        throw new ForbiddenException({
+          code: 'EMPLOYEE_HAS_REFERENCES',
+          message: '연관 데이터가 있어 완전 삭제할 수 없습니다. 비활성화(퇴사)를 사용하세요.',
+        })
+      }
+      throw e
+    }
+
+    await this.audit.record({
+      companyId,
+      actorId: requester.employeeId,
+      action: 'EMPLOYEE_DELETE',
+      targetType: 'EMPLOYEE',
+      targetId: id,
+      targetLabel: existing.name,
     })
   }
 

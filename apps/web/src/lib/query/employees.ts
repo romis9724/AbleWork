@@ -25,6 +25,8 @@ export interface EmployeeFilterParams {
   /** 다중 선택(검색영역). 서버에는 콤마 구분 문자열로 전송된다. */
   organizationIds?: string[]
   positionIds?: string[]
+  /** 인사관리 목록 전용 — 최고관리자(SUPER_ADMIN) 제외 */
+  excludeSuperAdmin?: boolean
   isActive?: boolean
   page?: number
   limit?: number
@@ -92,6 +94,15 @@ export const useActivateEmployee = () => {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiClient.post(`/employees/${id}/activate`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+/** 직원 완전 삭제 (이력 없는 경우만, GENERAL_ADMIN 이상) */
+export const useDeleteEmployee = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/employees/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }
