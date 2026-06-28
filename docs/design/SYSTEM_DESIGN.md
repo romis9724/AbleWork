@@ -536,7 +536,13 @@ draft → confirmed → cancelled
 
 #### 5.2.5 요청 (HR 결재 연동)
 
-HR 요청은 **전자결재 모듈의 기안**과 연동되어 처리된다.
+> **[HR 요청 ↔ 전자결재 이원화]** (2026-06 정책 정정)
+> 사용자 "휴가/요청" 메뉴의 HR 요청과 "전자결재"는 **별개 승인 체계**로 운영한다(두 플랫폼 통합 과정의 설계 오류를 분리).
+> - **HR 요청 부서 승인자** = 요청자 소속 부서의 **조직관리자(`ORG_ADMIN` 이상, 직원 관리 기준)**. 같은 부서에 없으면 **상위 부서**의 조직관리자(`resolveDeptApprover`).
+> - **전자결재 부서 승인자** = "조직관리 > 조직도 > 특정 부서"의 **결재권자(`organization.approverId`)**.
+> - **향후 통합 계획**: 두 승인 체계를 하나의 승인선 엔진으로 합치는 것을 로드맵에 둔다(현재는 이원화 유지). 합칠 때 부서 승인자 정의(조직관리자 vs 결재권자)를 단일화하고, HR 요청의 문서 자동생성/알림 경로를 전자결재와 통일한다.
+
+아래 표는 현재(이원화) 기준의 HR 요청 ↔ 기안양식 매핑이다. HR 요청 승인 라우팅은 위 박스를 따른다.
 
 | 요청 유형 | 기안양식 연동 |
 |---|---|
@@ -907,7 +913,7 @@ notification_rules {
   - **hourly(시간 단위)**: **당일만**(시작일=종료일). 시작/종료 시간으로 시간 산정 후 **8시간=1일** 환산(소수 2자리), `Leave.startTime/endTime`(@db.Time) 저장. 신청 시간은 유형 설정 시간(`paidHours`) 초과 불가. 위반 시 `LEAVE_TIME_SAME_DAY_ONLY`/`LEAVE_TIME_INVALID`/`LEAVE_TIME_EXCEEDS_LIMIT`.
   - **잔액은 그룹 단위**: 발생(accrual)은 그룹 대표 유형(`deductionDays=1`·`full_day`)에만 생성되므로, 시간/반일 등 비대표 유형 신청도 **같은 그룹 대표 유형의 잔액**에서 차감한다(`resolveBalanceTypeId`). Leave 레코드는 실제 신청 유형으로 기록.
   - LEAVE_CREATE 사전검증·승인반영·LEAVE_MODIFY/DELETE 모두 동일 계산·잔액 해석.
-  - 양식(DocumentForm) 미설정 시에도 소속 부서 팀장에게 상신 알림(DM/이메일/인앱) 발송.
+  - 양식(DocumentForm) 미설정 시에도 부서 승인자(부서 조직관리자)에게 상신 알림(DM/이메일/인앱) 발송.
 - 커스텀 요청유형 `fields` 교체 → 기존 요청의 `payload` 스냅샷 보존.
 - 승인규칙 변경의 진행 중 요청 소급 방지(규칙 스냅샷)는 §6.6 향후 과제.
 
@@ -983,7 +989,7 @@ notification_rules {
 | 불변식 | 규칙 | 에러코드 |
 |---|---|---|
 | **레코드 소유권** | HR 요청의 승인 반영(`LEAVE/SHIFT/ATTENDANCE`의 `MODIFY/DELETE/EDIT`)은 대상 레코드가 **요청자 본인 소유**일 때만 수행한다. apply 단계 쿼리 `where`에 `employeeId`를 강제하여 타 직원 레코드 조작을 차단. | `LEAVE_NOT_FOUND` 등(소유 불일치 시 미발견 처리) |
-| **요청 결재자 fallback** | HR 요청(휴가 등)에 적용 `ApprovalRule`이 없거나 직위로 결재자를 못 찾으면, ① 요청자 대표 부서의 팀장(`organization.approverId`, 본인 제외) → ② 회사 `GENERAL_ADMIN` 이상 순으로 결재자를 지정한다. 상신 알림(DM/이메일/인앱)은 이 1차 결재자(`assigneeId`)에게 발송된다(과거 `assigneeId` 누락으로 본인에게만 가던 버그 수정). | — |
+| **요청 부서 승인자** | HR 요청(휴가/근무/근태 등)의 부서 승인자는 **요청자 소속(대표) 부서의 조직관리자(`ORG_ADMIN` 이상)** 이며, 같은 부서에 없으면 **상위 부서로 올라가며** 탐색한다(`resolveDeptApprover`). 적용 `ApprovalRule`(직위)이 있으면 그 규칙이 우선하고, 부서 조직관리자는 미지정 시 fallback이다. 모두 없으면 회사 `GENERAL_ADMIN` 이상으로 fallback. 상신 알림은 1차 결재자(`assigneeId`)에게 발송. **전자결재의 부서 결재권자(`organization.approverId`)와는 별개 체계** — [HR 요청 ↔ 전자결재 이원화] 참조. | — |
 | **자기결재 금지 ①** | 요청 생성 시 본인 외 결재 가능한 관리자(`GENERAL_ADMIN` 이상)가 없으면 요청을 거부한다(자기 자신을 결재자로 fallback 하지 않는다). | `REQUEST_NO_APPROVER` |
 | **자기결재 금지 ②** | 결재 처리 시 `요청자 == 결재자`이면 차단한다(관리자 포함). | `REQUEST_SELF_APPROVAL` |
 | **휴가 잔액 조회** | 본인 또는 `ORG_ADMIN` 이상만 타 직원 잔액을 조회할 수 있다. | `LEAVE_BALANCE_FORBIDDEN` |
