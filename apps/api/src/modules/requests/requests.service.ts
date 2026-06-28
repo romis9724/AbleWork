@@ -283,6 +283,49 @@ export class RequestsService {
     })
   }
 
+  // ── 요청 수정 (본인의 PENDING 요청 내용 수정) ───────────────────────────────
+
+  async updateRequest(
+    companyId: string,
+    requestId: string,
+    payload: Record<string, unknown>,
+    requester: JwtPayload,
+  ) {
+    const request = await this.assertRequestBelongsToCompany(companyId, requestId)
+
+    if (request.requesterId !== requester.employeeId) {
+      throw new ForbiddenException({
+        code: 'REQUEST_EDIT_FORBIDDEN',
+        message: '본인의 요청만 수정할 수 있습니다.',
+      })
+    }
+    this.assertRequestPending(request)
+
+    // 유형별 사전 검증을 신규 신청과 동일하게 적용 (잔액·근무유형 등)
+    if (request.type === 'LEAVE_CREATE') {
+      await this.validateLeaveCreatePayload(companyId, requester.employeeId, payload)
+    }
+    if (request.type === 'SHIFT_CREATE') {
+      await this.validateShiftCreatePayload(companyId, payload)
+    }
+
+    return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (tx: any) => {
+      const updatedRequest = await tx.request.update({
+        where: { id: requestId },
+        data: { payload },
+      })
+      // 전자결재 연동(양식) 문서가 있으면 본문도 동기화
+      if (request.documentId) {
+        await tx.document.update({
+          where: { id: request.documentId },
+          data: { content: payload },
+        })
+      }
+      return updatedRequest
+    })
+  }
+
   // ── HR-07-02 요청 생성 ($transaction) ────────────────────────────────────────
 
   async createRequest(companyId: string, dto: CreateRequestDto, requester: JwtPayload) {
