@@ -1,13 +1,11 @@
 'use client'
 import { useState } from 'react'
-import { useLeaveBalance, useLeaveTypes } from '@/lib/query/leaves'
-import { useCreateRequest } from '@/lib/query/requests'
+import { useLeaveBalance } from '@/lib/query/leaves'
 import { useAuthStore } from '@/stores/auth.store'
 import { currentEmployeeId } from '@/lib/auth-session'
 import { PageHead } from '@/components/ab/Page'
-import { Modal } from '@/components/ab/Modal'
+import { LeaveFormModal } from '@/components/leave/LeaveFormModal'
 import { I } from '@/components/ab/icons'
-import { useToast } from '@/components/ab/Toast'
 
 function gaugePercent(used: number, accrued: number): number {
   if (accrued <= 0) return 0
@@ -16,81 +14,10 @@ function gaugePercent(used: number, accrued: number): number {
 
 export default function MyLeavesPage() {
   const user = useAuthStore((s) => s.user)
-  const toast = useToast()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [leaveTypeId, setLeaveTypeId] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [startTime, setStartTime] = useState('')
-  const [endTime, setEndTime] = useState('')
-  const [reason, setReason] = useState('')
 
   // 본인 잔액은 쿠키 토큰의 employeeId로 조회한다(스토어-토큰 desync 방지)
   const { data: balances = [], isLoading } = useLeaveBalance(currentEmployeeId(user?.employeeId))
-  const { data: leaveTypes = [] } = useLeaveTypes()
-  const createRequest = useCreateRequest()
-
-  const selectedBalance = balances.find((b) => b.leaveTypeId === leaveTypeId)
-  const selectedType = leaveTypes.find((lt) => lt.id === leaveTypeId)
-  const isHourly = selectedType?.timeOption === 'hourly'
-  const canSubmit =
-    !!leaveTypeId &&
-    !!startDate &&
-    (isHourly ? !!startTime && !!endTime : !!endDate) &&
-    !createRequest.isPending
-
-  const resetDialog = () => {
-    setDialogOpen(false)
-    setLeaveTypeId('')
-    setStartDate('')
-    setEndDate('')
-    setStartTime('')
-    setEndTime('')
-    setReason('')
-  }
-
-  // 시작일 선택 시 종료일이 비었거나 시작보다 빠르면 자동으로 시작일과 맞춘다(기본 1일)
-  const handleStartDateChange = (value: string) => {
-    setStartDate(value)
-    if (!endDate || endDate < value) setEndDate(value)
-  }
-
-  const handleSubmit = async () => {
-    if (!leaveTypeId || !startDate) {
-      toast('필수 항목을 모두 입력해 주세요')
-      return
-    }
-    if (isHourly) {
-      if (!startTime || !endTime) {
-        toast('시작/종료 시간을 입력해 주세요')
-        return
-      }
-      if (endTime <= startTime) {
-        toast('종료 시간은 시작 시간보다 늦어야 합니다')
-        return
-      }
-    } else {
-      if (!endDate) {
-        toast('필수 항목을 모두 입력해 주세요')
-        return
-      }
-      if (endDate < startDate) {
-        toast('종료일은 시작일과 같거나 이후여야 합니다')
-        return
-      }
-    }
-    // 시간 단위 휴가는 당일만(시작일=종료일)
-    const payload = isHourly
-      ? { leaveTypeId, startDate, endDate: startDate, startTime, endTime, reason }
-      : { leaveTypeId, startDate, endDate, reason }
-    try {
-      await createRequest.mutateAsync({ type: 'LEAVE_CREATE', payload })
-      toast('휴가 신청이 완료됐습니다')
-      resetDialog()
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '신청 중 오류가 발생했습니다')
-    }
-  }
 
   return (
     <>
@@ -136,77 +63,12 @@ export default function MyLeavesPage() {
         </div>
       )}
 
-      <Modal
+      <LeaveFormModal
         open={dialogOpen}
-        onClose={resetDialog}
-        eyebrow="Leave Request"
-        title="휴가 신청"
-        maxWidth={600}
-        footer={
-          <>
-            <button className="btn btn-ghost" onClick={resetDialog}>취소</button>
-            <button data-testid="me-leave-submit-btn" className="btn btn-primary" disabled={!canSubmit} onClick={handleSubmit}>
-              {createRequest.isPending ? '신청 중…' : '신청'}
-            </button>
-          </>
-        }
-      >
-        <div className="fld">
-          <label>휴가 유형</label>
-          <select className="sel" value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)}>
-            <option value="">선택</option>
-            {leaveTypes.filter((lt) => lt.isActive).map((lt) => (
-              <option key={lt.id} value={lt.id}>{lt.displayName ?? lt.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {selectedBalance && (
-          <div className="note" style={{ marginBottom: 18 }}>
-            잔여 일수: <b className="tek" style={{ color: 'var(--ab-orange)' }}>{selectedBalance.remainingDays}일</b>
-          </div>
-        )}
-
-        <div className="fld">
-          <label>{isHourly ? '날짜' : '시작일'}</label>
-          <input className="inp-block" type="date" value={startDate} onChange={(e) => handleStartDateChange(e.target.value)} />
-        </div>
-        {isHourly ? (
-          <>
-            <div className="fld">
-              <label>시작 시간</label>
-              <input className="inp-block" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
-            </div>
-            <div className="fld">
-              <label>종료 시간</label>
-              <input className="inp-block" type="time" value={endTime} min={startTime || undefined} onChange={(e) => setEndTime(e.target.value)} />
-            </div>
-            <div className="note" style={{ marginBottom: 18 }}>
-              시간 단위 휴가는 <b>당일</b>만 가능하며, <b>8시간=1일</b> 기준으로 차감됩니다.
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="fld">
-              <label>종료일</label>
-              <input className="inp-block" type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} />
-            </div>
-            <div className="note" style={{ marginBottom: 18 }}>
-              차감 일수는 <b>영업일</b> 기준(주말·공휴일 제외)으로 계산됩니다.
-            </div>
-          </>
-        )}
-        <div className="fld" style={{ alignItems: 'start' }}>
-          <label>사유</label>
-          <textarea
-            className="ta"
-            style={{ minHeight: 90 }}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="사유를 입력하세요 (선택)"
-          />
-        </div>
-      </Modal>
+        mode="create"
+        employeeId={user?.employeeId ?? ''}
+        onClose={() => setDialogOpen(false)}
+      />
     </>
   )
 }

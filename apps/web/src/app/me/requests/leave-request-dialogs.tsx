@@ -8,7 +8,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
-import { useLeaveTypes, useLeaves, type Leave } from '@/lib/query/leaves'
+import { useLeaves, type Leave } from '@/lib/query/leaves'
 import type { RequestFormDialogProps } from './dialog-props'
 
 const leaveOptionLabel = (leave: Leave): string => {
@@ -19,163 +19,16 @@ const leaveOptionLabel = (leave: Leave): string => {
 }
 
 /**
- * 내 APPROVED 휴가 목록 조회 (수정/삭제 대상 선택용)
+ * 내 APPROVED 휴가 목록 조회 (취소 대상 선택용)
  * — 다이얼로그는 열릴 때만 마운트되므로 불필요한 조회가 발생하지 않는다.
+ *
+ * 참고: 휴가 신청(LEAVE_CREATE)·수정(LEAVE_MODIFY)은 '휴가 > 휴가 신청'과 동일한
+ * 공용 모달 `@/components/leave/LeaveFormModal`로 통일되었다. 여기서는 취소(삭제)만 다룬다.
  */
 const useMyApprovedLeaves = (employeeId: string) => {
   const { data, isLoading } = useLeaves({ employeeId, limit: 50 })
   const leaves = (data?.items ?? []).filter((l) => l.status === 'APPROVED')
   return { leaves, isLoading }
-}
-
-// ── LEAVE_CREATE ──────────────────────────────────────────────────────────────
-
-export function LeaveCreateDialog({ open, submitting, onClose, onSubmit }: RequestFormDialogProps) {
-  const { data: leaveTypes = [] } = useLeaveTypes()
-  const [leaveTypeId, setLeaveTypeId] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [startTime, setStartTime] = useState('')
-  const [endTime, setEndTime] = useState('')
-  const [reason, setReason] = useState('')
-
-  const isHourly = leaveTypes.find((lt) => lt.id === leaveTypeId)?.timeOption === 'hourly'
-  const canSubmit =
-    !!leaveTypeId &&
-    !!startDate &&
-    (isHourly ? !!startTime && !!endTime && endTime > startTime : !!endDate && endDate >= startDate)
-
-  // 시작일 선택 시 종료일이 비었거나 더 빠르면 자동으로 시작일과 맞춘다(기본 1일)
-  const handleStart = (value: string) => {
-    setStartDate(value)
-    if (!endDate || endDate < value) setEndDate(value)
-  }
-
-  const handleSubmit = () => {
-    // 시간 단위 휴가는 당일만(시작일=종료일)
-    const payload = isHourly
-      ? { leaveTypeId, startDate, endDate: startDate, startTime, endTime, reason }
-      : { leaveTypeId, startDate, endDate, reason }
-    onSubmit('LEAVE_CREATE', payload)
-  }
-
-  return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>휴가 신청</DialogTitle>
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-        <TextField select label="휴가 유형" value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)} fullWidth required>
-          {leaveTypes.filter((lt) => lt.isActive).map((lt) => (
-            <MenuItem key={lt.id} value={lt.id}>{lt.displayName ?? lt.name}</MenuItem>
-          ))}
-        </TextField>
-        <TextField label={isHourly ? '날짜' : '시작일'} type="date" value={startDate} onChange={(e) => handleStart(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
-        {isHourly ? (
-          <>
-            <TextField label="시작 시간" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
-            <TextField label="종료 시간" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} inputProps={{ min: startTime || undefined }} helperText="시간 단위 휴가는 당일만 가능, 8시간=1일 기준 차감." />
-          </>
-        ) : (
-          <TextField label="종료일" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} inputProps={{ min: startDate || undefined }} helperText="차감 일수는 영업일(주말·공휴일 제외) 기준입니다." />
-        )}
-        <TextField label="사유" value={reason} onChange={(e) => setReason(e.target.value)} fullWidth multiline rows={3} />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>취소</Button>
-        <Button
-          data-testid="req-submit-btn"
-          variant="contained"
-          disabled={!canSubmit || submitting}
-          onClick={handleSubmit}
-        >
-          {submitting ? <CircularProgress size={20} color="inherit" /> : '신청'}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  )
-}
-
-// ── LEAVE_MODIFY ──────────────────────────────────────────────────────────────
-
-// @db.Time 직렬화 값('1970-01-01T09:00:00.000Z' 등) → 'HH:MM'
-const timeHHMM = (iso?: string | null): string => (iso ? iso.slice(11, 16) : '')
-
-export function LeaveModifyDialog({ open, employeeId, submitting, onClose, onSubmit }: RequestFormDialogProps) {
-  const { leaves, isLoading } = useMyApprovedLeaves(employeeId)
-  const [leaveId, setLeaveId] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [startTime, setStartTime] = useState('')
-  const [endTime, setEndTime] = useState('')
-  const [reason, setReason] = useState('')
-
-  const selectedLeave = leaves.find((l) => l.id === leaveId)
-  const isHourly = selectedLeave?.leaveType?.timeOption === 'hourly'
-
-  const handleSelect = (id: string) => {
-    setLeaveId(id)
-    const leave = leaves.find((l) => l.id === id)
-    if (leave) {
-      setStartDate(leave.startDate.slice(0, 10))
-      setEndDate(leave.endDate.slice(0, 10))
-      setStartTime(timeHHMM(leave.startTime))
-      setEndTime(timeHHMM(leave.endTime))
-    }
-  }
-
-  const canSubmit =
-    !!leaveId &&
-    !!startDate &&
-    (isHourly ? !!startTime && !!endTime && endTime > startTime : !!endDate && endDate >= startDate)
-
-  const handleSubmit = () => {
-    // 시간 단위 휴가는 당일만(시작일=종료일)
-    const payload = isHourly
-      ? { leaveId, startDate, endDate: startDate, startTime, endTime, ...(reason && { reason }) }
-      : { leaveId, startDate, endDate, ...(reason && { reason }) }
-    onSubmit('LEAVE_MODIFY', payload)
-  }
-
-  return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>휴가 수정 요청</DialogTitle>
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-        <TextField
-          select
-          label="대상 휴가"
-          value={leaveId}
-          onChange={(e) => handleSelect(e.target.value)}
-          fullWidth
-          required
-          helperText={!isLoading && leaves.length === 0 ? '수정 가능한 승인된 휴가가 없습니다.' : undefined}
-        >
-          {leaves.map((l) => (
-            <MenuItem key={l.id} value={l.id}>{leaveOptionLabel(l)}</MenuItem>
-          ))}
-        </TextField>
-        <TextField label={isHourly ? '날짜' : '새 시작일'} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
-        {isHourly ? (
-          <>
-            <TextField label="시작 시간" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
-            <TextField label="종료 시간" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} inputProps={{ min: startTime || undefined }} helperText="시간 단위 휴가는 당일만 가능, 8시간=1일 기준 차감." />
-          </>
-        ) : (
-          <TextField label="새 종료일" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} inputProps={{ min: startDate || undefined }} />
-        )}
-        <TextField label="사유" value={reason} onChange={(e) => setReason(e.target.value)} fullWidth multiline rows={3} />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>취소</Button>
-        <Button
-          data-testid="req-submit-btn"
-          variant="contained"
-          disabled={!canSubmit || submitting}
-          onClick={handleSubmit}
-        >
-          {submitting ? <CircularProgress size={20} color="inherit" /> : '신청'}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  )
 }
 
 // ── LEAVE_DELETE ──────────────────────────────────────────────────────────────

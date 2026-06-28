@@ -8,7 +8,8 @@ import { Badge, type BadgeKind } from '@/components/ab/atoms'
 import { Modal, ConfirmDialog } from '@/components/ab/Modal'
 import { I, HRI } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
-import { LeaveCreateDialog, LeaveModifyDialog, LeaveDeleteDialog } from './leave-request-dialogs'
+import { LeaveDeleteDialog } from './leave-request-dialogs'
+import { LeaveFormModal } from '@/components/leave/LeaveFormModal'
 import { ShiftCreateDialog, ShiftModifyDialog, ShiftDeleteDialog } from './shift-request-dialogs'
 import {
   AttendanceEditDialog,
@@ -253,8 +254,13 @@ export default function RequestsPage() {
       </Modal>
 
       {/* 유형별 신청 다이얼로그 — 열릴 때만 마운트해 내부 조회/입력 상태를 초기화 */}
-      {dialogMode === 'LEAVE_CREATE' && <LeaveCreateDialog open {...dialogProps} />}
-      {dialogMode === 'LEAVE_MODIFY' && <LeaveModifyDialog open {...dialogProps} />}
+      {/* 휴가 신청·수정은 '휴가 > 휴가 신청'과 동일한 공용 모달 사용 */}
+      {dialogMode === 'LEAVE_CREATE' && (
+        <LeaveFormModal open mode="create" employeeId={employeeId} onClose={closeDialog} />
+      )}
+      {dialogMode === 'LEAVE_MODIFY' && (
+        <LeaveFormModal open mode="modify" employeeId={employeeId} onClose={closeDialog} />
+      )}
       {dialogMode === 'LEAVE_DELETE' && <LeaveDeleteDialog open {...dialogProps} />}
       {dialogMode === 'SHIFT_CREATE' && <ShiftCreateDialog open {...dialogProps} />}
       {dialogMode === 'SHIFT_MODIFY' && <ShiftModifyDialog open {...dialogProps} />}
