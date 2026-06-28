@@ -292,6 +292,10 @@ export class RequestsService {
     if (dto.type === 'LEAVE_CREATE') {
       await this.validateLeaveCreatePayload(companyId, requesterId, dto.payload)
     }
+    // 근무일정 신청은 접수 전에 생성 가능 여부(템플릿/근무유형) 사전 검증 — 승인 단계에서 늦게 실패하지 않도록
+    if (dto.type === 'SHIFT_CREATE') {
+      await this.validateShiftCreatePayload(companyId, dto.payload)
+    }
 
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
@@ -1037,6 +1041,38 @@ export class RequestsService {
       startDate: start,
       year: start.getFullYear(),
     })
+  }
+
+  /** 근무일정 신청 접수 전 사전 검증 — 생성 가능 여부(템플릿/근무유형) (createRequest에서 호출) */
+  private async validateShiftCreatePayload(
+    companyId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const { templateId } = payload as { templateId?: string }
+    if (templateId) {
+      const template = await this.prisma.shiftTemplate.findFirst({
+        where: { id: templateId, companyId, isActive: true },
+        select: { id: true },
+      })
+      if (!template) {
+        throw new BadRequestException({
+          code: 'SHIFT_TEMPLATE_NOT_FOUND',
+          message: '근무 템플릿을 찾을 수 없습니다.',
+        })
+      }
+      return
+    }
+    // 템플릿 미지정 시 기본 근무유형이 최소 1개는 있어야 승인 시 일정 생성이 가능하다.
+    const shiftType = await this.prisma.shiftType.findFirst({
+      where: { companyId, isActive: true },
+      select: { id: true },
+    })
+    if (!shiftType) {
+      throw new BadRequestException({
+        code: 'SHIFT_TYPE_NOT_FOUND',
+        message: '근무일정 유형이 등록되어 있지 않습니다. 관리자에게 근무 유형 등록을 요청하세요.',
+      })
+    }
   }
 
   /** 회사 공휴일 집합 로드 — 정확일자(YYYY-MM-DD) + 매년반복(MM-DD) */
