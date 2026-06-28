@@ -438,6 +438,17 @@ export class RequestsService {
         stepsByRound.set(1, [{ positionId: null, sortOrder: 0 }])
       }
 
+      // 요청자 소속(대표) 부서의 팀장(approverId) — 결재자 미지정 시 1순위 fallback
+      const primaryOrg = await tx.employeeOrganization.findFirst({
+        where: { employeeId: requesterId, organization: { companyId } },
+        orderBy: { isPrimary: 'desc' },
+        select: { organization: { select: { approverId: true } } },
+      })
+      const teamLeadId: string | null = primaryOrg?.organization?.approverId ?? null
+
+      // 1차(round 1) 첫 결재자 — 상신 알림(DM) 수신자로 사용
+      let firstRoundAssigneeId: string | null = null
+
       for (const [round, details] of stepsByRound) {
         let stepOrder = 0
         for (const detail of details) {
@@ -459,7 +470,10 @@ export class RequestsService {
             assigneeId = approverEmployee?.id ?? null
           }
 
-          // 승인자를 못 찾으면 회사 관리자(GENERAL_ADMIN 이상, 본인 제외)로 fallback
+          // 승인자를 못 찾으면 ① 소속 부서 팀장(approverId) → ② 회사 관리자 순으로 fallback
+          if (!assigneeId && teamLeadId && teamLeadId !== requesterId) {
+            assigneeId = teamLeadId
+          }
           if (!assigneeId) {
             const adminApprover = await tx.employee.findFirst({
               where: {
@@ -481,6 +495,10 @@ export class RequestsService {
               })
             }
             assigneeId = adminApprover.id
+          }
+
+          if (round === 1 && firstRoundAssigneeId === null) {
+            firstRoundAssigneeId = assigneeId
           }
 
           await tx.approvalStep.create({
@@ -511,6 +529,8 @@ export class RequestsService {
         documentId: document.id,
         requesterId,
         companyId,
+        // 1차 결재자(팀장 등)에게 상신 알림(DM)이 가도록 수신자 지정 — 누락 시 본인에게만 가던 버그 수정
+        assigneeId: firstRoundAssigneeId ?? undefined,
         payload: dto.payload,
       })
 

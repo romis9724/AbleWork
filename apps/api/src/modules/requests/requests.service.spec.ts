@@ -235,6 +235,45 @@ describe('RequestsService', () => {
       )
     })
 
+    it('규칙이 없으면 소속 부서 팀장(approverId)을 결재자로 지정하고 상신 알림 수신자(assigneeId)로 emit한다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' } }
+
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.request.create.mockResolvedValue({ ...basePendingRequest, documentId: null })
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        id: EMPLOYEE_ID,
+        companyId: COMPANY_ID,
+        name: '홍길동',
+        organizations: [{ organizationId: 'org-1' }],
+        positions: [],
+      })
+      // 대표 부서의 팀장(approverId) 존재
+      mockPrisma.employeeOrganization.findFirst.mockResolvedValue({
+        organization: { approverId: 'lead-1' },
+      })
+      mockPrisma.approvalRule.findMany.mockResolvedValue([])
+      mockPrisma.documentForm.findFirst.mockResolvedValue({ id: 'form-1', companyId: COMPANY_ID, category: 'leave_request' })
+      mockPrisma.document.create.mockResolvedValue({ id: DOCUMENT_ID, companyId: COMPANY_ID })
+      mockPrisma.approvalLine.create.mockResolvedValue({ id: 'line-1', documentId: DOCUMENT_ID })
+      mockPrisma.approvalStep.create.mockResolvedValue({})
+      mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest })
+
+      await service.createRequest(COMPANY_ID, dto, requester)
+
+      // 결재 step assignee = 팀장
+      expect(mockPrisma.approvalStep.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ assigneeId: 'lead-1' }) }),
+      )
+      // 상신 알림(DM) 수신자 = 팀장
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'leave.requested',
+        expect.objectContaining({ assigneeId: 'lead-1' }),
+      )
+    })
+
     it('적용 규칙이 있으면 Request.ruleId에 규칙 id를 스냅샷한다 (§6.6 #3)', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
       const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' } }

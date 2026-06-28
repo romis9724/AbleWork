@@ -977,6 +977,7 @@ notification_rules {
 | 불변식 | 규칙 | 에러코드 |
 |---|---|---|
 | **레코드 소유권** | HR 요청의 승인 반영(`LEAVE/SHIFT/ATTENDANCE`의 `MODIFY/DELETE/EDIT`)은 대상 레코드가 **요청자 본인 소유**일 때만 수행한다. apply 단계 쿼리 `where`에 `employeeId`를 강제하여 타 직원 레코드 조작을 차단. | `LEAVE_NOT_FOUND` 등(소유 불일치 시 미발견 처리) |
+| **요청 결재자 fallback** | HR 요청(휴가 등)에 적용 `ApprovalRule`이 없거나 직위로 결재자를 못 찾으면, ① 요청자 대표 부서의 팀장(`organization.approverId`, 본인 제외) → ② 회사 `GENERAL_ADMIN` 이상 순으로 결재자를 지정한다. 상신 알림(DM/이메일/인앱)은 이 1차 결재자(`assigneeId`)에게 발송된다(과거 `assigneeId` 누락으로 본인에게만 가던 버그 수정). | — |
 | **자기결재 금지 ①** | 요청 생성 시 본인 외 결재 가능한 관리자(`GENERAL_ADMIN` 이상)가 없으면 요청을 거부한다(자기 자신을 결재자로 fallback 하지 않는다). | `REQUEST_NO_APPROVER` |
 | **자기결재 금지 ②** | 결재 처리 시 `요청자 == 결재자`이면 차단한다(관리자 포함). | `REQUEST_SELF_APPROVAL` |
 | **휴가 잔액 조회** | 본인 또는 `ORG_ADMIN` 이상만 타 직원 잔액을 조회할 수 있다. | `LEAVE_BALANCE_FORBIDDEN` |
