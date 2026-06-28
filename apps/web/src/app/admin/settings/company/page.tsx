@@ -17,6 +17,7 @@ import LeaveSettingsPanel from '@/components/admin/LeaveSettingsPanel'
 import RequestSettingsPanel from '@/components/admin/RequestSettingsPanel'
 import ClosingPanel from '@/components/admin/ClosingPanel'
 import AdvancedSettingsPanel from '@/components/admin/AdvancedSettingsPanel'
+import TimeclockAreasPanel from '@/app/admin/timeclock-areas/TimeclockAreasPanel'
 import { useAuthStore } from '@/stores/auth.store'
 import {
   useCompany,
@@ -532,6 +533,13 @@ export default function CompanySettingsPage() {
                   </span>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* 출퇴근 장소 (조직별) — 출퇴근 정책 아래에 통합 */}
+          {section === 'attendance' && (
+            <div className="set-block">
+              <TimeclockAreasPanel />
             </div>
           )}
 
