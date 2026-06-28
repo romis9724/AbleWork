@@ -22,6 +22,13 @@ export const CreateRequestSchema = z.object({
   payload: z.record(z.unknown()),
 })
 
+// 본인 PENDING 요청 내용 수정 — payload 전체 교체
+export const UpdateRequestSchema = z.object({
+  payload: z.record(z.unknown()),
+})
+
+export type UpdateRequestDto = z.infer<typeof UpdateRequestSchema>
+
 export const CreateApprovalRuleSchema = z.object({
   name: z.string().min(1, '규칙명을 입력하세요.').max(100),
   requestType: z.string().min(1),

@@ -77,6 +77,15 @@ export const useCancelRequest = () => {
   })
 }
 
+export const useUpdateRequest = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) =>
+      apiClient.patch(`/requests/${id}`, { payload }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
 export const useApproveRequest = () => {
   const qc = useQueryClient()
   return useMutation({

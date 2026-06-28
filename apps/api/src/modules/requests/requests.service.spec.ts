@@ -623,6 +623,36 @@ describe('RequestsService', () => {
 
   // ── approve ──────────────────────────────────────────────────────────────────
 
+  describe('updateRequest', () => {
+    it('본인 PENDING 요청의 payload를 수정한다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      mockPrisma.request.findFirst.mockResolvedValue({
+        id: REQUEST_ID, companyId: COMPANY_ID, requesterId: EMPLOYEE_ID, status: 'PENDING', type: 'CUSTOM', documentId: null,
+      })
+      mockPrisma.$transaction.mockImplementation(
+        async (cb: (tx: typeof mockPrisma) => Promise<unknown>) => cb(mockPrisma),
+      )
+      mockPrisma.request.update.mockResolvedValue({ id: REQUEST_ID, status: 'PENDING' })
+
+      await service.updateRequest(COMPANY_ID, REQUEST_ID, { reason: '수정됨' }, requester)
+
+      expect(mockPrisma.request.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { payload: { reason: '수정됨' } } }),
+      )
+    })
+
+    it('타인의 요청을 수정하려 하면 ForbiddenException', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      mockPrisma.request.findFirst.mockResolvedValue({
+        id: REQUEST_ID, companyId: COMPANY_ID, requesterId: 'other-emp', status: 'PENDING', type: 'CUSTOM', documentId: null,
+      })
+
+      await expect(
+        service.updateRequest(COMPANY_ID, REQUEST_ID, { reason: 'x' }, requester),
+      ).rejects.toThrow('본인의 요청만')
+    })
+  })
+
   describe('approve', () => {
     it('마지막 round 승인 시 request.status가 APPROVED로 변경되고 이벤트를 emit한다', async () => {
       const requester = makeApprover()

@@ -1,6 +1,6 @@
 'use client'
-import { useState } from 'react'
-import { useRequests, useCreateRequest, useCancelRequest, useApproveRequest, useRejectRequest, type Request } from '@/lib/query/requests'
+import { useEffect, useState } from 'react'
+import { useRequests, useCreateRequest, useCancelRequest, useApproveRequest, useRejectRequest, useUpdateRequest, type Request } from '@/lib/query/requests'
 import { useAuthStore } from '@/stores/auth.store'
 import { currentEmployeeId } from '@/lib/auth-session'
 import { PageHead, TableBar } from '@/components/ab/Page'
@@ -130,6 +130,27 @@ const MENU_GROUPS: MenuGroup[] = [
   },
 ]
 
+const DATE_KEYS = new Set(['startDate', 'endDate', 'date'])
+const TIME_KEYS = new Set(['startTime', 'endTime'])
+const TEXTAREA_KEYS = new Set(['reason', 'memo', 'note', 'content'])
+
+function EditField({ fieldKey, value, onChange }: { fieldKey: string; value: unknown; onChange: (v: unknown) => void }) {
+  const str = value == null ? '' : String(value)
+  if (TEXTAREA_KEYS.has(fieldKey)) {
+    return <textarea className="ta" style={{ flex: 1, minHeight: 64 }} value={str} onChange={(e) => onChange(e.target.value)} />
+  }
+  const type = DATE_KEYS.has(fieldKey) ? 'date' : TIME_KEYS.has(fieldKey) ? 'time' : typeof value === 'number' ? 'number' : 'text'
+  return (
+    <input
+      className="inp-block"
+      style={{ flex: 1 }}
+      type={type}
+      value={str}
+      onChange={(e) => onChange(type === 'number' ? Number(e.target.value) : e.target.value)}
+    />
+  )
+}
+
 function RequestDetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
@@ -146,6 +167,8 @@ export default function RequestsPage() {
   const [dialogMode, setDialogMode] = useState<DialogMode>(null)
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null)
   const [detailReq, setDetailReq] = useState<Request | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [editPayload, setEditPayload] = useState<Record<string, unknown>>({})
 
   // 내 데이터(휴가/일정 등) 조회 필터 — persist 스토어 대신 쿠키 토큰의 employeeId 사용
   // (멀티컴퍼니 전환 시 스토어-토큰 desync로 대상 목록이 비어 보이던 문제 방지)
@@ -166,6 +189,30 @@ export default function RequestsPage() {
   const cancelRequest = useCancelRequest()
   const approveRequest = useApproveRequest()
   const rejectRequest = useRejectRequest()
+  const updateRequest = useUpdateRequest()
+
+  // 상세 모달 열림/변경 시 편집 상태 초기화
+  useEffect(() => {
+    setEditing(false)
+    setEditPayload({ ...(detailReq?.payload ?? {}) })
+  }, [detailReq])
+
+  // 본인 대기중 요청만 수정 가능
+  const canEditDetail =
+    !!detailReq && !isStaff && detailReq.status === 'PENDING' &&
+    (!detailReq.requesterId || detailReq.requesterId === employeeId)
+
+  const handleSaveEdit = async () => {
+    if (!detailReq) return
+    try {
+      await updateRequest.mutateAsync({ id: detailReq.id, payload: editPayload })
+      toast('요청을 수정했습니다')
+      setEditing(false)
+      setDetailReq(null)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '수정 중 오류가 발생했습니다')
+    }
+  }
 
   const allRequests = Array.isArray(data) ? data : data?.items ?? []
   // 직원 요청에서는 본인이 올린 요청은 제외(자기결재 불가)
@@ -317,13 +364,23 @@ export default function RequestsPage() {
         title={detailReq ? (TYPE_LABEL[detailReq.type] ?? detailReq.type) : '요청 상세'}
         maxWidth={520}
         footer={
-          detailReq && isStaff && detailReq.status === 'PENDING' ? (
+          !detailReq ? null : editing ? (
+            <>
+              <button className="btn btn-ghost" onClick={() => setEditing(false)}>취소</button>
+              <button className="btn btn-primary" disabled={updateRequest.isPending} onClick={handleSaveEdit}>
+                {updateRequest.isPending ? '저장 중…' : '저장'}
+              </button>
+            </>
+          ) : isStaff && detailReq.status === 'PENDING' ? (
             <>
               <button className="btn btn-line" disabled={rejectRequest.isPending} onClick={() => handleReject(detailReq.id)}>반려</button>
               <button className="btn btn-primary" disabled={approveRequest.isPending} onClick={() => handleApprove(detailReq.id)}>승인</button>
             </>
-          ) : detailReq && !isStaff && isCancellable(detailReq) ? (
-            <button className="btn btn-line" onClick={() => { setCancelTargetId(detailReq.id); setDetailReq(null) }}>신청 취소</button>
+          ) : canEditDetail ? (
+            <>
+              <button className="btn btn-line" onClick={() => { setCancelTargetId(detailReq.id); setDetailReq(null) }}>신청 취소</button>
+              <button className="btn btn-primary" onClick={() => setEditing(true)}>수정</button>
+            </>
           ) : (
             <button className="btn btn-ghost" onClick={() => setDetailReq(null)}>닫기</button>
           )
@@ -335,16 +392,23 @@ export default function RequestsPage() {
             {isStaff && <RequestDetailRow label="신청자" value={detailReq.requester?.name ?? '—'} />}
             <RequestDetailRow label="신청일" value={new Date(detailReq.createdAt).toLocaleString('ko-KR')} />
             <RequestDetailRow label="상태" value={(STATUS[detailReq.status]?.label) ?? detailReq.status} />
-            {Object.entries(detailReq.payload ?? {})
-              .filter(([k, v]) => v != null && v !== '' && typeof v !== 'object' && !/id$/i.test(k))
+            {Object.entries((editing ? editPayload : detailReq.payload) ?? {})
+              .filter(([k, v]) => (editing ? typeof v !== 'object' && !/id$/i.test(k) : v != null && v !== '' && typeof v !== 'object' && !/id$/i.test(k)))
               .sort(([a], [b]) => {
                 const ia = Object.keys(PAYLOAD_FIELD_LABELS).indexOf(a)
                 const ib = Object.keys(PAYLOAD_FIELD_LABELS).indexOf(b)
                 return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
               })
-              .map(([k, v]) => (
-                <RequestDetailRow key={k} label={PAYLOAD_FIELD_LABELS[k] ?? k} value={String(v)} />
-              ))}
+              .map(([k, v]) =>
+                editing ? (
+                  <div key={k} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
+                    <span style={{ flex: '0 0 96px', fontSize: 13, color: 'var(--fg-3)' }}>{PAYLOAD_FIELD_LABELS[k] ?? k}</span>
+                    <EditField fieldKey={k} value={v} onChange={(nv) => setEditPayload((p) => ({ ...p, [k]: nv }))} />
+                  </div>
+                ) : (
+                  <RequestDetailRow key={k} label={PAYLOAD_FIELD_LABELS[k] ?? k} value={String(v)} />
+                ),
+              )}
           </div>
         )}
       </Modal>

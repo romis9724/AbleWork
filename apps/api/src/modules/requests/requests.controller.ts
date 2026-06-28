@@ -35,6 +35,8 @@ import {
   BulkApproveSchema,
   RequestFilterDto,
   RequestFilterSchema,
+  UpdateRequestDto,
+  UpdateRequestSchema,
 } from './dto/create-request.dto'
 
 @ApiTags('requests')
@@ -168,6 +170,19 @@ export class RequestsController {
     @CurrentUser() requester: JwtPayload,
   ) {
     return this.requestsService.forceReject(companyId, id, dto, requester)
+  }
+
+  // 요청 수정 (본인의 PENDING 요청 내용)
+  @Patch(':id')
+  @ApiOperation({ summary: '요청 수정 (본인의 PENDING 요청 내용)' })
+  @ApiParam({ name: 'id', type: String })
+  update(
+    @CompanyId() companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(UpdateRequestSchema)) dto: UpdateRequestDto,
+    @CurrentUser() requester: JwtPayload,
+  ) {
+    return this.requestsService.updateRequest(companyId, id, dto.payload, requester)
   }
 
   // HR-07-10 요청 취소 (본인의 PENDING 요청만)
