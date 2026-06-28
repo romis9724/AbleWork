@@ -388,14 +388,8 @@ export class RequestsService {
       })
 
       if (!form) {
-        // DocumentForm 미설정 시 → 전자결재 문서는 만들지 않되, 소속 부서 팀장에게 상신 알림은 보낸다.
-        // (양식 미설정으로 결재함 라우팅이 안 되더라도 팀장이 요청을 인지할 수 있도록)
-        const noFormPrimaryOrg = await tx.employeeOrganization.findFirst({
-          where: { employeeId: requesterId, organization: { companyId } },
-          orderBy: { isPrimary: 'desc' },
-          select: { organization: { select: { approverId: true } } },
-        })
-        const noFormTeamLeadId = noFormPrimaryOrg?.organization?.approverId ?? null
+        // DocumentForm 미설정 시 → 문서는 만들지 않되, 부서 승인자(부서 조직관리자)에게 상신 알림을 보낸다.
+        const noFormApproverId = await this.resolveDeptApprover(tx, companyId, requesterId)
         await tx.request.update({
           where: { id: request.id },
           data: { status: 'PENDING' },
@@ -407,7 +401,7 @@ export class RequestsService {
           requesterId,
           companyId,
           assigneeId:
-            noFormTeamLeadId && noFormTeamLeadId !== requesterId ? noFormTeamLeadId : undefined,
+            noFormApproverId && noFormApproverId !== requesterId ? noFormApproverId : undefined,
           payload: dto.payload,
         })
         return request
@@ -455,13 +449,9 @@ export class RequestsService {
         stepsByRound.set(1, [{ positionId: null, sortOrder: 0 }])
       }
 
-      // 요청자 소속(대표) 부서의 팀장(approverId) — 결재자 미지정 시 1순위 fallback
-      const primaryOrg = await tx.employeeOrganization.findFirst({
-        where: { employeeId: requesterId, organization: { companyId } },
-        orderBy: { isPrimary: 'desc' },
-        select: { organization: { select: { approverId: true } } },
-      })
-      const teamLeadId: string | null = primaryOrg?.organization?.approverId ?? null
+      // 부서 승인자 = 요청자 소속 부서의 조직관리자(없으면 상위 부서) — 결재자 미지정 시 1순위 fallback.
+      // (전자결재의 부서 결재권자 organization.approverId 와는 별개)
+      const deptApproverId = await this.resolveDeptApprover(tx, companyId, requesterId)
 
       // 1차(round 1) 첫 결재자 — 상신 알림(DM) 수신자로 사용
       let firstRoundAssigneeId: string | null = null
@@ -487,9 +477,9 @@ export class RequestsService {
             assigneeId = approverEmployee?.id ?? null
           }
 
-          // 승인자를 못 찾으면 ① 소속 부서 팀장(approverId) → ② 회사 관리자 순으로 fallback
-          if (!assigneeId && teamLeadId && teamLeadId !== requesterId) {
-            assigneeId = teamLeadId
+          // 승인자를 못 찾으면 ① 부서 조직관리자(상위 부서 포함) → ② 회사 관리자 순으로 fallback
+          if (!assigneeId && deptApproverId && deptApproverId !== requesterId) {
+            assigneeId = deptApproverId
           }
           if (!assigneeId) {
             const adminApprover = await tx.employee.findFirst({
@@ -1181,6 +1171,48 @@ export class RequestsService {
     const rep =
       pool.find((t) => Number(t.deductionDays) === 1 && t.timeOption === 'full_day') ?? pool[0]
     return rep?.id ?? leaveTypeId
+  }
+
+  /**
+   * HR 요청(휴가/근무/근태 등)의 부서 승인자 해석 — **전자결재와 무관**.
+   * 요청자 소속(대표) 부서의 조직관리자(ORG_ADMIN 이상)를 찾고, 없으면 상위 부서로 올라가며 탐색한다.
+   * (전자결재의 부서 결재권자 organization.approverId 와는 별개 체계)
+   */
+  private async resolveDeptApprover(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    client: any,
+    companyId: string,
+    requesterId: string,
+  ): Promise<string | null> {
+    const primary = await client.employeeOrganization.findFirst({
+      where: { employeeId: requesterId, organization: { companyId } },
+      orderBy: { isPrimary: 'desc' },
+      select: { organizationId: true },
+    })
+    let orgId: string | null = primary?.organizationId ?? null
+    let guard = 0
+    while (orgId && guard++ < 20) {
+      const admin = await client.employee.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          id: { not: requesterId },
+          accessLevel: {
+            in: [AccessLevel.ORG_ADMIN, AccessLevel.GENERAL_ADMIN, AccessLevel.SUPER_ADMIN],
+          },
+          organizations: { some: { organizationId: orgId } },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      })
+      if (admin) return admin.id
+      const org = await client.organization.findUnique({
+        where: { id: orgId },
+        select: { parentId: true },
+      })
+      orgId = org?.parentId ?? null
+    }
+    return null
   }
 
   /** LEAVE_CREATE 승인 → Leave 생성 + 잔액 차감 */
