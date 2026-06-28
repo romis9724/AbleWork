@@ -451,6 +451,15 @@ describe('RequestsService', () => {
       )
     })
 
+    it('근무일정 신청 시 근무유형이 하나도 없으면 접수 단계에서 거부한다(SHIFT_TYPE_NOT_FOUND)', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      const dto = { type: 'SHIFT_CREATE' as const, payload: { date: '2026-07-05', startTime: '09:00', endTime: '18:00' } }
+      // 템플릿 미지정 + 활성 근무유형 없음(기본 mock undefined)
+      mockPrisma.shiftType.findFirst.mockResolvedValue(null)
+
+      await expect(service.createRequest(COMPANY_ID, dto, requester)).rejects.toThrow('근무일정 유형이 등록')
+    })
+
     it('DEVICE_CHANGE 자동승인: payload.newDeviceId가 있으면 기기를 즉시 바인딩한다 (L1)', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
       const dto = { type: 'DEVICE_CHANGE' as const, payload: { newDeviceId: 'device-XYZ', reason: '기기 교체' } }
