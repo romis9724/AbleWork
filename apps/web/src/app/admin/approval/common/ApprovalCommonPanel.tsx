@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Radio } from '@/components/ab/atoms'
+import { HelpTip } from '@/components/ab/HelpTip'
 import { useToast } from '@/components/ab/Toast'
 import apiClient from '@/lib/api-client'
 
@@ -124,7 +125,7 @@ export default function ApprovalCommonPanel() {
       <div className="set-block">
         <div className="set-block-head">문서 설정</div>
         <div className="set-row">
-          <span className="k">문서번호</span>
+          <span className="k">문서번호<HelpTip k="approval.docNumber" /></span>
           <div style={{ color: 'var(--fg-2)', fontSize: 13 }}>
             기안양식 약어 · 년도 2자리 · 순번 4자리 (양식별 채번 규칙은{' '}
             <span
@@ -145,7 +146,7 @@ export default function ApprovalCommonPanel() {
           </div>
         </div>
         <div className="set-row">
-          <span className="k">사용자 정보 표시</span>
+          <span className="k">사용자 정보 표시<HelpTip k="approval.userInfoDisplay" /></span>
           <div>
             <select
               className="sel"
@@ -168,21 +169,21 @@ export default function ApprovalCommonPanel() {
       <div className="set-block">
         <div className="set-block-head">정책 설정</div>
         <div className="set-row">
-          <span className="k">전단계 반려</span>
+          <span className="k">전단계 반려<HelpTip k="approval.returnToPrev" /></span>
           <div className="rad-grp">
             <Radio on={policy.prevReject} onChange={() => markPolicy({ prevReject: true })}>사용</Radio>
             <Radio on={!policy.prevReject} onChange={() => markPolicy({ prevReject: false })}>사용 안 함</Radio>
           </div>
         </div>
         <div className="set-row">
-          <span className="k">상위 결재선 변경</span>
+          <span className="k">상위 결재선 변경<HelpTip k="approval.changeUpperLine" /></span>
           <div className="rad-grp">
             <Radio on={policy.upperLineChange} onChange={() => markPolicy({ upperLineChange: true })}>사용</Radio>
             <Radio on={!policy.upperLineChange} onChange={() => markPolicy({ upperLineChange: false })}>사용 안 함</Radio>
           </div>
         </div>
         <div className="set-row">
-          <span className="k">압축 파일 업로드 설정</span>
+          <span className="k">압축 파일 업로드 설정<HelpTip k="approval.zipUpload" /></span>
           <div className="rad-grp">
             <Radio on={policy.zipUpload} onChange={() => markPolicy({ zipUpload: true })}>사용</Radio>
             <Radio on={!policy.zipUpload} onChange={() => markPolicy({ zipUpload: false })}>사용 안 함</Radio>
@@ -194,14 +195,14 @@ export default function ApprovalCommonPanel() {
       <div className="set-block">
         <div className="set-block-head">알림 설정</div>
         <div className="set-row">
-          <span className="k">모바일 푸시</span>
+          <span className="k">모바일 푸시<HelpTip k="approval.mobilePush" /></span>
           <div className="rad-grp">
             <Radio on={noti.mobile} onChange={() => markNoti({ mobile: true })}>사용</Radio>
             <Radio on={!noti.mobile} onChange={() => markNoti({ mobile: false })}>사용 안 함</Radio>
           </div>
         </div>
         <div className="set-row">
-          <span className="k">이메일 수신</span>
+          <span className="k">이메일 수신<HelpTip k="approval.email" /></span>
           <div className="rad-grp">
             <Radio on={noti.email} onChange={() => markNoti({ email: true })}>사용</Radio>
             <Radio on={!noti.email} onChange={() => markNoti({ email: false })}>사용 안 함</Radio>

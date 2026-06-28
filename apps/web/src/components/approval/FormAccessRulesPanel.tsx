@@ -28,7 +28,7 @@ const flattenOrgs = (orgs: Organization[], depth = 0): { id: string; name: strin
   ])
 
 /**
- * AP-01-07 양식 접근규칙 관리 — 조직/직무 단위로 작성 권한 제한.
+ * AP-01-07 양식 접근규칙 관리 — 조직/직위 단위로 작성 권한 제한.
  * 규칙이 하나도 없으면 전체 직원이 작성 가능(서버 enforcement와 동일).
  */
 export default function FormAccessRulesPanel({ formId }: Props) {
@@ -59,7 +59,7 @@ export default function FormAccessRulesPanel({ formId }: Props) {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
       <Typography variant="caption" color="text.secondary">
-        접근규칙이 없으면 전체 직원이 작성할 수 있습니다. 규칙을 추가하면 해당 조직/직무만 작성 가능합니다.
+        접근규칙이 없으면 전체 직원이 작성할 수 있습니다. 규칙을 추가하면 해당 조직/직위만 작성 가능합니다.
       </Typography>
 
       <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
@@ -70,7 +70,7 @@ export default function FormAccessRulesPanel({ formId }: Props) {
           <Chip
             key={r.id}
             size="small"
-            label={`${r.scopeType === 'ORGANIZATION' ? '조직' : '직무'}: ${nameOf(r.scopeType, r.scopeId)}`}
+            label={`${r.scopeType === 'ORGANIZATION' ? '조직' : '직위'}: ${nameOf(r.scopeType, r.scopeId)}`}
             onDelete={busy ? undefined : () => deleteRule.mutate({ formId, ruleId: r.id })}
           />
         ))}
@@ -89,7 +89,7 @@ export default function FormAccessRulesPanel({ formId }: Props) {
           sx={{ width: 110, flexShrink: 0 }}
         >
           <MenuItem value="ORGANIZATION">조직</MenuItem>
-          <MenuItem value="POSITION">직무</MenuItem>
+          <MenuItem value="POSITION">직위</MenuItem>
         </TextField>
         <TextField
           select

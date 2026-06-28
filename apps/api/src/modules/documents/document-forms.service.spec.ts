@@ -625,7 +625,7 @@ describe('DocumentFormsService', () => {
       ).resolves.toBeUndefined()
     })
 
-    it('assertCanUseForm: 사용자가 규칙 조직/직무에 매칭되면 통과한다', async () => {
+    it('assertCanUseForm: 사용자가 규칙 조직/직위에 매칭되면 통과한다', async () => {
       mockPrisma.formAccessRule.findMany.mockResolvedValue([
         { id: 'r1', scopeType: 'ORGANIZATION', scopeId: 'org-1' },
       ])
@@ -636,7 +636,7 @@ describe('DocumentFormsService', () => {
       ).resolves.toBeUndefined()
     })
 
-    it('assertCanUseForm: 매칭되는 조직/직무가 없으면 FORM_ACCESS_DENIED', async () => {
+    it('assertCanUseForm: 매칭되는 조직/직위가 없으면 FORM_ACCESS_DENIED', async () => {
       mockPrisma.formAccessRule.findMany.mockResolvedValue([
         { id: 'r1', scopeType: 'ORGANIZATION', scopeId: 'org-1' },
       ])

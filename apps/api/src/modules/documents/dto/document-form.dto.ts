@@ -88,11 +88,11 @@ export const UpdateDocumentCategorySchema = z
 export type CreateDocumentCategoryDto = z.infer<typeof CreateDocumentCategorySchema>
 export type UpdateDocumentCategoryDto = z.infer<typeof UpdateDocumentCategorySchema>
 
-// AP-01-07 양식 접근규칙 — 특정 조직/직무에만 작성 권한 부여 (규칙 없으면 전체 허용)
+// AP-01-07 양식 접근규칙 — 특정 조직/직위에만 작성 권한 부여 (규칙 없으면 전체 허용)
 export const FormAccessScopeType = ['ORGANIZATION', 'POSITION'] as const
 export const CreateFormAccessRuleSchema = z.object({
   scopeType: z.enum(FormAccessScopeType),
-  // 조직/직무 FK — 모듈 내 다른 참조 필드(organizationId·assigneeId)와 동일하게 string으로 받고,
+  // 조직/직위 FK — 모듈 내 다른 참조 필드(organizationId·assigneeId)와 동일하게 string으로 받고,
   // 실제 존재·소속 검증은 서비스(FORM_ACCESS_SCOPE_NOT_FOUND)에서 수행한다.
   scopeId: z.string().min(1),
 })

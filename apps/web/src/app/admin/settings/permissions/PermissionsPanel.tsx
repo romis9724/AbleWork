@@ -14,6 +14,7 @@ import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import Typography from '@mui/material/Typography'
 import apiClient from '@/lib/api-client'
+import { HelpTip } from '@/components/ab/HelpTip'
 
 interface PermissionSettings {
   orgAdmin: Record<string, boolean>
@@ -21,19 +22,19 @@ interface PermissionSettings {
 }
 
 const ORG_ADMIN_PERMISSIONS = [
-  { key: 'employee_manage', label: '직원 추가/수정' },
-  { key: 'employee_device_reset', label: '직원 기기 초기화' },
-  { key: 'work_info_manage', label: '근로정보 관리' },
-  { key: 'shift_manage', label: '근무일정 관리' },
-  { key: 'shift_template_manage', label: '근무일정 템플릿 관리' },
-  { key: 'leave_manage', label: '휴가 관리' },
-  { key: 'attendance_manage', label: '출퇴근기록 추가/수정/삭제' },
+  { key: 'employee_manage', label: '직원 추가/수정', help: 'perm.orgAdmin.employeeManage' },
+  { key: 'employee_device_reset', label: '직원 기기 초기화', help: 'perm.orgAdmin.deviceReset' },
+  { key: 'work_info_manage', label: '근로정보 관리', help: 'perm.orgAdmin.workInfo' },
+  { key: 'shift_manage', label: '근무일정 관리', help: 'perm.orgAdmin.shift' },
+  { key: 'shift_template_manage', label: '근무일정 템플릿 관리', help: 'perm.orgAdmin.shiftTemplate' },
+  { key: 'leave_manage', label: '휴가 관리', help: 'perm.orgAdmin.leave' },
+  { key: 'attendance_manage', label: '출퇴근기록 추가/수정/삭제', help: 'perm.orgAdmin.attendance' },
 ]
 
 const EMPLOYEE_PERMISSIONS = [
-  { key: 'org_view_all', label: '모든 조직 열람' },
-  { key: 'shift_view_others', label: '근무일정 조회 (다른 직원)' },
-  { key: 'attendance_view', label: '출퇴근 기록 열람' },
+  { key: 'org_view_all', label: '모든 조직 열람', help: 'perm.employee.viewAllOrgs' },
+  { key: 'shift_view_others', label: '근무일정 조회 (다른 직원)', help: 'perm.employee.viewOthersShift' },
+  { key: 'attendance_view', label: '출퇴근 기록 열람', help: 'perm.employee.viewAttendance' },
 ]
 
 /**
@@ -100,7 +101,7 @@ export default function PermissionsPanel() {
               조직관리자가 수행할 수 있는 작업 범위를 설정합니다.
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-              {ORG_ADMIN_PERMISSIONS.map(({ key, label }) => (
+              {ORG_ADMIN_PERMISSIONS.map(({ key, label, help }) => (
                 <FormControlLabel
                   key={key}
                   control={
@@ -111,7 +112,12 @@ export default function PermissionsPanel() {
                       }
                     />
                   }
-                  label={label}
+                  label={
+                    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                      {label}
+                      <HelpTip k={help} />
+                    </span>
+                  }
                 />
               ))}
             </Box>
@@ -135,7 +141,7 @@ export default function PermissionsPanel() {
               일반 직원이 조회할 수 있는 정보 범위를 설정합니다.
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-              {EMPLOYEE_PERMISSIONS.map(({ key, label }) => (
+              {EMPLOYEE_PERMISSIONS.map(({ key, label, help }) => (
                 <FormControlLabel
                   key={key}
                   control={
@@ -146,7 +152,12 @@ export default function PermissionsPanel() {
                       }
                     />
                   }
-                  label={label}
+                  label={
+                    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                      {label}
+                      <HelpTip k={help} />
+                    </span>
+                  }
                 />
               ))}
             </Box>

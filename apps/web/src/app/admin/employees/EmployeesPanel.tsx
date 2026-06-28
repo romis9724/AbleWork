@@ -2,7 +2,8 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
-import { Badge, Emp, Seg, Toggle, TableEmpty, Pager, type BadgeKind } from '@/components/ab/atoms'
+import { Badge, Emp, TableEmpty, Pager, type BadgeKind } from '@/components/ab/atoms'
+import { MultiSelect } from '@/components/ab/MultiSelect'
 import { I, HRI } from '@/components/ab/icons'
 import { ConfirmDialog } from '@/components/ab/Modal'
 import { useToast } from '@/components/ab/Toast'
@@ -44,7 +45,18 @@ const LEVEL_BADGE: Record<string, BadgeKind> = {
 const SEARCH_DEBOUNCE_MS = 300
 const DEFAULT_LIMIT = 20
 
-type SegTab = 'basic' | 'work'
+// 상태 탭 — '요청내역' 탭과 동일 패턴(전체/활성/비활성)
+type StatusTab = 'all' | 'active' | 'inactive'
+const STATUS_TABS: { value: StatusTab; label: string }[] = [
+  { value: 'all', label: '전체' },
+  { value: 'active', label: '활성' },
+  { value: 'inactive', label: '비활성(퇴사)' },
+]
+const STATUS_IS_ACTIVE: Record<StatusTab, boolean | undefined> = {
+  all: undefined,
+  active: true,
+  inactive: false,
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -85,10 +97,9 @@ export default function EmployeesPanel() {
 
   // ── 필터 상태 ──────────────────────────────────────────────
   const [searchInput, setSearchInput] = useState('')
-  const [organizationId, setOrganizationId] = useState('')
-  const [positionId, setPositionId] = useState('')
-  const [showInactive, setShowInactive] = useState(false)
-  const [tab, setTab] = useState<SegTab>('basic')
+  const [organizationIds, setOrganizationIds] = useState<string[]>([])
+  const [positionIds, setPositionIds] = useState<string[]>([])
+  const [statusTab, setStatusTab] = useState<StatusTab>('all')
   const [page, setPage] = useState(1)
   const [checked, setChecked] = useState<Record<string, boolean>>({})
 
@@ -100,9 +111,9 @@ export default function EmployeesPanel() {
   // ── 데이터 ────────────────────────────────────────────────
   const { data, isLoading, isFetching } = useEmployees({
     search: debouncedSearch || undefined,
-    organizationId: organizationId || undefined,
-    positionId: positionId || undefined,
-    isActive: !showInactive,
+    organizationIds: organizationIds.length ? organizationIds : undefined,
+    positionIds: positionIds.length ? positionIds : undefined,
+    isActive: STATUS_IS_ACTIVE[statusTab],
     page,
     limit: DEFAULT_LIMIT,
   })
@@ -117,7 +128,7 @@ export default function EmployeesPanel() {
   const createMutation = useCreateEmployee()
   const activateMutation = useActivateEmployee()
 
-  const hasFilter = !!debouncedSearch || !!organizationId || !!positionId
+  const hasFilter = !!debouncedSearch || organizationIds.length > 0 || positionIds.length > 0
 
   // ── 선택 상태 ──────────────────────────────────────────────
   const selectedIds = employees.filter((e) => checked[e.id]).map((e) => e.id)
@@ -171,7 +182,7 @@ export default function EmployeesPanel() {
   }
 
   function handleExport(rows: Employee[]) {
-    const headers = ['이름', '사번', '이메일', '본조직', '직무', '고용형태', '입사일', '권한', '상태']
+    const headers = ['이름', '사번', '이메일', '본조직', '직위', '고용형태', '입사일', '권한', '상태']
     const csvRows = rows.map((emp) => {
       const { primary } = formatOrganizations(emp)
       return [
@@ -203,9 +214,9 @@ export default function EmployeesPanel() {
       const res = (await apiClient.get('/employees', {
         params: {
           search: debouncedSearch || undefined,
-          organizationId: organizationId || undefined,
-          positionId: positionId || undefined,
-          isActive: !showInactive,
+          organizationIds: organizationIds.length ? organizationIds.join(',') : undefined,
+          positionIds: positionIds.length ? positionIds.join(',') : undefined,
+          isActive: STATUS_IS_ACTIVE[statusTab],
           limit: 1000, // 서버 employees limit 상한(1000)에 맞춤 — 중소기업 규모 전 직원 수용
         },
       })) as unknown as { items?: Employee[] }
@@ -265,7 +276,8 @@ export default function EmployeesPanel() {
     }
   }
 
-  const colCount = tab === 'work' ? 8 : 8
+  // 체크박스 + 9개 데이터 컬럼(이름·권한·입사일·본조직·직위·고용형태·사번·상태·이메일)
+  const colCount = 10
 
   return (
     <div style={{ minWidth: 0 }}>
@@ -304,8 +316,25 @@ export default function EmployeesPanel() {
         </div>
       </div>
 
-      {/* 필터 칩 행 */}
-      <div className="fbar">
+      {/* 상태 탭 (전체 / 활성 / 비활성(퇴사)) */}
+      <div className="tabs">
+        {STATUS_TABS.map((t) => (
+          <button
+            key={t.value}
+            data-testid={`employees-status-tab-${t.value}`}
+            className={'tab' + (statusTab === t.value ? ' on' : '')}
+            onClick={() => {
+              setStatusTab(t.value)
+              resetPage()
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 필터 칩 행 — 검색 / 조직 다중 / 직위 다중 */}
+      <div className="fbar" style={{ marginTop: 16 }}>
         <div className="inp-wrap" style={{ width: 240 }}>
           <input
             data-testid="employees-search-input"
@@ -319,62 +348,31 @@ export default function EmployeesPanel() {
           />
           <span className="ic">{I.search()}</span>
         </div>
-        <select
-          className="sel"
-          value={organizationId}
-          onChange={(e) => {
-            setOrganizationId(e.target.value)
+        <MultiSelect
+          testId="employees-org-filter"
+          width={200}
+          placeholder="전체 조직"
+          value={organizationIds}
+          onChange={(v) => {
+            setOrganizationIds(v)
             resetPage()
           }}
-        >
-          <option value="">전체 조직</option>
-          {flatOrgs.map((o) => (
-            <option key={o.id} value={o.id}>
-              {' '.repeat(o.depth * 2)}
-              {o.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="sel"
-          value={positionId}
-          onChange={(e) => {
-            setPositionId(e.target.value)
+          options={flatOrgs.map((o) => ({ value: o.id, label: o.name, depth: o.depth }))}
+        />
+        <MultiSelect
+          testId="employees-position-filter"
+          width={180}
+          placeholder="전체 직위"
+          value={positionIds}
+          onChange={(v) => {
+            setPositionIds(v)
             resetPage()
           }}
-        >
-          <option value="">전체 직무</option>
-          {positions.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+          options={positions.map((p) => ({ value: p.id, label: p.name }))}
+        />
         {isFetching && !isLoading && (
           <span style={{ fontSize: 12, color: 'var(--fg-4)' }}>불러오는 중…</span>
         )}
-      </div>
-
-      <div className="tbl-bar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
-          <Toggle
-            testId="employees-inactive-toggle"
-            on={showInactive}
-            onChange={(v) => {
-              setShowInactive(v)
-              resetPage()
-            }}
-            label="비활성(퇴사) 직원 보기"
-          />
-        </div>
-        <Seg<SegTab>
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: 'basic', label: '직원' },
-            { value: 'work', label: '근로정보' },
-          ]}
-        />
       </div>
 
       {isLoading ? (
@@ -401,20 +399,13 @@ export default function EmployeesPanel() {
                   <th style={{ width: 110 }}>액세스 권한</th>
                   <th style={{ width: 110 }}>입사일</th>
                   <th style={{ width: 140 }}>본조직</th>
-                  <th style={{ width: 120 }}>직무</th>
-                  {tab === 'work' ? (
-                    <>
-                      <th style={{ width: 110 }}>고용 형태</th>
-                      <th>사번</th>
-                    </>
-                  ) : (
-                    <>
-                      <th style={{ width: 90 }} className="c">
-                        상태
-                      </th>
-                      <th>이메일</th>
-                    </>
-                  )}
+                  <th style={{ width: 120 }}>직위</th>
+                  <th style={{ width: 110 }}>고용 형태</th>
+                  <th style={{ width: 110 }}>사번</th>
+                  <th style={{ width: 90 }} className="c">
+                    상태
+                  </th>
+                  <th>이메일</th>
                 </tr>
               </thead>
               <tbody>
@@ -424,7 +415,7 @@ export default function EmployeesPanel() {
                     message={
                       hasFilter
                         ? '조건에 맞는 직원이 없습니다'
-                        : showInactive
+                        : statusTab === 'inactive'
                           ? '비활성(퇴사) 직원이 없습니다'
                           : '등록된 직원이 없습니다'
                     }
@@ -460,39 +451,32 @@ export default function EmployeesPanel() {
                           {others > 0 && <span className="cell-sub">외 {others}</span>}
                         </td>
                         <td className="muted">{formatPosition(emp)}</td>
-                        {tab === 'work' ? (
-                          <>
-                            <td className="muted">
-                              {EMPLOYMENT_TYPE_LABEL[emp.employmentType] ?? emp.employmentType}
-                            </td>
-                            <td className="muted att-dur">{emp.employeeNumber ?? <span className="zero">—</span>}</td>
-                          </>
-                        ) : (
-                          <>
-                            <td className="c">
-                              {emp.isActive ? (
-                                <span style={{ color: 'var(--ok)' }}>재직</span>
-                              ) : (
-                                <span className="zero">퇴사</span>
-                              )}
-                            </td>
-                            <td className="muted" style={{ fontSize: 12 }}>
-                              {emp.user?.email ?? '—'}
-                              {!emp.isActive && canManage && (
-                                <button
-                                  className="btn btn-line btn-sm"
-                                  style={{ marginLeft: 12 }}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setActivateTarget(emp)
-                                  }}
-                                >
-                                  재활성화
-                                </button>
-                              )}
-                            </td>
-                          </>
-                        )}
+                        <td className="muted">
+                          {EMPLOYMENT_TYPE_LABEL[emp.employmentType] ?? emp.employmentType}
+                        </td>
+                        <td className="muted att-dur">{emp.employeeNumber ?? <span className="zero">—</span>}</td>
+                        <td className="c">
+                          {emp.isActive ? (
+                            <span style={{ color: 'var(--ok)' }}>재직</span>
+                          ) : (
+                            <span className="zero">퇴사</span>
+                          )}
+                        </td>
+                        <td className="muted" style={{ fontSize: 12 }}>
+                          {emp.user?.email ?? '—'}
+                          {!emp.isActive && canManage && (
+                            <button
+                              className="btn btn-line btn-sm"
+                              style={{ marginLeft: 12 }}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActivateTarget(emp)
+                              }}
+                            >
+                              재활성화
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     )
                   })

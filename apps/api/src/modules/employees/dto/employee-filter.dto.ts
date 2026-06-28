@@ -1,9 +1,20 @@
 import { z } from 'zod'
 
+/** 콤마 구분 문자열을 trim/공백제거 후 배열로 — 비면 undefined */
+const csvToArray = (v: string | undefined): string[] | undefined => {
+  if (!v) return undefined
+  const arr = v.split(',').map((s) => s.trim()).filter(Boolean)
+  return arr.length ? arr : undefined
+}
+
 export const EmployeeFilterSchema = z.object({
   search: z.string().optional(),
+  // 단수: 기존 호출 호환(예: 근무일정 벌크 생성). 다중과 함께 오면 다중이 우선.
   organizationId: z.string().min(1).optional(),
   positionId: z.string().min(1).optional(),
+  // 다중: 검색영역 다중 선택(콤마 구분 문자열)
+  organizationIds: z.string().optional().transform(csvToArray),
+  positionIds: z.string().optional().transform(csvToArray),
   isActive: z
     .string()
     .optional()

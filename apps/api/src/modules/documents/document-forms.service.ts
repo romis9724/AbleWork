@@ -77,7 +77,7 @@ export class DocumentFormsService {
     })
   }
 
-  // ── AP-01-07 양식 접근규칙 (조직/직무 단위 작성 권한) ─────────────────────────
+  // ── AP-01-07 양식 접근규칙 (조직/직위 단위 작성 권한) ─────────────────────────
 
   async getAccessRules(companyId: string, formId: string) {
     await this.assertFormBelongsToCompany(companyId, formId)
@@ -108,7 +108,7 @@ export class DocumentFormsService {
 
   /**
    * 양식 작성 권한 검증 (enforcement) — 접근규칙이 없으면 전체 허용,
-   * 규칙이 있으면 사용자의 조직/직무가 하나라도 매칭되어야 한다(OR).
+   * 규칙이 있으면 사용자의 조직/직위가 하나라도 매칭되어야 한다(OR).
    */
   async assertCanUseForm(
     companyId: string,
@@ -126,7 +126,7 @@ export class DocumentFormsService {
       if (form.formOwnerId === user.employeeId) return
       throw new ForbiddenException({
         code: 'FORM_ACCESS_DENIED',
-        message: '제한 공개 양식입니다. 접근 권한(부서/직무)이 지정되어야 작성할 수 있습니다.',
+        message: '제한 공개 양식입니다. 접근 권한(부서/직위)이 지정되어야 작성할 수 있습니다.',
       })
     }
 
@@ -253,7 +253,7 @@ export class DocumentFormsService {
     }
   }
 
-  /** 접근규칙 scope(조직/직무)가 자사 소속인지 검증 */
+  /** 접근규칙 scope(조직/직위)가 자사 소속인지 검증 */
   private async assertScopeBelongsToCompany(
     companyId: string,
     scopeType: string,
@@ -266,7 +266,7 @@ export class DocumentFormsService {
     if (!exists) {
       throw new NotFoundException({
         code: 'FORM_ACCESS_SCOPE_NOT_FOUND',
-        message: '접근규칙 대상(조직/직무)을 찾을 수 없습니다.',
+        message: '접근규칙 대상(조직/직위)을 찾을 수 없습니다.',
       })
     }
   }

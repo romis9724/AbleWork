@@ -22,6 +22,9 @@ export interface EmployeeFilterParams {
   search?: string
   organizationId?: string
   positionId?: string
+  /** 다중 선택(검색영역). 서버에는 콤마 구분 문자열로 전송된다. */
+  organizationIds?: string[]
+  positionIds?: string[]
   isActive?: boolean
   page?: number
   limit?: number
@@ -39,7 +42,16 @@ const QUERY_KEY = ['employees']
 export const useEmployees = (params?: EmployeeFilterParams) =>
   useQuery({
     queryKey: [...QUERY_KEY, params],
-    queryFn: () => apiClient.get('/employees', { params }) as Promise<EmployeeListResponse>,
+    queryFn: () => {
+      const { organizationIds, positionIds, ...rest } = params ?? {}
+      // 배열은 axios 기본 직렬화([]) 대신 콤마 구분 문자열로 전송(서버 DTO와 정합)
+      const query = {
+        ...rest,
+        organizationIds: organizationIds?.length ? organizationIds.join(',') : undefined,
+        positionIds: positionIds?.length ? positionIds.join(',') : undefined,
+      }
+      return apiClient.get('/employees', { params: query }) as Promise<EmployeeListResponse>
+    },
     staleTime: 30_000,
   })
 

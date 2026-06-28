@@ -158,7 +158,7 @@ export default function RequestRulesPanel() {
       requestType: form.requestType,
       maxApprovalRounds: Number(form.maxApprovalRounds),
       isAutoApprove: form.isAutoApprove,
-      // M1 다결재자/병렬: 차수별 필수 승인 수(requiredCount)·승인 직무
+      // M1 다결재자/병렬: 차수별 필수 승인 수(requiredCount)·승인 직위
       details: form.details.map((d) => ({
         round: d.round,
         requiredCount: d.requiredCount,
@@ -328,13 +328,13 @@ export default function RequestRulesPanel() {
             </Select>
           </FormControl>
           <FormControl fullWidth>
-            <InputLabel>적용 직무 (미선택 시 전체)</InputLabel>
+            <InputLabel>적용 직위 (미선택 시 전체)</InputLabel>
             <Select
               multiple
               value={form.scopePositionIds}
-              label="적용 직무 (미선택 시 전체)"
+              label="적용 직위 (미선택 시 전체)"
               onChange={(e) => setForm((f) => ({ ...f, scopePositionIds: e.target.value as string[] }))}
-              renderValue={(sel) => (sel.length === 0 ? '전체' : `${sel.length}개 직무`)}
+              renderValue={(sel) => (sel.length === 0 ? '전체' : `${sel.length}개 직위`)}
             >
               {positions.map((p) => (
                 <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
@@ -404,9 +404,9 @@ export default function RequestRulesPanel() {
                     sx={{ width: 120 }}
                   />
                   <FormControl size="small" sx={{ flexGrow: 1, minWidth: 120 }}>
-                    <InputLabel>승인 직무</InputLabel>
+                    <InputLabel>승인 직위</InputLabel>
                     <Select
-                      label="승인 직무"
+                      label="승인 직위"
                       value={d.approverPositionId}
                       onChange={(e) =>
                         setForm((f) => ({
