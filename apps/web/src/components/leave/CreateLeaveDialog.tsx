@@ -48,7 +48,7 @@ interface CreateLeaveDialogProps {
  * 직원·휴가유형 목록과 생성 뮤테이션을 내부에서 처리한다.
  */
 export default function CreateLeaveDialog({ open, onClose, onResult }: CreateLeaveDialogProps) {
-  const { data: employeesData } = useEmployees({ isActive: true })
+  const { data: employeesData } = useEmployees({ isActive: true, excludeSuperAdmin: true })
   const employees: Employee[] = employeesData?.items ?? []
 
   const { data: leaveTypes = [] } = useLeaveTypes()

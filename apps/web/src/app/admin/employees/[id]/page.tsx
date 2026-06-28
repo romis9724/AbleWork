@@ -39,12 +39,14 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useRouter, useParams } from 'next/navigation'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
+import { getApiErrorMessage } from '@/lib/api-error'
 import PageHeader from '@/components/common/PageHeader'
 import {
   useEmployee,
   useUpdateEmployee,
   useDeactivateEmployee,
   useActivateEmployee,
+  useDeleteEmployee,
   useResetDevice,
   useResetPassword,
   useWageInfos,
@@ -137,6 +139,7 @@ export default function EmployeeDetailPage() {
   const [tab, setTab] = useState(0)
   const [deactivateOpen, setDeactivateOpen] = useState(false)
   const [activateOpen, setActivateOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [resetDeviceOpen, setResetDeviceOpen] = useState(false)
   const [resetPwOpen, setResetPwOpen] = useState(false)
   const [newPassword, setNewPassword] = useState('')
@@ -162,11 +165,13 @@ export default function EmployeeDetailPage() {
   const canResetDevice = perm.can(ACTION_KEYS.EMPLOYEE_RESET_DEVICE)
   const canManageWage = perm.can(ACTION_KEYS.EMPLOYEE_WAGE_MANAGE)
   const canChangeLevel = perm.isGeneralAdmin // 권한 변경은 GENERAL_ADMIN 이상
+  const canDelete = perm.isGeneralAdmin // 완전 삭제는 GENERAL_ADMIN 이상
 
   const { data: employee, isLoading } = useEmployee(id)
   const updateMutation = useUpdateEmployee()
   const deactivateMutation = useDeactivateEmployee()
   const activateMutation = useActivateEmployee()
+  const deleteMutation = useDeleteEmployee()
   const resetDeviceMutation = useResetDevice()
   const resetPasswordMutation = useResetPassword()
   const isPasswordValid = newPassword.length >= 8 && /[A-Za-z]/.test(newPassword) && /[0-9]/.test(newPassword)
@@ -231,6 +236,8 @@ export default function EmployeeDetailPage() {
         positionIds,
       })
       setSnack({ open: true, message: '저장되었습니다.', severity: 'success' })
+      // 저장 후 이전 화면(조직관리·직원목록 등)으로 복귀
+      setTimeout(() => router.back(), 600)
     } catch {
       setSnack({ open: true, message: '저장에 실패했습니다.', severity: 'error' })
     }
@@ -253,6 +260,19 @@ export default function EmployeeDetailPage() {
       setSnack({ open: true, message: '직원이 비활성화되었습니다.', severity: 'success' })
     } catch {
       setSnack({ open: true, message: '비활성화에 실패했습니다.', severity: 'error' })
+    }
+  }
+
+  async function handleDelete() {
+    try {
+      await deleteMutation.mutateAsync(id)
+      setDeleteOpen(false)
+      setSnack({ open: true, message: '직원이 완전히 삭제되었습니다.', severity: 'success' })
+      setTimeout(() => router.push('/admin/employees'), 600)
+    } catch (e) {
+      setDeleteOpen(false)
+      // 이력이 있으면 EMPLOYEE_HAS_REFERENCES — 비활성화 안내 메시지가 그대로 노출된다
+      setSnack({ open: true, message: getApiErrorMessage(e, '삭제에 실패했습니다.'), severity: 'error' })
     }
   }
 
@@ -618,6 +638,16 @@ export default function EmployeeDetailPage() {
                       재활성화
                     </Button>
                   ))}
+                {canDelete && (
+                  <Button
+                    variant="text"
+                    color="error"
+                    onClick={() => setDeleteOpen(true)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    완전 삭제
+                  </Button>
+                )}
               </Box>
             </Box>
           </CardContent>
@@ -743,6 +773,18 @@ export default function EmployeeDetailPage() {
         loading={activateMutation.isPending}
         onConfirm={handleActivate}
         onCancel={() => setActivateOpen(false)}
+      />
+
+      {/* 완전 삭제 ConfirmDialog */}
+      <ConfirmDialog
+        open={deleteOpen}
+        title="직원 완전 삭제"
+        message={`${employee.name} 직원을 완전히 삭제합니다. 되돌릴 수 없으며, 출퇴근·결재 등 이력이 있으면 삭제되지 않고 비활성화(퇴사)를 사용해야 합니다. 계속하시겠습니까?`}
+        confirmLabel="완전 삭제"
+        confirmColor="error"
+        loading={deleteMutation.isPending}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteOpen(false)}
       />
 
       {/* 기기 초기화 ConfirmDialog */}

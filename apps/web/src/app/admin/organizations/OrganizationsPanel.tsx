@@ -1,5 +1,6 @@
 'use client'
 import { useMemo, useState, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -165,9 +166,11 @@ function OrgDialog({ open, initial, organizations, employees, loading, onSubmit,
 // PageHeader는 호출하는 page가 렌더하고, 패널은 자체 "조직 추가" 액션을 가진다.
 // ──────────────────────────────────────────────
 export default function OrganizationsPanel() {
+  const router = useRouter()
   const { data: orgs = [], isLoading } = useOrganizations()
-  const { data: empData } = useEmployees({ isActive: true })
-  const employees = empData?.items ?? []
+  // 결재권자 선택 + 조직별 직원 목록에 함께 쓰므로 전 직원을 로드한다(상한 500)
+  const { data: empData } = useEmployees({ isActive: true, limit: 500 })
+  const employees = useMemo(() => empData?.items ?? [], [empData])
 
   const createMutation = useCreateOrganization()
   const updateMutation = useUpdateOrganization()
@@ -196,6 +199,19 @@ export default function OrganizationsPanel() {
     setSnack({ open: true, message, severity })
 
   const flatOrgs = useMemo(() => flattenTree(orgs), [orgs])
+
+  // 선택한 조직 소속 직원(인사 목록 성격 — 최고관리자 제외)
+  const orgEmployees = useMemo(
+    () =>
+      selectedOrg
+        ? employees.filter(
+            (e) =>
+              e.accessLevel !== 'SUPER_ADMIN' &&
+              (e.organizations ?? []).some((o) => o.organization.id === selectedOrg.id),
+          )
+        : [],
+    [selectedOrg, employees],
+  )
 
   // ── 추가
   const handleCreate = (values: OrgFormValues) => {
@@ -396,6 +412,43 @@ export default function OrganizationsPanel() {
                     <Typography variant="body2">{selectedOrg.depth}단계</Typography>
                   </Box>
                 </Box>
+
+                {/* 소속 직원 목록 — 클릭 시 직원 상세로 이동 */}
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+                  소속 직원 <Typography component="span" variant="body2" color="text.secondary">{orgEmployees.length}명</Typography>
+                </Typography>
+                {orgEmployees.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">소속 직원이 없습니다.</Typography>
+                ) : (
+                  <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+                    {orgEmployees.map((emp, idx) => (
+                      <Box
+                        key={emp.id}
+                        data-testid="org-employee-row"
+                        onClick={() => router.push(`/admin/employees/${emp.id}`)}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1.5,
+                          px: 1.5,
+                          py: 1.25,
+                          cursor: 'pointer',
+                          borderBottom: idx < orgEmployees.length - 1 ? '1px solid' : 'none',
+                          borderColor: 'divider',
+                          '&:hover': { bgcolor: 'action.hover' },
+                        }}
+                      >
+                        <Typography variant="body2" fontWeight={600} sx={{ flexGrow: 1, minWidth: 0 }} noWrap>
+                          {emp.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                          {(emp.positions ?? []).map((p) => p.position.name).join(', ') || '—'}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
               </Paper>
             ) : (
               <Paper variant="outlined" sx={{ p: 3 }}>

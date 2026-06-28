@@ -122,7 +122,7 @@ export default function AttendancesPage() {
   const records = useMemo(() => unwrap(rawData), [rawData])
 
   const { data: orgs = [] } = useOrganizations()
-  const { data: employeesData } = useEmployees({ limit: 200 })
+  const { data: employeesData } = useEmployees({ limit: 200, excludeSuperAdmin: true })
   const employees = employeesData?.items ?? []
 
   const createMutation = useCreateAttendance()

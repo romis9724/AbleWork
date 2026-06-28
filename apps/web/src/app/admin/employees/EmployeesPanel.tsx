@@ -9,6 +9,8 @@ import { ConfirmDialog } from '@/components/ab/Modal'
 import { useToast } from '@/components/ab/Toast'
 import { useDebounce } from '@/hooks/useDebounce'
 import apiClient from '@/lib/api-client'
+import { getApiErrorMessage } from '@/lib/api-error'
+import { toCsv, parseCsvLine, normalizeDate } from '@/lib/csv'
 import {
   useEmployees,
   useCreateEmployee,
@@ -113,6 +115,7 @@ export default function EmployeesPanel() {
     search: debouncedSearch || undefined,
     organizationIds: organizationIds.length ? organizationIds : undefined,
     positionIds: positionIds.length ? positionIds : undefined,
+    excludeSuperAdmin: true, // 인사관리 목록: 최고관리자 제외
     isActive: STATUS_IS_ACTIVE[statusTab],
     page,
     limit: DEFAULT_LIMIT,
@@ -166,7 +169,7 @@ export default function EmployeesPanel() {
             : `직원을 추가했습니다. 상세에서 "비밀번호 재설정"으로 로그인 계정을 활성화하세요`,
         )
       },
-      onError: () => toast('직원 추가에 실패했습니다'),
+      onError: (e) => toast(getApiErrorMessage(e, '직원 추가에 실패했습니다')),
     })
   }
 
@@ -182,22 +185,28 @@ export default function EmployeesPanel() {
   }
 
   function handleExport(rows: Employee[]) {
-    const headers = ['이름', '사번', '이메일', '본조직', '직위', '고용형태', '입사일', '권한', '상태']
+    // 업로드와 동일한 양식 — 그대로 다시 업로드할 수 있도록 통일
+    const headers = ['이름', '이메일', '전화', '사번', '입사일', '고용형태', '조직', '직위', '권한']
     const csvRows = rows.map((emp) => {
-      const { primary } = formatOrganizations(emp)
+      // 본조직을 앞에 두고 조직/직위는 세미콜론으로 구분(업로드 파서와 정합)
+      const orgs = [...(emp.organizations ?? [])].sort(
+        (a, b) => Number(b.isPrimary) - Number(a.isPrimary),
+      )
+      const orgNames = orgs.map((o) => o.organization.name).join(';')
+      const posNames = (emp.positions ?? []).map((p) => p.position.name).join(';')
       return [
         emp.name,
-        emp.employeeNumber ?? '',
         emp.user?.email ?? '',
-        primary,
-        formatPosition(emp),
+        emp.phone ?? '',
+        emp.employeeNumber ?? '',
+        (emp.joinedAt ?? '').slice(0, 10),
         EMPLOYMENT_TYPE_LABEL[emp.employmentType] ?? emp.employmentType,
-        new Date(emp.joinedAt).toLocaleDateString('ko-KR'),
+        orgNames,
+        posNames,
         LEVEL_LABEL[emp.accessLevel] ?? emp.accessLevel,
-        emp.isActive ? '재직' : '퇴사',
       ]
     })
-    const csv = [headers, ...csvRows].map((row) => row.join(',')).join('\n')
+    const csv = toCsv([headers, ...csvRows])
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -216,6 +225,7 @@ export default function EmployeesPanel() {
           search: debouncedSearch || undefined,
           organizationIds: organizationIds.length ? organizationIds.join(',') : undefined,
           positionIds: positionIds.length ? positionIds.join(',') : undefined,
+          excludeSuperAdmin: true, // 인사관리 목록: 최고관리자 제외
           isActive: STATUS_IS_ACTIVE[statusTab],
           limit: 1000, // 서버 employees limit 상한(1000)에 맞춤 — 중소기업 규모 전 직원 수용
         },
@@ -232,7 +242,8 @@ export default function EmployeesPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
 
-  const CSV_HEADER = '이름,이메일,입사일(YYYY-MM-DD),고용형태,조직명,사번,전화'
+  // 다운로드와 동일 양식 — 조직·직위 다중은 세미콜론(;), 입사일 YYYY-MM-DD
+  const CSV_HEADER = '이름,이메일,전화,사번,입사일,고용형태,조직,직위,권한'
 
   async function handleUploadFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -241,22 +252,48 @@ export default function EmployeesPanel() {
     setUploading(true)
     try {
       const text = await file.text()
-      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+      const lines = text.replace(/^﻿/, '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
       if (lines.length < 2) {
         toast('데이터 행이 없습니다. 헤더 + 1행 이상 필요합니다')
         return
       }
-      // 헤더는 무시하고 컬럼 순서 고정: 이름,이메일,입사일,고용형태,조직명,사번,전화
+      // 헤더 기반 매핑 — 컬럼 순서가 달라도 동작('본조직'도 '조직'으로 인식)
+      const header = parseCsvLine(lines[0]).map((h) => h.trim())
+      const at = (...names: string[]) => {
+        for (const n of names) {
+          const i = header.indexOf(n)
+          if (i >= 0) return i
+        }
+        return -1
+      }
+      const col = {
+        name: at('이름'),
+        email: at('이메일'),
+        phone: at('전화', '전화번호'),
+        employeeNumber: at('사번'),
+        joinedAt: at('입사일', '입사일(YYYY-MM-DD)'),
+        employmentType: at('고용형태'),
+        organizationName: at('조직', '본조직', '조직명'),
+        positionName: at('직위', '직무'),
+        accessLevel: at('권한'),
+      }
+      if (col.name < 0 || col.email < 0) {
+        toast("헤더에 '이름'과 '이메일' 컬럼이 필요합니다")
+        return
+      }
       const rows = lines.slice(1).map((line) => {
-        const c = line.split(',').map((v) => v.trim())
+        const c = parseCsvLine(line)
+        const get = (i: number) => (i >= 0 ? (c[i] ?? '').trim() : '')
         return {
-          name: c[0] ?? '',
-          email: c[1] ?? '',
-          joinedAt: c[2] ?? '',
-          employmentType: c[3] || undefined,
-          organizationName: c[4] || undefined,
-          employeeNumber: c[5] || undefined,
-          phone: c[6] || undefined,
+          name: get(col.name),
+          email: get(col.email),
+          phone: get(col.phone) || undefined,
+          employeeNumber: get(col.employeeNumber) || undefined,
+          joinedAt: normalizeDate(get(col.joinedAt)),
+          employmentType: get(col.employmentType) || undefined,
+          organizationName: get(col.organizationName) || undefined,
+          positionName: get(col.positionName) || undefined,
+          accessLevel: get(col.accessLevel) || undefined,
         }
       })
       const res = (await apiClient.post('/employees/bulk', { rows })) as unknown as {

@@ -15,6 +15,12 @@ export const EmployeeFilterSchema = z.object({
   // 다중: 검색영역 다중 선택(콤마 구분 문자열)
   organizationIds: z.string().optional().transform(csvToArray),
   positionIds: z.string().optional().transform(csvToArray),
+  // 인사관리 목록 전용 — 최고관리자(SUPER_ADMIN)를 제외한다.
+  // 결재선·문서담당 등 비인사 화면은 이 옵션 없이 전체를 조회한다(기본 false).
+  excludeSuperAdmin: z
+    .string()
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
   isActive: z
     .string()
     .optional()

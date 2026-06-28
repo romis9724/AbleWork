@@ -9,6 +9,7 @@ import { EmployeesService } from './employees.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
 import { AuditService } from '../audit/audit.service'
+import { MailService } from '../mail/mail.service'
 import { AccessLevel } from '@ablework/shared-constants'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 
@@ -52,6 +53,7 @@ const mockPrisma = {
     count: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    delete: jest.fn(),
   },
   employeeOrganization: {
     findMany: jest.fn(),
@@ -62,6 +64,9 @@ const mockPrisma = {
     createMany: jest.fn(),
     deleteMany: jest.fn(),
   },
+  employeeCustomFieldValue: {
+    deleteMany: jest.fn(),
+  },
   organization: {
     count: jest.fn(),
     updateMany: jest.fn(),
@@ -69,9 +74,31 @@ const mockPrisma = {
   approvalStep: {
     count: jest.fn(),
   },
+  approvalHistory: {
+    count: jest.fn(),
+  },
+  attendance: {
+    count: jest.fn(),
+  },
+  shift: {
+    count: jest.fn(),
+  },
+  leave: {
+    count: jest.fn(),
+  },
+  leaveBalance: {
+    deleteMany: jest.fn(),
+  },
+  request: {
+    count: jest.fn(),
+  },
+  document: {
+    count: jest.fn(),
+  },
   wageInfo: {
     findMany: jest.fn(),
     create: jest.fn(),
+    deleteMany: jest.fn(),
   },
   user: {
     findUnique: jest.fn(),
@@ -99,6 +126,7 @@ describe('EmployeesService', () => {
         { provide: EventEmitter2, useValue: mockEvents },
         { provide: CompanySettingsService, useValue: mockSettings },
         { provide: AuditService, useValue: { record: jest.fn() } },
+        { provide: MailService, useValue: { sendAccountSetup: jest.fn() } },
       ],
     }).compile()
 
@@ -208,6 +236,28 @@ describe('EmployeesService', () => {
         { organizations: { some: { organizationId: { in: ['o1', 'o2'] } } } },
         { positions: { some: { positionId: { in: ['p1'] } } } },
       ])
+    })
+
+    it('excludeSuperAdmin=true면 최고관리자(SUPER_ADMIN)를 제외한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findMany.mockResolvedValue([])
+      mockPrisma.employee.count.mockResolvedValue(0)
+
+      await service.findAll(COMPANY_ID, { page: 1, limit: 20, excludeSuperAdmin: true }, requester)
+
+      const whereArg = mockPrisma.employee.findMany.mock.calls[0][0].where
+      expect(whereArg.accessLevel).toEqual({ not: AccessLevel.SUPER_ADMIN })
+    })
+
+    it('excludeSuperAdmin 미지정이면 accessLevel 조건이 없다(전체 포함)', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findMany.mockResolvedValue([])
+      mockPrisma.employee.count.mockResolvedValue(0)
+
+      await service.findAll(COMPANY_ID, { page: 1, limit: 20 }, requester)
+
+      const whereArg = mockPrisma.employee.findMany.mock.calls[0][0].where
+      expect(whereArg.accessLevel).toBeUndefined()
     })
   })
 
@@ -680,6 +730,100 @@ describe('EmployeesService', () => {
           organizations: [{ organizationId: 'org-shared' }],
         }),
       ).rejects.toThrow(ForbiddenException)
+    })
+  })
+
+  // ── remove (완전 삭제) ─────────────────────────────────────────────────────────
+
+  describe('remove (완전 삭제)', () => {
+    const TARGET_ID = 'emp-del'
+
+    beforeEach(() => {
+      mockPrisma.employee.findFirst.mockResolvedValue({ ...baseEmployee, id: TARGET_ID })
+      // 이력 카운트 기본 0
+      mockPrisma.attendance.count.mockResolvedValue(0)
+      mockPrisma.shift.count.mockResolvedValue(0)
+      mockPrisma.leave.count.mockResolvedValue(0)
+      mockPrisma.request.count.mockResolvedValue(0)
+      mockPrisma.document.count.mockResolvedValue(0)
+      mockPrisma.approvalStep.count.mockResolvedValue(0)
+      mockPrisma.approvalHistory.count.mockResolvedValue(0)
+    })
+
+    it('이력성 참조가 있으면 EMPLOYEE_HAS_REFERENCES로 차단하고 삭제하지 않는다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.attendance.count.mockResolvedValue(2) // 출퇴근 이력 존재
+
+      await expect(service.remove(COMPANY_ID, TARGET_ID, requester)).rejects.toMatchObject({
+        response: { code: 'EMPLOYEE_HAS_REFERENCES' },
+      })
+      expect(mockPrisma.employee.delete).not.toHaveBeenCalled()
+    })
+
+    it('이력이 없으면 부속 관계 정리 후 완전 삭제한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: typeof mockPrisma) => unknown) =>
+        fn(mockPrisma),
+      )
+
+      await service.remove(COMPANY_ID, TARGET_ID, requester)
+
+      expect(mockPrisma.employeeOrganization.deleteMany).toHaveBeenCalledWith({
+        where: { employeeId: TARGET_ID },
+      })
+      expect(mockPrisma.employee.delete).toHaveBeenCalledWith({ where: { id: TARGET_ID } })
+    })
+  })
+
+  // ── create 재입사(퇴사 계정 재등록) ──────────────────────────────────────────
+
+  describe('create — 재입사 처리', () => {
+    const dto = {
+      email: 'rehire@x.com',
+      name: '재입사',
+      joinedAt: '2026-01-01',
+      employmentType: 'regular' as const,
+      accessLevel: 'EMPLOYEE' as const,
+      organizationIds: ['org-1'],
+      primaryOrganizationId: 'org-1',
+      positionIds: [],
+    }
+
+    beforeEach(() => {
+      // validateOrganizationsBelongToCompany 통과용
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([])
+      mockPrisma.organization.count.mockResolvedValue(1)
+    })
+
+    it('재직 중 동일 이메일이면 EMPLOYEE_ALREADY_EXISTS로 차단한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.user.findUnique.mockResolvedValue({ id: 'user-1' })
+      mockPrisma.employee.findFirst.mockResolvedValue({ id: 'emp-1', isActive: true })
+
+      await expect(service.create(COMPANY_ID, dto, requester)).rejects.toMatchObject({
+        response: { code: 'EMPLOYEE_ALREADY_EXISTS' },
+      })
+      expect(mockPrisma.employee.create).not.toHaveBeenCalled()
+    })
+
+    it('퇴사(비활성) 동일 이메일이면 신규 생성 대신 재활성화한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.user.findUnique.mockResolvedValue({ id: 'user-1' })
+      mockPrisma.employee.findFirst.mockResolvedValue({ id: 'emp-1', isActive: false })
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: typeof mockPrisma) => unknown) =>
+        fn(mockPrisma),
+      )
+      mockPrisma.employee.update.mockResolvedValue({ id: 'emp-1', userId: 'user-1', name: '재입사' })
+
+      await service.create(COMPANY_ID, dto, requester)
+
+      expect(mockPrisma.employee.create).not.toHaveBeenCalled()
+      expect(mockPrisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'emp-1' },
+          data: expect.objectContaining({ isActive: true, resignedAt: null }),
+        }),
+      )
     })
   })
 })

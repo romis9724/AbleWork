@@ -41,7 +41,11 @@ export const BulkCreateEmployeeSchema = z.object({
         email: z.string().email(),
         joinedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         employmentType: z.string().optional(),
+        // 조직·직위는 이름으로 해석. 다중은 세미콜론(;)으로 구분, 조직 첫 번째가 본조직.
         organizationName: z.string().optional(),
+        positionName: z.string().optional(),
+        // 권한 라벨(직원/조직관리자/총괄관리자). 생략 시 직원. 최고관리자는 업로드 불가.
+        accessLevel: z.string().optional(),
         employeeNumber: z.string().max(50).optional(),
         phone: z.string().max(20).optional(),
       }),

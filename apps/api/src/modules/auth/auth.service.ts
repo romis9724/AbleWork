@@ -224,7 +224,8 @@ export class AuthService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: resetToken.userId },
-        data: { passwordHash },
+        // 비밀번호 설정 = 본인 확인 완료 → 계정 활성화(초대로 만든 비활성 계정도 이때 활성화)
+        data: { passwordHash, isActive: true },
       }),
       this.prisma.passwordResetToken.update({
         where: { id: resetToken.id },

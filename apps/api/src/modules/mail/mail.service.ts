@@ -5,6 +5,7 @@ import Mail from 'nodemailer/lib/mailer'
 
 export interface IMailService {
   sendPasswordReset(to: string, token: string): Promise<void>
+  sendAccountSetup(to: string, token: string, name?: string): Promise<void>
   sendMessageMail(to: string, title: string, content: string): Promise<void>
 }
 
@@ -37,6 +38,22 @@ export class MailService implements IMailService {
     })
   }
 
+  /** 상용(프로덕션)에서만 실제 발송한다. 개발·테스트 등 비프로덕션은 생략(로깅만). */
+  private get mailEnabled(): boolean {
+    return String(this.config.get('NODE_ENV', 'development')) === 'production'
+  }
+
+  /** 모든 메일 발송의 공통 출구 — 비프로덕션 환경에서는 실제 전송하지 않는다. */
+  private async deliver(options: Mail.Options): Promise<void> {
+    if (!this.mailEnabled) {
+      this.logger.warn(
+        `메일 발송 생략(비프로덕션 환경): to=${options.to}, subject=${options.subject}`,
+      )
+      return
+    }
+    await this.transporter.sendMail(options)
+  }
+
   async sendPasswordReset(to: string, token: string): Promise<void> {
     const from = this.config.get<string>('MAIL_FROM', 'no-reply@ablework.kr')
     const frontendUrl = this.config.get<string>('FRONTEND_URL', 'http://localhost:3000')
@@ -55,7 +72,7 @@ export class MailService implements IMailService {
 `
 
     try {
-      await this.transporter.sendMail({
+      await this.deliver({
         from,
         to,
         subject: '[AbleWork] 비밀번호 재설정 안내',
@@ -64,6 +81,41 @@ export class MailService implements IMailService {
       this.logger.log(`Password reset email sent to ${to}`)
     } catch (error) {
       this.logger.error(`Failed to send password reset email to ${to}`, error)
+      throw error
+    }
+  }
+
+  /**
+   * 계정 설정(초대) 이메일 — 대량 등록 등으로 만든 비활성 계정에 발송.
+   * 동일한 reset-password 화면을 재사용하며, 비밀번호 설정 시 계정이 활성화된다.
+   */
+  async sendAccountSetup(to: string, token: string, name?: string): Promise<void> {
+    const from = this.config.get<string>('MAIL_FROM', 'no-reply@ablework.kr')
+    const frontendUrl = this.config.get<string>('FRONTEND_URL', 'http://localhost:3000')
+    const setupLink = `${frontendUrl}/reset-password?token=${encodeURIComponent(token)}`
+    const greeting = name ? `${escapeHtml(name)}님, ` : ''
+
+    const html = `
+<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+  <h2>AbleWork 계정 설정 안내</h2>
+  <p>${greeting}AbleWork에 계정이 생성되었습니다. 아래 버튼을 눌러 비밀번호를 설정하면 로그인할 수 있습니다.</p>
+  <a href="${setupLink}" style="display: inline-block; background: #f36f20; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0;">
+    비밀번호 설정하고 시작하기
+  </a>
+  <p style="color: #666;">이 링크는 7일 후 만료됩니다. 만료 시 로그인 화면의 "비밀번호 찾기"로 다시 설정할 수 있습니다.</p>
+</div>
+`
+
+    try {
+      await this.deliver({
+        from,
+        to,
+        subject: '[AbleWork] 계정 설정 안내',
+        html,
+      })
+      this.logger.log(`Account setup email sent to ${to}`)
+    } catch (error) {
+      this.logger.error(`Failed to send account setup email to ${to}`, error)
       throw error
     }
   }
@@ -86,7 +138,7 @@ export class MailService implements IMailService {
 `
 
     try {
-      await this.transporter.sendMail({
+      await this.deliver({
         from,
         to,
         subject: `[AbleWork] ${title}`,

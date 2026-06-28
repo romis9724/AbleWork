@@ -28,6 +28,11 @@ function buildConfig(overrides: Record<string, unknown> = {}): ConfigService {
       if (key in overrides) {
         return overrides[key] as T
       }
+      // 테스트 기본은 상용(production)으로 두어 실제 발송 경로를 검증한다.
+      // 비프로덕션 생략 동작은 NODE_ENV override로 별도 테스트한다.
+      if (key === 'NODE_ENV') {
+        return 'production' as T
+      }
       return defaultValue as T
     }),
   } as unknown as ConfigService
@@ -174,6 +179,29 @@ describe('MailService', () => {
       await service.sendPasswordReset('', 'tok')
 
       expect(lastMailArg().to).toBe('')
+    })
+  })
+
+  // ── 환경 가드 (상용에서만 발송) ────────────────────────────────────────────────
+
+  describe('환경 가드', () => {
+    it('비프로덕션(개발) 환경에서는 메일을 실제 발송하지 않는다', async () => {
+      const devService = await buildService(buildConfig({ NODE_ENV: 'development' }))
+
+      await devService.sendPasswordReset(TO, 'tok')
+      await devService.sendAccountSetup(TO, 'tok', '홍길동')
+      await devService.sendMessageMail(TO, '제목', '내용')
+
+      expect(mockSendMail).not.toHaveBeenCalled()
+    })
+
+    it('프로덕션 환경에서는 메일을 발송한다', async () => {
+      const prodService = await buildService(buildConfig({ NODE_ENV: 'production' }))
+
+      await prodService.sendAccountSetup(TO, 'tok', '홍길동')
+
+      expect(mockSendMail).toHaveBeenCalledTimes(1)
+      expect(lastMailArg().subject).toBe('[AbleWork] 계정 설정 안내')
     })
   })
 
