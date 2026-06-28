@@ -16,6 +16,15 @@ const REQUEST_EVENTS: string[] = Object.entries(EVENTS)
   .filter(([key]) => key.endsWith('_REQUESTED'))
   .map(([, value]) => value)
 
+/**
+ * 처리 결과(승인/반려) 이벤트 — 신청자에게 결과 DM을 보낸다.
+ * EVENTS의 *_APPROVED/*_REJECTED 중 전자결재 문서(document.*)는 제외(HR 요청 결과만).
+ */
+const RESULT_EVENTS: string[] = Object.entries(EVENTS)
+  .filter(([key]) => key.endsWith('_APPROVED') || key.endsWith('_REJECTED'))
+  .map(([, value]) => value)
+  .filter((value) => !value.startsWith('document.'))
+
 /** 이벤트명 → 한국어 라벨 (DM 제목 구성용) — NOTIFIABLE_EVENTS(SSOT)에서 파생 */
 const EVENT_LABEL: Record<string, string> = Object.fromEntries(
   NOTIFIABLE_EVENTS.map((e) => [e.event, e.label]),
@@ -95,6 +104,12 @@ interface RequestedPayload {
   requestId?: string
   documentId?: string
   companyId?: string
+  /** 양식 미설정(no-document) 경로에서 결재자(부서 승인자) — 개인 DM 대상 */
+  assigneeId?: string
+  /** 신청자 — 결과 DM 대상·신청자명 조회용 */
+  requesterId?: string
+  /** 요청 내용(JSONB) — no-document 경로의 DM 본문 구성용 */
+  payload?: Record<string, unknown>
 }
 
 /**
@@ -124,50 +139,72 @@ export class MessengerApprovalListener implements OnApplicationBootstrap {
         void this.handleRequested(event, payload)
       })
     }
-    this.logger.log(`메신저 결재 리스너 등록: ${REQUEST_EVENTS.length}개 상신 이벤트`)
+    for (const event of RESULT_EVENTS) {
+      this.eventEmitter.on(event, (payload: RequestedPayload) => {
+        void this.handleResult(event, payload)
+      })
+    }
+    this.logger.log(
+      `메신저 결재 리스너 등록: 상신 ${REQUEST_EVENTS.length}개 · 결과 ${RESULT_EVENTS.length}개 이벤트`,
+    )
   }
 
   async handleRequested(event: string, payload: RequestedPayload): Promise<void> {
     try {
       const { companyId, documentId, requestId } = payload
-      // documentId가 없으면 전자결재 연동 전(양식 미설정) 요청 — DM 대상 아님
-      if (!companyId || !documentId || !requestId) return
+      if (!companyId || !requestId) return
 
-      // 현재 결재 차례(PENDING) — 병렬 결재면 복수
-      const steps = await this.prisma.approvalStep.findMany({
-        where: { line: { documentId }, status: 'PENDING' },
-        select: { assigneeId: true },
-      })
-      if (steps.length === 0) return
+      // 결재자(현재 차례)·신청자명·신청 내용을 경로별로 해석한다.
+      // - documentId 있음(전자결재 연동): 문서의 PENDING step·content·drafter 기준
+      // - documentId 없음(양식 미설정 HR 요청, 이원화): emit payload의 assigneeId(부서 승인자)·payload 기준
+      let assigneeIds: string[]
+      let title: string
+      let docNumber: string | undefined
+      let requesterName: string | undefined
+      let fields: ApprovalField[]
 
-      const doc = await this.prisma.document.findFirst({
-        where: { id: documentId, companyId },
-        select: {
-          title: true,
-          docNumber: true,
-          content: true,
-          drafter: { select: { name: true } },
-        },
-      })
+      if (documentId) {
+        const steps = await this.prisma.approvalStep.findMany({
+          where: { line: { documentId }, status: 'PENDING' },
+          select: { assigneeId: true },
+        })
+        if (steps.length === 0) return
+        const doc = await this.prisma.document.findFirst({
+          where: { id: documentId, companyId },
+          select: { title: true, docNumber: true, content: true, drafter: { select: { name: true } } },
+        })
+        assigneeIds = [...new Set(steps.map((s) => s.assigneeId))]
+        title = doc?.title ?? '결재 요청'
+        docNumber = doc?.docNumber ?? undefined
+        requesterName = doc?.drafter?.name ?? undefined
+        fields = doc?.content ? buildContentFields(doc.content) : []
+      } else {
+        // 양식 미설정 HR 요청 — 부서 승인자에게 직접 DM
+        if (!payload.assigneeId) return
+        assigneeIds = [payload.assigneeId]
+        title = EVENT_LABEL[event] ?? '결재 요청'
+        requesterName = payload.requesterId
+          ? (await this.prisma.employee.findUnique({ where: { id: payload.requesterId }, select: { name: true } }))
+              ?.name ?? undefined
+          : undefined
+        fields = buildContentFields(payload.payload)
+      }
 
-      const requesterName = doc?.drafter?.name ?? undefined
-      const fields = doc?.content ? buildContentFields(doc.content) : []
       const eventLabel = `${EVENT_LABEL[event] ?? '결재'} 결재 요청`
       // AI 요약(활성 시) — 실패해도 DM은 그대로 발송
       const summary = await this.buildSummary(companyId, eventLabel, requesterName, fields)
 
       const messagePayload: ApprovalMessagePayload = {
         eventLabel,
-        title: doc?.title ?? '결재 요청',
+        title,
         ...(requesterName ? { requesterName } : {}),
-        ...(doc?.docNumber ? { docNumber: doc.docNumber } : {}),
+        ...(docNumber ? { docNumber } : {}),
         ...(fields.length ? { fields } : {}),
         ...(summary ? { summary } : {}),
         action: { kind: 'request', requestId },
       }
 
       // 중복 결재자 제거(병렬 라운드 안전) 후 각자에게 DM — 1명 실패가 나머지를 막지 않도록 개별 흡수
-      const assigneeIds = [...new Set(steps.map((s) => s.assigneeId))]
       for (const assigneeId of assigneeIds) {
         await this.notifyAssignee(companyId, assigneeId, messagePayload).catch((err) => {
           this.logger.warn(
@@ -178,6 +215,31 @@ export class MessengerApprovalListener implements OnApplicationBootstrap {
     } catch (err) {
       this.logger.warn(
         `메신저 결재 DM 처리 실패 — event=${event}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  /** 처리 결과(승인/반려) — 신청자에게 결과 DM(버튼 없음). 신청자 미연동이면 skip. */
+  async handleResult(event: string, payload: RequestedPayload): Promise<void> {
+    try {
+      const { companyId, requesterId } = payload
+      if (!companyId || !requesterId) return
+      const account = await this.prisma.messengerAccount.findFirst({
+        where: { companyId, employeeId: requesterId, platform: this.messenger.platform },
+        select: { externalUserId: true },
+      })
+      if (!account) return // 신청자 미연동 — skip
+
+      const approved = event.endsWith('.approved')
+      const label = EVENT_LABEL[event] ?? (approved ? '요청 승인' : '요청 반려')
+      const fields = buildContentFields(payload.payload)
+      const detail = fields.map((f) => `${f.name}: ${f.value}`).join(' · ')
+      const description = `${approved ? '신청하신 요청이 승인되었습니다.' : '신청하신 요청이 반려되었습니다.'}${detail ? `\n${detail}` : ''}`
+
+      await this.messenger.sendDirectMessage(account.externalUserId, { title: label, description })
+    } catch (err) {
+      this.logger.warn(
+        `결과 DM 처리 실패 — event=${event}: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
   }

@@ -8,11 +8,13 @@ const prisma = {
   approvalStep: { findMany: jest.fn() },
   document: { findFirst: jest.fn() },
   messengerAccount: { findFirst: jest.fn() },
+  employee: { findUnique: jest.fn() },
 }
 const messenger = {
   platform: 'discord',
   sendApprovalRequest: jest.fn(),
   sendApprovalRequestToUser: jest.fn(),
+  sendDirectMessage: jest.fn(),
 }
 const eventEmitter = { on: jest.fn() }
 const llm = { isEnabled: jest.fn(), chat: jest.fn() }
@@ -124,10 +126,64 @@ describe('MessengerApprovalListener', () => {
     expect(messenger.sendApprovalRequestToUser).not.toHaveBeenCalled()
   })
 
-  it('documentId가 없으면(양식 미연동 요청) 결재자 조회 자체를 하지 않는다', async () => {
+  it('documentId가 없고 assigneeId도 없으면 결재자 조회/발송을 하지 않는다', async () => {
     await listener.handleRequested('leave.requested', { requestId: 'r', companyId: 'c1' })
 
     expect(prisma.approvalStep.findMany).not.toHaveBeenCalled()
+    expect(messenger.sendApprovalRequestToUser).not.toHaveBeenCalled()
+  })
+
+  it('documentId 없는 HR 요청(양식 미설정)은 payload.assigneeId(부서 승인자)에게 DM을 보낸다', async () => {
+    prisma.employee.findUnique.mockResolvedValue({ name: '김철수' })
+    prisma.messengerAccount.findFirst.mockResolvedValue({ externalUserId: 'd-hong' })
+
+    await listener.handleRequested('leave.requested', {
+      requestId: 'req-9',
+      companyId: 'c1',
+      assigneeId: 'emp-hong',
+      requesterId: 'emp-kcs',
+      payload: { leaveTypeId: 'lt-1', startDate: '2026-07-01', endDate: '2026-07-02', reason: '개인' },
+    })
+
+    // 문서 경로를 타지 않음
+    expect(prisma.approvalStep.findMany).not.toHaveBeenCalled()
+    // 부서 승인자(emp-hong)의 discord 계정 조회 후 DM
+    expect(prisma.messengerAccount.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { companyId: 'c1', employeeId: 'emp-hong', platform: 'discord' } }),
+    )
+    const sent = messenger.sendApprovalRequestToUser.mock.calls[0][1]
+    expect(sent.action).toEqual({ kind: 'request', requestId: 'req-9' })
+    expect(sent.requesterName).toBe('김철수')
+    expect(sent.fields).toEqual([
+      { name: '시작일', value: '2026-07-01' },
+      { name: '종료일', value: '2026-07-02' },
+      { name: '사유', value: '개인' },
+    ])
+  })
+
+  it('승인/반려 결과는 신청자에게 결과 DM(버튼 없음)을 보낸다', async () => {
+    prisma.messengerAccount.findFirst.mockResolvedValue({ externalUserId: 'd-kcs' })
+
+    await listener.handleResult('leave.approved', {
+      companyId: 'c1',
+      requesterId: 'emp-kcs',
+      payload: { startDate: '2026-07-01', endDate: '2026-07-02' },
+    })
+
+    expect(prisma.messengerAccount.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { companyId: 'c1', employeeId: 'emp-kcs', platform: 'discord' } }),
+    )
+    const arg = messenger.sendDirectMessage.mock.calls[0]
+    expect(arg[0]).toBe('d-kcs')
+    expect(arg[1].description).toContain('승인')
+  })
+
+  it('결과 DM — 신청자가 메신저 미연동이면 보내지 않는다', async () => {
+    prisma.messengerAccount.findFirst.mockResolvedValue(null)
+
+    await listener.handleResult('leave.rejected', { companyId: 'c1', requesterId: 'emp-x', payload: {} })
+
+    expect(messenger.sendDirectMessage).not.toHaveBeenCalled()
   })
 
   it('병렬 결재면 모든 결재자에게 발송하되 중복 결재자는 1회만', async () => {
