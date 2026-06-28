@@ -24,7 +24,8 @@ workflow:
 
 # ───────────────────────── 공통: Node/pnpm 셋업 ─────────────────────────
 .node_base:
-  image: node:22-bookworm-slim
+  # full bookworm (slim 아님) — slim은 libssl 미포함이라 Prisma가 openssl 버전 감지 실패.
+  image: node:22-bookworm
   tags: [test]
   cache:
     key:
@@ -90,8 +91,16 @@ deploy:
   stage: deploy
   tags: [arm64, aws-deploy] # shell executor 러너(ablework-ci-shell-deploy) 전용
   rules:
+    # 수동 실행(web)은 항상 배포 — CI/파이프라인 변경 검증용
+    - if: $CI_PIPELINE_SOURCE == "web"
+    # main 푸시는 앱/빌드 관련 변경이 있을 때만 배포 (문서/CI-only 변경은 재배포 안 함)
     - if: $CI_COMMIT_BRANCH == "main"
-    - if: $CI_PIPELINE_SOURCE == "web" # 수동 실행(workflow_dispatch 대응)
+      changes:
+        - apps/**/*
+        - packages/**/*
+        - deploy/**/*
+        - pnpm-lock.yaml
+        - package.json
   resource_group: deploy-prod # GHA concurrency: group=deploy-prod 대응
   variables:
     AWS_REGION: ap-northeast-2
