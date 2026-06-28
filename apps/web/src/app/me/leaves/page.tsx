@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useLeaveBalance, useLeaveTypes } from '@/lib/query/leaves'
 import { useCreateRequest } from '@/lib/query/requests'
 import { useAuthStore } from '@/stores/auth.store'
+import { currentEmployeeId } from '@/lib/auth-session'
 import { PageHead } from '@/components/ab/Page'
 import { Modal } from '@/components/ab/Modal'
 import { I } from '@/components/ab/icons'
@@ -22,7 +23,8 @@ export default function MyLeavesPage() {
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
 
-  const { data: balances = [], isLoading } = useLeaveBalance(user?.employeeId ?? '')
+  // 본인 잔액은 쿠키 토큰의 employeeId로 조회한다(스토어-토큰 desync 방지)
+  const { data: balances = [], isLoading } = useLeaveBalance(currentEmployeeId(user?.employeeId))
   const { data: leaveTypes = [] } = useLeaveTypes()
   const createRequest = useCreateRequest()
 
