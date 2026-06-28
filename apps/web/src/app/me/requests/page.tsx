@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useRequests, useCreateRequest, useCancelRequest } from '@/lib/query/requests'
 import { useAuthStore } from '@/stores/auth.store'
+import { currentEmployeeId } from '@/lib/auth-session'
 import { PageHead, TableBar } from '@/components/ab/Page'
 import { Badge, type BadgeKind } from '@/components/ab/atoms'
 import { Modal, ConfirmDialog } from '@/components/ab/Modal'
@@ -114,7 +115,10 @@ export default function RequestsPage() {
   const [dialogMode, setDialogMode] = useState<DialogMode>(null)
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null)
 
-  const employeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
+  // 내 데이터(휴가/일정 등) 조회 필터 — persist 스토어 대신 쿠키 토큰의 employeeId 사용
+  // (멀티컴퍼니 전환 시 스토어-토큰 desync로 대상 목록이 비어 보이던 문제 방지)
+  const storeEmployeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
+  const employeeId = currentEmployeeId(storeEmployeeId)
 
   const queryParams =
     tab === 'ALL'
