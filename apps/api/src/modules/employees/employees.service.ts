@@ -30,24 +30,33 @@ export class EmployeesService {
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
 
   async findAll(companyId: string, filter: EmployeeFilterDto, requester: JwtPayload) {
-    const { search, organizationId, positionId, isActive, page, limit } = filter
+    const { search, organizationId, positionId, organizationIds, positionIds, isActive, page, limit } =
+      filter
     const skip = (page - 1) * limit
 
     // ORG_ADMIN은 자신의 조직 소속 직원만 볼 수 있다
     const orgScope = await this.resolveOrgScope(requester)
 
+    // 조직/직위 조건은 모두 organizations/positions 관계를 참조하므로
+    // 단일 객체로 spread하면 키가 충돌해 마지막 조건만 남는다.
+    // AND 배열로 합쳐 orgScope(보안)·조직 필터·직위 필터가 모두 적용되도록 한다.
+    const and: Record<string, unknown>[] = []
+    if (orgScope) {
+      and.push({ organizations: { some: { organizationId: { in: orgScope } } } })
+    }
+    const orgIds = organizationIds?.length ? organizationIds : organizationId ? [organizationId] : null
+    if (orgIds) {
+      and.push({ organizations: { some: { organizationId: { in: orgIds } } } })
+    }
+    const posIds = positionIds?.length ? positionIds : positionId ? [positionId] : null
+    if (posIds) {
+      and.push({ positions: { some: { positionId: { in: posIds } } } })
+    }
+
     const where: Record<string, unknown> = {
       companyId,
       ...(isActive !== undefined && { isActive }),
-      ...(orgScope && {
-        organizations: { some: { organizationId: { in: orgScope } } },
-      }),
-      ...(organizationId && {
-        organizations: { some: { organizationId } },
-      }),
-      ...(positionId && {
-        positions: { some: { positionId } },
-      }),
+      ...(and.length > 0 && { AND: and }),
       ...(search && {
         OR: [
           { name: { contains: search, mode: 'insensitive' } },
@@ -153,7 +162,7 @@ export class EmployeesService {
         })),
       })
 
-      // 직무 연결
+      // 직위 연결
       if (positionIds.length > 0) {
         await tx.employeePosition.createMany({
           data: positionIds.map((positionId) => ({

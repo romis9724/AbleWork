@@ -171,11 +171,12 @@ describe('EmployeesService', () => {
 
       await service.findAll(COMPANY_ID, { page: 1, limit: 20 }, requester)
 
+      // 조직 스코프·필터는 AND 배열로 합쳐진다(키 충돌 방지 + 우회 차단)
       const whereArg = mockPrisma.employee.findMany.mock.calls[0][0].where
       expect(whereArg.companyId).toBe(COMPANY_ID)
-      expect(whereArg.organizations).toEqual({
-        some: { organizationId: { in: ['org-1'] } },
-      })
+      expect(whereArg.AND).toEqual([
+        { organizations: { some: { organizationId: { in: ['org-1'] } } } },
+      ])
     })
 
     it('GENERAL_ADMIN은 조직 스코프 조건 없이 회사 전체 직원을 조회한다', async () => {
@@ -187,8 +188,26 @@ describe('EmployeesService', () => {
 
       const whereArg = mockPrisma.employee.findMany.mock.calls[0][0].where
       expect(whereArg.companyId).toBe(COMPANY_ID)
-      expect(whereArg.organizations).toBeUndefined()
+      expect(whereArg.AND).toBeUndefined()
       expect(mockPrisma.employeeOrganization.findMany).not.toHaveBeenCalled()
+    })
+
+    it('조직/직위 다중 필터를 AND(in)으로 함께 적용한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.employee.findMany.mockResolvedValue([])
+      mockPrisma.employee.count.mockResolvedValue(0)
+
+      await service.findAll(
+        COMPANY_ID,
+        { page: 1, limit: 20, organizationIds: ['o1', 'o2'], positionIds: ['p1'] },
+        requester,
+      )
+
+      const whereArg = mockPrisma.employee.findMany.mock.calls[0][0].where
+      expect(whereArg.AND).toEqual([
+        { organizations: { some: { organizationId: { in: ['o1', 'o2'] } } } },
+        { positions: { some: { positionId: { in: ['p1'] } } } },
+      ])
     })
   })
 
