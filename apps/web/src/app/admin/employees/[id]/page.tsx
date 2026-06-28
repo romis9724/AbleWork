@@ -169,6 +169,8 @@ export default function EmployeeDetailPage() {
   const canDelete = perm.isGeneralAdmin // 완전 삭제는 GENERAL_ADMIN 이상
 
   const { data: employee, isLoading } = useEmployee(id)
+  // 최고관리자는 직원관리에서 부여/변경할 수 없다(회사당 1명 — 회사 생성/추가 시에만 지정)
+  const isSuperAdminEmployee = employee?.accessLevel === 'SUPER_ADMIN'
   const updateMutation = useUpdateEmployee()
   const deactivateMutation = useDeactivateEmployee()
   const activateMutation = useActivateEmployee()
@@ -222,13 +224,23 @@ export default function EmployeeDetailPage() {
 
   async function onSaveBasic(values: EmployeeFormValues) {
     try {
-      const { organizationIds: orgIds, primaryOrganizationId: primaryId, positionIds, phone, ...rest } = values
+      const {
+        organizationIds: orgIds,
+        primaryOrganizationId: primaryId,
+        positionIds,
+        phone,
+        accessLevel,
+        ...rest
+      } = values
       await updateMutation.mutateAsync({
         id,
         ...rest,
         phone: phone || null,
         resignedAt: values.resignedAt || undefined,
         employeeNumber: values.employeeNumber || undefined,
+        // 최고관리자는 권한 변경 대상이 아니므로 accessLevel을 전송하지 않는다
+        // (서버 update DTO도 SUPER_ADMIN을 허용하지 않음)
+        ...(isSuperAdminEmployee ? {} : { accessLevel }),
         // UpdateEmployeeSchema: organizationIds는 min(1) — 비어 있으면 전송하지 않는다
         ...(orgIds.length > 0 && {
           organizationIds: orgIds,
@@ -586,13 +598,22 @@ export default function EmployeeDetailPage() {
                   name="accessLevel"
                   control={control}
                   render={({ field }) => (
-                    <FormControl size="small" sx={{ width: 200 }} disabled={!canChangeLevel}>
+                    <FormControl
+                      size="small"
+                      sx={{ width: 200 }}
+                      disabled={!canChangeLevel || isSuperAdminEmployee}
+                    >
                       <InputLabel>액세스 권한</InputLabel>
                       <Select {...field} label="액세스 권한">
                         <MenuItem value="EMPLOYEE">직원</MenuItem>
                         <MenuItem value="ORG_ADMIN">조직관리자</MenuItem>
                         <MenuItem value="GENERAL_ADMIN">총괄관리자</MenuItem>
-                        <MenuItem value="SUPER_ADMIN">최고관리자</MenuItem>
+                        {/* 최고관리자는 신규 부여 불가 — 이미 최고관리자인 경우에만 현재 값 표시 */}
+                        {isSuperAdminEmployee && (
+                          <MenuItem value="SUPER_ADMIN" disabled>
+                            최고관리자
+                          </MenuItem>
+                        )}
                       </Select>
                     </FormControl>
                   )}
