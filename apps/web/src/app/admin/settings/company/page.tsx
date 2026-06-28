@@ -38,6 +38,7 @@ interface CompanySettings {
   earlyArrivalAllowedMinutes?: number
   pcTimeclockEnabled?: boolean
   timeclockConfirmEnabled?: boolean
+  noShowReminderMinutes?: string
   shiftConfirmEnabled?: boolean
   shiftTemplateCodeEnabled?: boolean
   impliedWorkEnabled?: boolean
@@ -195,6 +196,7 @@ export default function CompanySettingsPage() {
           earlyArrivalAllowedMinutes: settingsForm.earlyArrivalAllowedMinutes,
           pcTimeclockEnabled: settingsForm.pcTimeclockEnabled,
           timeclockConfirmEnabled: settingsForm.timeclockConfirmEnabled,
+          noShowReminderMinutes: settingsForm.noShowReminderMinutes,
         })
       } else if (section === 'shift') {
         await saveSettings.mutateAsync({
@@ -513,6 +515,21 @@ export default function CompanySettingsPage() {
                     onChange={(v) => setSetting('timeclockConfirmEnabled', v)}
                     label={settingsForm.timeclockConfirmEnabled ? '사용' : '사용 안 함'}
                   />
+                </div>
+              </div>
+              <div className="set-row">
+                <span className="k">미출근 독촉 시각<HelpTip k="attendance.noShowReminder" /></span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    className="inp-block"
+                    value={settingsForm.noShowReminderMinutes ?? '1,10,30,60'}
+                    onChange={(e) => setSetting('noShowReminderMinutes', e.target.value)}
+                    placeholder="1,10,30,60"
+                    style={{ maxWidth: 200 }}
+                  />
+                  <span style={{ fontSize: 12, color: 'var(--fg-4)' }}>
+                    분 (콤마 구분, 근무 시작 후 / 비우면 끔)
+                  </span>
                 </div>
               </div>
             </div>

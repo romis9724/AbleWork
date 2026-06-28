@@ -3,6 +3,7 @@ import axios from 'axios'
 import {
   ApprovalMessagePayload,
   MessengerProvider,
+  SimpleMessagePayload,
 } from '../messenger-provider.interface'
 
 const DISCORD_API = 'https://discord.com/api/v10'
@@ -117,6 +118,19 @@ export class DiscordProvider implements MessengerProvider {
       this.logger.warn(`길드 자동 합류 실패 (연동은 유지): ${msg}`)
       return false
     }
+  }
+
+  /** 버튼 없는 단순 알림을 개인 DM(embed)으로 전송한다 — 출퇴근 알림·독촉 등 */
+  async sendDirectMessage(externalUserId: string, payload: SimpleMessagePayload): Promise<string> {
+    const dmChannelId = await this.openDmChannel(externalUserId)
+    const res = await axios.post(
+      `${DISCORD_API}/channels/${dmChannelId}/messages`,
+      {
+        embeds: [{ title: payload.title, description: payload.description, color: BRAND_COLOR }],
+      },
+      { headers: { Authorization: `Bot ${this.token}`, 'Content-Type': 'application/json' } },
+    )
+    return res.data.id as string
   }
 
   /** Bot↔사용자 1:1 DM 채널 개설 — Discord는 동일 사용자에 대해 멱등(기존 채널 재사용) */

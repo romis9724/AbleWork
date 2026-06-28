@@ -11,6 +11,8 @@ export const EVENTS = {
   ATTENDANCE_CLOCK_IN: 'attendance.clock_in',
   ATTENDANCE_CLOCK_OUT: 'attendance.clock_out',
   ATTENDANCE_LATE: 'attendance.late',
+  // 미출근 독촉 — 근무 시작 후 일정 시간이 지나도 출근 기록이 없을 때 본인에게 발송
+  ATTENDANCE_NO_SHOW_REMINDER: 'attendance.no_show_reminder',
 
   // HR 요청 — 상신
   LEAVE_REQUESTED: 'leave.requested',

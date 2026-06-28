@@ -15,6 +15,8 @@ export const SETTING_FIELD_MAP: Record<string, { section: string; key: string }>
   earlyArrivalAllowedMinutes: { section: 'attendance', key: 'clockin_before_shift_minutes' },
   pcTimeclockEnabled: { section: 'attendance', key: 'pc_timeclock_enabled' },
   timeclockConfirmEnabled: { section: 'attendance', key: 'enable_confirmation' },
+  // 미출근 독촉 발송 시점(분) — 근무 시작 후 경과 시간들. 콤마 구분 문자열(예: '1,10,30,60')
+  noShowReminderMinutes: { section: 'attendance', key: 'no_show_reminder_minutes' },
   // 근무일정
   shiftConfirmEnabled: { section: 'shift', key: 'enable_confirmation' },
   shiftTemplateCodeEnabled: { section: 'shift', key: 'template_code_enabled' },
@@ -46,6 +48,7 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   'attendance.clockin_before_shift_minutes': 30,
   'attendance.pc_timeclock_enabled': true,
   'attendance.enable_confirmation': true,
+  'attendance.no_show_reminder_minutes': '1,10,30,60',
   'shift.enable_confirmation': true,
   'shift.template_code_enabled': false,
   'shift.deemed_work_enabled': false,
