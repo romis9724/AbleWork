@@ -56,6 +56,8 @@ export class NotificationListener implements OnApplicationBootstrap {
       const rules = await this.prisma.notificationRule.findMany({
         where: { eventType, companyId, isActive: true },
       })
+      // 이벤트가 비활성(규칙 없음)이면 발송하지 않는다
+      if (rules.length === 0) return
 
       for (const rule of rules) {
         const sentAt = new Date()
@@ -89,6 +91,22 @@ export class NotificationListener implements OnApplicationBootstrap {
           )
         }
       }
+
+      // 활성 이벤트는 수신자 개인에게 이메일·인앱 도달을 보장한다.
+      // (기본 규칙은 discord webhook만 생성되므로, 수신자가 특정되면 이메일/인앱도 보낸다.
+      //  단 해당 채널 규칙이 이미 있으면 위에서 처리했으므로 중복 발송하지 않는다.)
+      const recipientId = this.resolveRecipientId(payload)
+      if (recipientId) {
+        const channels = new Set(rules.map((r) => r.channelType))
+        try {
+          if (!channels.has('email')) await this.sendEmailTo(recipientId, companyId, eventType, payload)
+          if (!channels.has('in_app')) await this.sendInAppTo(recipientId, companyId, eventType, payload)
+        } catch (err) {
+          this.logger.error(
+            `수신자 개인 알림(이메일/인앱) 발송 실패 — event=${eventType}: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+      }
     } catch (err) {
       this.logger.error(
         `알림 처리 실패 — event=${eventType}: ${err instanceof Error ? err.message : String(err)}`,
@@ -114,30 +132,50 @@ export class NotificationListener implements OnApplicationBootstrap {
     const recipientId = this.resolveRecipientId(payload)
     if (!recipientId) return // 수신자를 특정할 수 없으면 skip (discord 브로드캐스트가 보완)
 
-    const { title, content } = this.buildMessage(eventType, payload)
-
     if (rule.channelType === 'email') {
-      const employee = await this.prisma.employee.findFirst({
-        where: { id: recipientId, companyId },
-        select: { user: { select: { email: true } } },
-      })
-      const email = employee?.user?.email
-      if (email) await this.mailService.sendMessageMail(email, title, content)
+      await this.sendEmailTo(recipientId, companyId, eventType, payload)
       return
     }
-
     if (rule.channelType === 'in_app') {
-      await this.prisma.message.create({
-        data: {
-          companyId,
-          // 자동 생성 메시지 타입은 'automated'로 통일(message-automation.processor와 일치, 'manual'과 구분) — E-10b
-          type: 'automated',
-          title,
-          content,
-          recipients: { create: [{ recipientId }] },
-        },
-      })
+      await this.sendInAppTo(recipientId, companyId, eventType, payload)
     }
+  }
+
+  /** 수신자 개인 이메일 발송 */
+  private async sendEmailTo(
+    recipientId: string,
+    companyId: string,
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: recipientId, companyId },
+      select: { user: { select: { email: true } } },
+    })
+    const email = employee?.user?.email
+    if (!email) return
+    const { title, content } = this.buildMessage(eventType, payload)
+    await this.mailService.sendMessageMail(email, title, content)
+  }
+
+  /** 수신자 사내 메시지함(in_app) 발송 */
+  private async sendInAppTo(
+    recipientId: string,
+    companyId: string,
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const { title, content } = this.buildMessage(eventType, payload)
+    await this.prisma.message.create({
+      data: {
+        companyId,
+        // 자동 생성 메시지 타입은 'automated'로 통일(message-automation.processor와 일치, 'manual'과 구분) — E-10b
+        type: 'automated',
+        title,
+        content,
+        recipients: { create: [{ recipientId }] },
+      },
+    })
   }
 
   /**
