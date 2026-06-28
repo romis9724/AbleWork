@@ -9,13 +9,14 @@ import { PageHead } from '@/components/ab/Page'
 import { Avatar } from '@/components/ab/atoms'
 import { I } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
+import { ROLE_LABELS_KO } from '@ablework/shared-constants'
 
+// employmentType은 소문자 코드(regular/contract/part_time/daily)로 저장된다
 const EMPLOYMENT_LABEL: Record<string, string> = {
-  REGULAR: '정규직',
-  CONTRACT: '계약직',
-  PART_TIME: '파트타임',
-  INTERN: '인턴',
-  DAILY: '일용직',
+  regular: '정규직',
+  contract: '계약직',
+  part_time: '파트타임',
+  daily: '일용직',
 }
 
 function dateLabel(iso?: string | null): string {
@@ -195,7 +196,12 @@ export default function ProfilePage() {
           </div>
           <div className="doc-field">
             <span className="fk">권한</span>
-            <span className="fv">{employee?.accessLevel ?? user?.accessLevel ?? '—'}</span>
+            <span className="fv">
+              {(() => {
+                const lv = employee?.accessLevel ?? user?.accessLevel
+                return lv ? (ROLE_LABELS_KO[lv as keyof typeof ROLE_LABELS_KO] ?? lv) : '—'
+              })()}
+            </span>
           </div>
           <div className="doc-field">
             <span className="fk">입사일</span>

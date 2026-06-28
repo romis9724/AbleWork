@@ -9,7 +9,6 @@ import { Sigil, I } from './icons'
 import { ADMIN_NAV, ADMIN_FOOT, activeNavId, ROLE_LABELS } from './nav'
 import { useAuthStore } from '@/stores/auth.store'
 import { canViewNav } from '@ablework/shared-constants'
-import { useToast } from './Toast'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { CompanySwitcher } from './CompanySwitcher'
 import { clearAuthCookies } from '@/lib/auth-session'
@@ -25,7 +24,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const user = useAuthStore((s) => s.user)
   const clearUser = useAuthStore((s) => s.clearUser)
-  const toast = useToast()
 
   const active = activeNavId(pathname)
   const roleLabel = user?.accessLevel ? ROLE_LABELS[user.accessLevel] ?? user.accessLevel : ''
@@ -43,22 +41,27 @@ export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <div className="app">
       <header className="hd">
-        <div className="hd-brand">
+        <div
+          className="hd-brand"
+          role="button"
+          tabIndex={0}
+          onClick={() => router.push('/admin/dashboard')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              router.push('/admin/dashboard')
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+          title="관리자 홈"
+        >
           <Sigil />
           <span className="hd-wordmark tek">AbleWork</span>
           <span className="hd-admin">Admin</span>
         </div>
+        {/* 우측: 컨텍스트(회사·모드) → 환경(테마) → 계정(프로필·로그아웃) 순 */}
         <div className="hd-right">
           <CompanySwitcher />
-          <div className="hd-user">
-            <span className="hd-user-name">
-              <b>{user?.name ?? '관리자'}</b>
-            </span>
-            {roleLabel && <span className="hd-user-sep">|</span>}
-            {roleLabel && <span className="hd-user-name">{roleLabel}</span>}
-            <span className="hd-avatar">{I.user()}</span>
-          </div>
-          <ThemeSwitcher />
           <div
             className="hd-lang"
             role="button"
@@ -73,6 +76,46 @@ export function AdminShell({ children }: { children: ReactNode }) {
           >
             직원 모드로 전환
           </div>
+          <ThemeSwitcher />
+          <div
+            className="hd-user"
+            role="button"
+            tabIndex={0}
+            onClick={() => router.push('/me/profile')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                router.push('/me/profile')
+              }
+            }}
+            style={{ cursor: 'pointer' }}
+            title="내 프로필"
+          >
+            <span className="hd-user-name">
+              <b>{user?.name ?? '관리자'}</b>
+            </span>
+            {roleLabel && <span className="hd-user-sep">|</span>}
+            {roleLabel && <span className="hd-user-name">{roleLabel}</span>}
+            <span className="hd-avatar">{I.user()}</span>
+          </div>
+          <button
+            type="button"
+            className="hd-logout"
+            onClick={() => logout(router.push, clearUser)}
+            title="로그아웃"
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--fg-3)',
+              border: '1px solid var(--line)',
+              background: 'transparent',
+              borderRadius: 6,
+              padding: '6px 12px',
+              cursor: 'pointer',
+            }}
+          >
+            로그아웃
+          </button>
         </div>
       </header>
 
@@ -129,35 +172,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
               ))}
             </div>
             )}
-            <div className="sb-foot-grp">
-              <div className="t">계정</div>
-              <a
-                role="button"
-                tabIndex={0}
-                onClick={() => logout(router.push, clearUser)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    logout(router.push, clearUser)
-                  }
-                }}
-              >
-                로그아웃
-              </a>
-              <a
-                role="button"
-                tabIndex={0}
-                onClick={() => toast('도움말 센터')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    toast('도움말 센터')
-                  }
-                }}
-              >
-                도움말 센터 <span className="ext">{I.ext()}</span>
-              </a>
-            </div>
           </div>
         </aside>
 
@@ -169,16 +183,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
               padding: '26px 48px',
               borderTop: '1px solid var(--line)',
               display: 'flex',
-              justifyContent: 'space-between',
+              justifyContent: 'flex-end',
               fontSize: 12,
               color: 'var(--fg-5)',
             }}
           >
-            <div style={{ display: 'flex', gap: 24 }}>
-              <span>이용약관</span>
-              <span>개인정보처리방침</span>
-            </div>
-            <span>© AB Media &amp; Works · ABLE + BOX</span>
+            <span>© ABWorks &amp; LABL</span>
           </footer>
         </main>
       </div>
