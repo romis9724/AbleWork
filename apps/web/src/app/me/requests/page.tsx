@@ -4,7 +4,7 @@ import { useRequests, useCreateRequest, useCancelRequest, useApproveRequest, use
 import { useAuthStore } from '@/stores/auth.store'
 import { currentEmployeeId } from '@/lib/auth-session'
 import { PageHead, TableBar } from '@/components/ab/Page'
-import { Badge, type BadgeKind } from '@/components/ab/atoms'
+import { Badge, Seg, type BadgeKind } from '@/components/ab/atoms'
 import { Modal, ConfirmDialog } from '@/components/ab/Modal'
 import { I, HRI } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
@@ -296,13 +296,13 @@ export default function RequestsPage() {
         </div>
       )}
 
-      {/* 2단: 전체 / 대기중 / 완료 */}
-      <div className="tabs" style={{ marginBottom: 18 }}>
-        {SUB_TABS.map((t) => (
-          <button key={t.value} className={'tab' + (subTab === t.value ? ' on' : '')} onClick={() => setSubTab(t.value)}>
-            {t.label}
-          </button>
-        ))}
+      {/* 2단: 전체 / 대기중 / 완료 — 결재(전자결재)와 동일한 Seg 탭 */}
+      <div style={{ marginBottom: 18 }}>
+        <Seg<SubTab>
+          value={subTab}
+          onChange={(next) => setSubTab(next)}
+          options={SUB_TABS.map((t) => ({ value: t.value, label: t.label }))}
+        />
       </div>
 
       <TableBar count={<>총 <b>{requests.length}</b>건</>} />
