@@ -290,7 +290,7 @@ export class RequestsService {
 
     // 휴가 신청은 접수 전에 잔액/유효기간 사전 검증 (CLAUDE.md §6)
     if (dto.type === 'LEAVE_CREATE') {
-      await this.validateLeaveCreatePayload(requesterId, dto.payload)
+      await this.validateLeaveCreatePayload(companyId, requesterId, dto.payload)
     }
 
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -922,7 +922,7 @@ export class RequestsService {
 
     switch (request.type) {
       case 'LEAVE_CREATE':
-        await this.applyLeaveCreate(tx, employeeId, payload)
+        await this.applyLeaveCreate(tx, companyId, employeeId, payload)
         break
       case 'LEAVE_MODIFY':
         await this.applyLeaveModify(tx, companyId, employeeId, payload)
@@ -970,6 +970,7 @@ export class RequestsService {
 
   /** 휴가 신청 접수 전 사전 검증 — 잔액/유효기간 (createRequest에서 호출) */
   private async validateLeaveCreatePayload(
+    companyId: string,
     employeeId: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
@@ -1001,7 +1002,13 @@ export class RequestsService {
     }
 
     const start = new Date(startDate)
-    const daysUsed = this.calcLeaveDaysUsed(startDate, endDate, Number(leaveType.deductionDays))
+    const daysUsed = await this.calcLeaveDaysUsed(
+      this.prisma,
+      companyId,
+      startDate,
+      endDate,
+      Number(leaveType.deductionDays),
+    )
 
     await this.leavesService.validateBalance({
       employeeId,
@@ -1012,18 +1019,72 @@ export class RequestsService {
     })
   }
 
-  /** 휴가 차감 일수 계산: 기간 일수(양 끝 포함) × 유형별 차감 단위 */
-  private calcLeaveDaysUsed(startDate: string, endDate: string, deductionDays: number): number {
-    const MS_PER_DAY = 24 * 60 * 60 * 1000
+  /** 회사 공휴일 집합 로드 — 정확일자(YYYY-MM-DD) + 매년반복(MM-DD) */
+  private async loadHolidaySets(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    client: any,
+    companyId: string,
+  ): Promise<{ exact: Set<string>; repeat: Set<string> }> {
+    const rows: Array<{ holidayDate: Date; isAnnualRepeat: boolean }> =
+      await client.companyHoliday.findMany({
+        where: { companyId },
+        select: { holidayDate: true, isAnnualRepeat: true },
+      })
+    const exact = new Set<string>()
+    const repeat = new Set<string>()
+    for (const r of rows) {
+      const iso = r.holidayDate.toISOString().slice(0, 10) // YYYY-MM-DD (UTC)
+      if (r.isAnnualRepeat) repeat.add(iso.slice(5))
+      else exact.add(iso)
+    }
+    return { exact, repeat }
+  }
+
+  /** 영업일 수: 주말(토·일)·회사 공휴일을 제외하고 시작~종료(양 끝 포함)를 센다. UTC 기준. */
+  private countBusinessDays(
+    startDate: string,
+    endDate: string,
+    holidays: { exact: Set<string>; repeat: Set<string> },
+  ): number {
     const start = new Date(`${startDate.slice(0, 10)}T00:00:00.000Z`)
     const end = new Date(`${endDate.slice(0, 10)}T00:00:00.000Z`)
-    const calendarDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / MS_PER_DAY) + 1)
-    return calendarDays * (deductionDays > 0 ? deductionDays : 1)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0
+    let count = 0
+    for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const dow = d.getUTCDay() // 0=일, 6=토
+      if (dow === 0 || dow === 6) continue
+      const iso = d.toISOString().slice(0, 10)
+      if (holidays.exact.has(iso) || holidays.repeat.has(iso.slice(5))) continue
+      count++
+    }
+    return count
+  }
+
+  /**
+   * 휴가 차감 일수 계산: 영업일(주말·공휴일 제외, 양 끝 포함) × 유형별 차감 단위.
+   * 영업일이 0이면(주말/공휴일만 선택) 최소 1영업일로 간주해 차감 단위만큼 차감한다.
+   */
+  private async calcLeaveDaysUsed(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    client: any,
+    companyId: string,
+    startDate: string,
+    endDate: string,
+    deductionDays: number,
+  ): Promise<number> {
+    const holidays = await this.loadHolidaySets(client, companyId)
+    const businessDays = Math.max(1, this.countBusinessDays(startDate, endDate, holidays))
+    return businessDays * (deductionDays > 0 ? deductionDays : 1)
   }
 
   /** LEAVE_CREATE 승인 → Leave 생성 + 잔액 차감 */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async applyLeaveCreate(tx: any, employeeId: string, payload: Record<string, unknown>) {
+  private async applyLeaveCreate(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx: any,
+    companyId: string,
+    employeeId: string,
+    payload: Record<string, unknown>,
+  ) {
     const { leaveTypeId, startDate, endDate, reason } = payload as {
       leaveTypeId: string
       startDate: string
@@ -1039,7 +1100,13 @@ export class RequestsService {
       })
     }
 
-    const daysUsed = this.calcLeaveDaysUsed(startDate, endDate, Number(leaveType.deductionDays))
+    const daysUsed = await this.calcLeaveDaysUsed(
+      tx,
+      companyId,
+      startDate,
+      endDate,
+      Number(leaveType.deductionDays),
+    )
     const year = new Date(startDate).getFullYear()
 
     // 잔액 재검증 (신청~승인 사이 잔액 변동 가능) — 부족하면 승인 트랜잭션 롤백
@@ -1112,7 +1179,9 @@ export class RequestsService {
 
     const newStart = startDate ?? leave.startDate.toISOString()
     const newEnd = endDate ?? leave.endDate.toISOString()
-    const newDaysUsed = this.calcLeaveDaysUsed(
+    const newDaysUsed = await this.calcLeaveDaysUsed(
+      tx,
+      companyId,
       newStart,
       newEnd,
       Number(leave.leaveType.deductionDays),

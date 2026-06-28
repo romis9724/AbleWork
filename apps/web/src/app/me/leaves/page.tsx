@@ -39,9 +39,19 @@ export default function MyLeavesPage() {
     setReason('')
   }
 
+  // 시작일 선택 시 종료일이 비었거나 시작보다 빠르면 자동으로 시작일과 맞춘다(기본 1일)
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value)
+    if (!endDate || endDate < value) setEndDate(value)
+  }
+
   const handleSubmit = async () => {
     if (!leaveTypeId || !startDate || !endDate) {
       toast('필수 항목을 모두 입력해 주세요')
+      return
+    }
+    if (endDate < startDate) {
+      toast('종료일은 시작일과 같거나 이후여야 합니다')
       return
     }
     try {
@@ -133,11 +143,14 @@ export default function MyLeavesPage() {
 
         <div className="fld">
           <label>시작일</label>
-          <input className="inp-block" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          <input className="inp-block" type="date" value={startDate} onChange={(e) => handleStartDateChange(e.target.value)} />
         </div>
         <div className="fld">
           <label>종료일</label>
-          <input className="inp-block" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          <input className="inp-block" type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} />
+        </div>
+        <div className="note" style={{ marginBottom: 18 }}>
+          차감 일수는 <b>영업일</b> 기준(주말·공휴일 제외)으로 계산됩니다.
         </div>
         <div className="fld" style={{ alignItems: 'start' }}>
           <label>사유</label>

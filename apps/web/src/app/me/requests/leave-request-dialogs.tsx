@@ -37,7 +37,13 @@ export function LeaveCreateDialog({ open, submitting, onClose, onSubmit }: Reque
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
 
-  const canSubmit = !!leaveTypeId && !!startDate && !!endDate
+  const canSubmit = !!leaveTypeId && !!startDate && !!endDate && endDate >= startDate
+
+  // 시작일 선택 시 종료일이 비었거나 더 빠르면 자동으로 시작일과 맞춘다(기본 1일)
+  const handleStart = (value: string) => {
+    setStartDate(value)
+    if (!endDate || endDate < value) setEndDate(value)
+  }
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
@@ -48,8 +54,8 @@ export function LeaveCreateDialog({ open, submitting, onClose, onSubmit }: Reque
             <MenuItem key={lt.id} value={lt.id}>{lt.displayName ?? lt.name}</MenuItem>
           ))}
         </TextField>
-        <TextField label="시작일" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
-        <TextField label="종료일" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
+        <TextField label="시작일" type="date" value={startDate} onChange={(e) => handleStart(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
+        <TextField label="종료일" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} inputProps={{ min: startDate || undefined }} helperText="차감 일수는 영업일(주말·공휴일 제외) 기준입니다." />
         <TextField label="사유" value={reason} onChange={(e) => setReason(e.target.value)} fullWidth multiline rows={3} />
       </DialogContent>
       <DialogActions>
