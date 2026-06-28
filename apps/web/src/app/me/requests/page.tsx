@@ -19,9 +19,32 @@ import {
 import { DeviceChangeDialog } from './device-request-dialog'
 import { OffsiteWorkDialog, CustomRequestDialog } from './offsite-custom-request-dialogs'
 
-type TabValue = 'ALL' | 'PENDING' | 'DONE' | 'APPROVE'
+type Mode = 'mine' | 'staff'
+type SubTab = 'ALL' | 'PENDING' | 'DONE'
 
 const APPROVER_LEVELS = new Set(['ORG_ADMIN', 'GENERAL_ADMIN', 'SUPER_ADMIN'])
+
+const SUB_TABS: { value: SubTab; label: string }[] = [
+  { value: 'ALL', label: '전체' },
+  { value: 'PENDING', label: '대기중' },
+  { value: 'DONE', label: '완료' },
+]
+
+// 요청 payload 필드 → 한국어 라벨 (상세 보기용). 정의 순서 = 표시 순서.
+const PAYLOAD_FIELD_LABELS: Record<string, string> = {
+  startDate: '시작일',
+  endDate: '종료일',
+  startTime: '시작 시간',
+  endTime: '종료 시간',
+  date: '일자',
+  days: '일수',
+  hours: '시간',
+  newDeviceId: '새 기기',
+  reason: '사유',
+  memo: '메모',
+  note: '비고',
+  content: '내용',
+}
 
 type RequestDialogType =
   | 'LEAVE_CREATE'
@@ -61,12 +84,6 @@ const STATUS: Record<string, { label: string; kind: BadgeKind }> = {
   CANCELLED: { label: '취소', kind: 'b-submit' },
 }
 
-const TABS: { value: TabValue; label: string; approverOnly?: boolean }[] = [
-  { value: 'ALL', label: '전체' },
-  { value: 'PENDING', label: '대기중' },
-  { value: 'DONE', label: '완료' },
-  { value: 'APPROVE', label: '승인 대기', approverOnly: true },
-]
 
 interface MenuGroup {
   title: string
@@ -113,11 +130,22 @@ const MENU_GROUPS: MenuGroup[] = [
   },
 ]
 
+function RequestDetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
+      <span style={{ flex: '0 0 96px', fontSize: 13, color: 'var(--fg-3)' }}>{label}</span>
+      <span style={{ flex: 1, fontSize: 14, color: 'var(--fg-1)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{value}</span>
+    </div>
+  )
+}
+
 export default function RequestsPage() {
   const toast = useToast()
-  const [tab, setTab] = useState<TabValue>('ALL')
+  const [mode, setMode] = useState<Mode>('mine')
+  const [subTab, setSubTab] = useState<SubTab>('ALL')
   const [dialogMode, setDialogMode] = useState<DialogMode>(null)
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null)
+  const [detailReq, setDetailReq] = useState<Request | null>(null)
 
   // 내 데이터(휴가/일정 등) 조회 필터 — persist 스토어 대신 쿠키 토큰의 employeeId 사용
   // (멀티컴퍼니 전환 시 스토어-토큰 desync로 대상 목록이 비어 보이던 문제 방지)
@@ -125,16 +153,13 @@ export default function RequestsPage() {
   const employeeId = currentEmployeeId(storeEmployeeId)
   const accessLevel = useAuthStore((s) => s.user?.accessLevel) ?? ''
   const isApprover = APPROVER_LEVELS.has(accessLevel)
+  const isStaff = mode === 'staff'
 
-  // 승인 대기 탭(조직관리자 이상): 내 소속 부서 구성원의 PENDING 요청 (본인 것 제외)
-  const queryParams =
-    tab === 'APPROVE'
-      ? { scope: 'mine', allEmployees: true, status: 'PENDING' }
-      : tab === 'ALL'
-      ? undefined
-      : tab === 'PENDING'
-      ? { status: 'PENDING' }
-      : { status: 'APPROVED,REJECTED,CANCELLED' }
+  const statusParam =
+    subTab === 'PENDING' ? { status: 'PENDING' } : subTab === 'DONE' ? { status: 'APPROVED,REJECTED,CANCELLED' } : {}
+
+  // 내 요청: 본인 것. 직원 요청(조직관리자): 소속 부서 구성원 요청(scope=mine&allEmployees).
+  const queryParams = isStaff ? { scope: 'mine', allEmployees: true, ...statusParam } : statusParam
 
   const { data, isLoading } = useRequests(queryParams)
   const createRequest = useCreateRequest()
@@ -143,14 +168,14 @@ export default function RequestsPage() {
   const rejectRequest = useRejectRequest()
 
   const allRequests = Array.isArray(data) ? data : data?.items ?? []
-  // 승인 대기 탭에서는 본인이 올린 요청은 제외(자기결재 불가)
-  const requests =
-    tab === 'APPROVE' ? allRequests.filter((r) => r.requesterId !== employeeId) : allRequests
+  // 직원 요청에서는 본인이 올린 요청은 제외(자기결재 불가)
+  const requests = isStaff ? allRequests.filter((r) => r.requesterId !== employeeId) : allRequests
 
   const handleApprove = async (id: string) => {
     try {
       await approveRequest.mutateAsync({ id })
       toast('요청을 승인했습니다')
+      setDetailReq(null)
     } catch (err) {
       toast(err instanceof Error ? err.message : '승인 중 오류가 발생했습니다')
     }
@@ -160,6 +185,7 @@ export default function RequestsPage() {
     try {
       await rejectRequest.mutateAsync({ id })
       toast('요청을 반려했습니다')
+      setDetailReq(null)
     } catch (err) {
       toast(err instanceof Error ? err.message : '반려 중 오류가 발생했습니다')
     }
@@ -212,9 +238,21 @@ export default function RequestsPage() {
         }
       />
 
+      {/* 1단: 내 요청 / 직원 요청(조직관리자) */}
+      {isApprover && (
+        <div className="tabs" style={{ marginBottom: 10 }}>
+          {([['mine', '내 요청'], ['staff', '직원 요청']] as [Mode, string][]).map(([m, label]) => (
+            <button key={m} className={'tab' + (mode === m ? ' on' : '')} onClick={() => setMode(m)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 2단: 전체 / 대기중 / 완료 */}
       <div className="tabs" style={{ marginBottom: 18 }}>
-        {TABS.filter((t) => !t.approverOnly || isApprover).map((t) => (
-          <button key={t.value} className={'tab' + (tab === t.value ? ' on' : '')} onClick={() => setTab(t.value)}>
+        {SUB_TABS.map((t) => (
+          <button key={t.value} className={'tab' + (subTab === t.value ? ' on' : '')} onClick={() => setSubTab(t.value)}>
             {t.label}
           </button>
         ))}
@@ -226,7 +264,7 @@ export default function RequestsPage() {
         <table className="tbl">
           <thead>
             <tr>
-              {tab === 'APPROVE' && <th>신청자</th>}
+              {isStaff && <th>신청자</th>}
               <th>요청 유형</th>
               <th className="c">신청일</th>
               <th className="c">상태</th>
@@ -237,30 +275,31 @@ export default function RequestsPage() {
             {isLoading ? (
               <tr><td className="tbl-empty" colSpan={5}>불러오는 중…</td></tr>
             ) : requests.length === 0 ? (
-              <tr><td className="tbl-empty" colSpan={5}>{tab === 'APPROVE' ? '승인 대기 중인 요청이 없습니다' : '요청 내역이 없습니다'}</td></tr>
+              <tr><td className="tbl-empty" colSpan={5}>{isStaff ? '직원 요청이 없습니다' : '요청 내역이 없습니다'}</td></tr>
             ) : (
               requests.map((r) => {
                 const st = STATUS[r.status] ?? { label: r.status, kind: 'b-submit' as BadgeKind }
-                const busy = approveRequest.isPending || rejectRequest.isPending
                 return (
-                  <tr key={r.id}>
-                    {tab === 'APPROVE' && <td className="lead">{r.requester?.name ?? '—'}</td>}
-                    <td className={tab === 'APPROVE' ? '' : 'lead'}>{TYPE_LABEL[r.type] ?? r.type}</td>
+                  <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setDetailReq(r)}>
+                    {isStaff && <td className="lead">{r.requester?.name ?? '—'}</td>}
+                    <td className={isStaff ? '' : 'lead'}>{TYPE_LABEL[r.type] ?? r.type}</td>
                     <td className="c muted">{new Date(r.createdAt).toLocaleDateString('ko-KR')}</td>
                     <td className="c"><Badge kind={st.kind}>{st.label}</Badge></td>
-                    <td className="c">
-                      {tab === 'APPROVE' ? (
-                        <span style={{ display: 'inline-flex', gap: 6, justifyContent: 'center' }}>
-                          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => handleApprove(r.id)}>승인</button>
-                          <button className="btn btn-line btn-sm" disabled={busy} onClick={() => handleReject(r.id)}>반려</button>
-                        </span>
-                      ) : isCancellable(r) ? (
-                        <button data-testid="req-cancel-btn" className="btn btn-line btn-sm" onClick={() => setCancelTargetId(r.id)}>
-                          신청 취소
-                        </button>
-                      ) : (
-                        <span className="zero">—</span>
-                      )}
+                    <td className="c" onClick={(e) => e.stopPropagation()}>
+                      <span style={{ display: 'inline-flex', gap: 6, justifyContent: 'center' }}>
+                        <button className="btn btn-line btn-sm" onClick={() => setDetailReq(r)}>상세</button>
+                        {isStaff && r.status === 'PENDING' && (
+                          <>
+                            <button className="btn btn-primary btn-sm" disabled={approveRequest.isPending} onClick={() => handleApprove(r.id)}>승인</button>
+                            <button className="btn btn-line btn-sm" disabled={rejectRequest.isPending} onClick={() => handleReject(r.id)}>반려</button>
+                          </>
+                        )}
+                        {!isStaff && isCancellable(r) && (
+                          <button data-testid="req-cancel-btn" className="btn btn-line btn-sm" onClick={() => setCancelTargetId(r.id)}>
+                            신청 취소
+                          </button>
+                        )}
+                      </span>
                     </td>
                   </tr>
                 )
@@ -269,6 +308,46 @@ export default function RequestsPage() {
           </tbody>
         </table>
       </div>
+
+      {/* 요청 상세 보기 (새 요청과 동일한 모달 스타일·필드 레이아웃 재활용) */}
+      <Modal
+        open={!!detailReq}
+        onClose={() => setDetailReq(null)}
+        eyebrow="Request Detail"
+        title={detailReq ? (TYPE_LABEL[detailReq.type] ?? detailReq.type) : '요청 상세'}
+        maxWidth={520}
+        footer={
+          detailReq && isStaff && detailReq.status === 'PENDING' ? (
+            <>
+              <button className="btn btn-line" disabled={rejectRequest.isPending} onClick={() => handleReject(detailReq.id)}>반려</button>
+              <button className="btn btn-primary" disabled={approveRequest.isPending} onClick={() => handleApprove(detailReq.id)}>승인</button>
+            </>
+          ) : detailReq && !isStaff && isCancellable(detailReq) ? (
+            <button className="btn btn-line" onClick={() => { setCancelTargetId(detailReq.id); setDetailReq(null) }}>신청 취소</button>
+          ) : (
+            <button className="btn btn-ghost" onClick={() => setDetailReq(null)}>닫기</button>
+          )
+        }
+      >
+        {detailReq && (
+          <div style={{ padding: '20px 24px' }}>
+            <RequestDetailRow label="요청 유형" value={TYPE_LABEL[detailReq.type] ?? detailReq.type} />
+            {isStaff && <RequestDetailRow label="신청자" value={detailReq.requester?.name ?? '—'} />}
+            <RequestDetailRow label="신청일" value={new Date(detailReq.createdAt).toLocaleString('ko-KR')} />
+            <RequestDetailRow label="상태" value={(STATUS[detailReq.status]?.label) ?? detailReq.status} />
+            {Object.entries(detailReq.payload ?? {})
+              .filter(([k, v]) => v != null && v !== '' && typeof v !== 'object' && !/id$/i.test(k))
+              .sort(([a], [b]) => {
+                const ia = Object.keys(PAYLOAD_FIELD_LABELS).indexOf(a)
+                const ib = Object.keys(PAYLOAD_FIELD_LABELS).indexOf(b)
+                return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+              })
+              .map(([k, v]) => (
+                <RequestDetailRow key={k} label={PAYLOAD_FIELD_LABELS[k] ?? k} value={String(v)} />
+              ))}
+          </div>
+        )}
+      </Modal>
 
       {/* 유형 선택 메뉴 (그룹 구분) */}
       <Modal open={dialogMode === 'menu'} onClose={closeDialog} eyebrow="New Request" title="요청 유형 선택" maxWidth={460}>
