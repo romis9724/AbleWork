@@ -127,6 +127,9 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
   },
+  companyHoliday: {
+    findMany: jest.fn().mockResolvedValue([]),
+  },
   shiftTemplate: {
     findFirst: jest.fn(),
   },
@@ -335,6 +338,44 @@ describe('RequestsService', () => {
       expect(mockEvents.emit).toHaveBeenCalledWith(
         'leave.approved',
         expect.objectContaining({ requestId: REQUEST_ID, autoApproved: true }),
+      )
+    })
+
+    it('자동승인 휴가 차감일수는 영업일(주말·공휴일 제외) 기준으로 계산한다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      // 2026-06-15(월)~06-22(월): 영업일 6 − 공휴일 06-17(수) 1 = 5
+      const dto = {
+        type: 'LEAVE_CREATE' as const,
+        payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-22' },
+      }
+
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.request.create.mockResolvedValue({ ...basePendingRequest, documentId: null })
+      mockPrisma.employee.findFirst.mockResolvedValue({
+        id: EMPLOYEE_ID,
+        companyId: COMPANY_ID,
+        name: '홍길동',
+        organizations: [{ organizationId: 'org-1' }],
+        positions: [],
+      })
+      mockPrisma.approvalRule.findMany.mockResolvedValue([{ ...baseApprovalRule, isAutoApprove: true }])
+      mockPrisma.request.update.mockResolvedValue({
+        ...basePendingRequest,
+        status: 'APPROVED',
+        type: 'LEAVE_CREATE',
+        requesterId: EMPLOYEE_ID,
+        payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-22' },
+      })
+      mockPrisma.companyHoliday.findMany.mockResolvedValue([
+        { holidayDate: new Date('2026-06-17T00:00:00.000Z'), isAnnualRepeat: false },
+      ])
+
+      await service.createRequest(COMPANY_ID, dto, requester)
+
+      expect(mockPrisma.leave.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ daysUsed: 5 }) }),
       )
     })
 
