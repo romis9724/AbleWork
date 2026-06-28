@@ -15,6 +15,49 @@ export interface SettingsHelpEntry {
   tip?: string
 }
 
+/**
+ * 아직 동작에 반영되지 않은(저장만 되는) 설정 항목 키.
+ * 코드 검증 결과 백엔드 비즈니스 로직에서 값을 읽는 소비처가 없는 항목들.
+ * HelpTip이 이 키에 "(개발중)" 표시와 안내를 자동으로 붙인다.
+ * 회사명·로고·국가·시간대 등 "기본정보 입력값"은 기능 토글이 아니므로 제외한다.
+ */
+export const WIP_KEYS: ReadonlySet<string> = new Set([
+  // 일반·근무일정 — 주 시작 요일(저장만, 집계 미반영)
+  'general.weekStartDay',
+  'shift.weekStartDay',
+  // 출퇴근
+  'attendance.pcTimeclock',
+  'attendance.timeclockConfirm',
+  // 근무일정
+  'shift.confirm',
+  'shift.templateCode',
+  'shift.impliedWork',
+  // 휴게시간
+  'break.auto',
+  'break.shift',
+  // 권한(조직관리자) — employeeManage만 실제 적용됨
+  'perm.orgAdmin.deviceReset',
+  'perm.orgAdmin.workInfo',
+  'perm.orgAdmin.shift',
+  'perm.orgAdmin.shiftTemplate',
+  'perm.orgAdmin.leave',
+  'perm.orgAdmin.attendance',
+  // 권한(직원)
+  'perm.employee.viewAllOrgs',
+  'perm.employee.viewOthersShift',
+  'perm.employee.viewAttendance',
+  // 전자결재 정책 — returnToPrev·service만 실제 적용됨
+  'approval.changeUpperLine',
+  'approval.zipUpload',
+  'approval.mobilePush',
+  'approval.email',
+  'approval.userInfoDisplay',
+  // 고급 옵션
+  'advanced.timeFormat',
+  'advanced.shiftTemplateCode',
+  'advanced.impliedWork',
+])
+
 export const SETTINGS_HELP: Record<string, SettingsHelpEntry> = {
   // ── 일반 ───────────────────────────────────────────────────────────────────
   'general.companyName': {
