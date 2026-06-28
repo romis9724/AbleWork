@@ -90,9 +90,12 @@ integration-test:
 deploy:
   stage: deploy
   tags: [arm64, aws-deploy] # shell executor 러너(ablework-ci-shell-deploy) 전용
+  needs: [] # test 스테이지를 기다리지 않고 즉시 시작 (GHA의 deploy.yml 독립 실행과 동일)
   rules:
-    # 수동 실행(web)은 항상 배포 — CI/파이프라인 변경 검증용
+    # 수동 실행(web UI Run pipeline)은 항상 배포 — CI/파이프라인 변경 검증용
     - if: $CI_PIPELINE_SOURCE == "web"
+    # API/CLI 수동 배포 — DEPLOY=true 변수 명시 시에만 (실수 배포 방지)
+    - if: $DEPLOY == "true"
     # main 푸시는 앱/빌드 관련 변경이 있을 때만 배포 (문서/CI-only 변경은 재배포 안 함)
     - if: $CI_COMMIT_BRANCH == "main"
       changes:
@@ -117,16 +120,14 @@ deploy:
     - docker buildx use ablework
   script:
     - SHA="$CI_COMMIT_SHA"
-    # type=gha → type=registry 캐시. api/web scope 분리 유지(buildcache 태그로 구분)
+    # 영속 빌드 호스트라 buildkit 빌더(ablework)의 로컬 레이어 캐시가 빌드 간 유지된다.
+    # → GitHub(ephemeral)과 달리 ECR 레지스트리 캐시 push/pull 불필요(네트워크 비용 제거).
+    #   EBS가 stop/start로 보존되므로 캐시도 유지됨(인스턴스 종료 시에만 콜드).
     - |
       docker buildx build --platform linux/arm64 -f deploy/Dockerfile --target api \
-        --cache-from "type=registry,ref=$ECR_REGISTRY/ablework-api:buildcache" \
-        --cache-to   "type=registry,ref=$ECR_REGISTRY/ablework-api:buildcache,mode=max" \
         -t "$ECR_REGISTRY/ablework-api:latest" -t "$ECR_REGISTRY/ablework-api:$SHA" --push .
     - |
       docker buildx build --platform linux/arm64 -f deploy/Dockerfile --target web \
-        --cache-from "type=registry,ref=$ECR_REGISTRY/ablework-web:buildcache" \
-        --cache-to   "type=registry,ref=$ECR_REGISTRY/ablework-web:buildcache,mode=max" \
         --build-arg NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" \
         -t "$ECR_REGISTRY/ablework-web:latest" -t "$ECR_REGISTRY/ablework-web:$SHA" --push .
     # 배포 에셋 S3 업로드 (기존 deploy.yml과 동일)
