@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { SETTINGS_HELP } from '@/lib/settings-help'
+import { SETTINGS_HELP, WIP_KEYS } from '@/lib/settings-help'
 
 interface HelpTipProps {
   /** SETTINGS_HELP 키 — 지정 시 중앙 텍스트(title/body/effects/tip)를 사용 */
@@ -42,12 +42,30 @@ export function HelpTip({ k, title, children, width = 340 }: HelpTipProps) {
   const body = children ?? entry?.body
   const effects = entry?.effects
   const tip = entry?.tip
+  const wip = k ? WIP_KEYS.has(k) : false
 
   // 문구가 없으면(키 누락) 렌더하지 않아 깨진 아이콘을 방지
   if (!body) return null
 
   return (
-    <span ref={ref} style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }}>
+    <span ref={ref} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle' }}>
+      {wip && (
+        <span
+          style={{
+            marginLeft: 6,
+            padding: '1px 6px',
+            borderRadius: 999,
+            border: '1px solid var(--ab-orange)',
+            color: 'var(--ab-orange)',
+            fontSize: 10,
+            fontWeight: 700,
+            lineHeight: 1.4,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          개발중
+        </span>
+      )}
       <button
         type="button"
         aria-label="설정 설명 보기"
@@ -107,6 +125,21 @@ export function HelpTip({ k, title, children, width = 340 }: HelpTipProps) {
             <strong style={{ display: 'block', marginBottom: 6, color: 'var(--fg-1)', fontSize: 12.5 }}>
               {resolvedTitle}
             </strong>
+          )}
+          {wip && (
+            <span
+              style={{
+                display: 'block',
+                marginBottom: 6,
+                padding: '6px 8px',
+                borderRadius: 4,
+                background: 'color-mix(in srgb, var(--ab-orange) 14%, transparent)',
+                color: 'var(--ab-orange)',
+                fontWeight: 600,
+              }}
+            >
+              🚧 개발 중 — 저장은 되지만 아직 실제 동작에는 반영되지 않습니다.
+            </span>
           )}
           <span style={{ display: 'block' }}>{body}</span>
           {effects && effects.length > 0 && (
