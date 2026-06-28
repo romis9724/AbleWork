@@ -83,13 +83,12 @@ integration-test:
   allow_failure: true # GHA continue-on-error: true 대응
 
 # ──────────────────────────── deploy 스테이지 ────────────────────────────
-# A-1: 배포 러너 = 운영 Graviton EC2 겸용(인스턴스 프로파일). 정적 키 불필요.
+# A-2: 전용 빌드 인스턴스(t4g.medium/arm64)에 등록한 shell executor 러너.
+#  - 호스트의 aws-cli v2 + docker + buildx 직접 사용 (Alpine docker:dind 이미지의
+#    musl/pyexpat 버그 회피). AWS 인증은 인스턴스 프로파일(IMDS) → 정적 키 불필요.
 deploy:
   stage: deploy
-  tags: [arm64, aws-deploy]
-  image: docker:27
-  services:
-    - docker:27-dind
+  tags: [arm64, aws-deploy] # shell executor 러너(ablework-ci-shell-deploy) 전용
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_PIPELINE_SOURCE == "web" # 수동 실행(workflow_dispatch 대응)
@@ -100,13 +99,13 @@ deploy:
     S3_BUCKET: ablework-prod-files
     NEXT_PUBLIC_API_URL: https://work.abmwc.net/api/v1
     DOCKER_BUILDKIT: "1"
-    DOCKER_TLS_CERTDIR: "/certs" # dind TLS (러너 config.toml 볼륨 /certs/client 와 연동)
   before_script:
-    - apk add --no-cache aws-cli docker-cli-buildx
     # 인스턴스 프로파일로 인증됨 — 정적 키 불필요
     - export ECR_REGISTRY="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com"
     - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
-    - docker buildx create --use --name ablework 2>/dev/null || docker buildx use ablework
+    # 레지스트리 캐시 지원 위해 docker-container 드라이버 빌더 사용
+    - docker buildx inspect ablework >/dev/null 2>&1 || docker buildx create --name ablework --driver docker-container
+    - docker buildx use ablework
   script:
     - SHA="$CI_COMMIT_SHA"
     # type=gha → type=registry 캐시. api/web scope 분리 유지(buildcache 태그로 구분)
