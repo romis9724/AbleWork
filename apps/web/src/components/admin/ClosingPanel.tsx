@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { Note } from '@/components/ab/atoms'
+import { HelpTip } from '@/components/ab/HelpTip'
 import { useToast } from '@/components/ab/Toast'
 import { useConfirmPeriod, useUnconfirmAttendances } from '@/lib/query/attendances'
 import { useOrganizations } from '@/lib/query/organizations'
@@ -86,7 +87,7 @@ export default function ClosingPanel() {
         </div>
 
         <div className="set-row">
-          <span className="k">대상 기간</span>
+          <span className="k">대상 기간<HelpTip k="closing.period" /></span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <input
               className="inp-block"
@@ -107,7 +108,7 @@ export default function ClosingPanel() {
         </div>
 
         <div className="set-row">
-          <span className="k">대상 조직</span>
+          <span className="k">대상 조직<HelpTip k="closing.targetOrg" /></span>
           <div>
             <select
               className="sel"
@@ -152,7 +153,7 @@ export default function ClosingPanel() {
         )}
 
         <div className="set-row">
-          <span className="k">대상 기간</span>
+          <span className="k">대상 기간<HelpTip k="closing.unconfirmPeriod" /></span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <input
               className="inp-block"

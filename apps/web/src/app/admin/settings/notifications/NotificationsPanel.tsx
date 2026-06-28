@@ -22,6 +22,7 @@ import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import apiClient from '@/lib/api-client'
+import { HelpTip } from '@/components/ab/HelpTip'
 import { NOTIFIABLE_EVENTS, type NotifiableEvent } from '@ablework/shared-constants'
 
 interface NotificationRule {
@@ -154,8 +155,8 @@ export default function NotificationsPanel() {
       </Alert>
 
       {/* Webhook URL 섹션 — 회사 단위 단일 webhook */}
-      <Typography variant="subtitle1" fontWeight={700} mb={2}>
-        Discord Webhook 설정
+      <Typography variant="subtitle1" fontWeight={700} mb={2} sx={{ display: 'flex', alignItems: 'center' }}>
+        Discord Webhook 설정<HelpTip k="notification.webhookUrl" />
       </Typography>
       <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', mb: 4 }}>
         <CardContent>
@@ -184,8 +185,8 @@ export default function NotificationsPanel() {
       </Card>
 
       {/* 이벤트 ON/OFF 섹션 */}
-      <Typography variant="subtitle1" fontWeight={700} mb={2}>
-        이벤트 알림 설정
+      <Typography variant="subtitle1" fontWeight={700} mb={2} sx={{ display: 'flex', alignItems: 'center' }}>
+        이벤트 알림 설정<HelpTip k="notification.events" />
       </Typography>
       <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', mb: 4 }}>
         <CardContent>

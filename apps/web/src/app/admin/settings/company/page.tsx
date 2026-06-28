@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHead } from '@/components/ab/Page'
 import { Toggle, RadioGroup } from '@/components/ab/atoms'
+import { HelpTip } from '@/components/ab/HelpTip'
 import { I } from '@/components/ab/icons'
 import { ConfirmDialog } from '@/components/ab/Modal'
 import { useToast } from '@/components/ab/Toast'
@@ -58,7 +59,7 @@ const SECTIONS = [
   { key: 'general', label: '일반' },
   { key: 'notification', label: '알림' },
   { key: 'permission', label: '권한' },
-  { key: 'position', label: '직무' },
+  { key: 'position', label: '직위' },
   { key: 'approval', label: '전자결재' },
   { key: 'shift', label: '근무일정' },
   { key: 'attendance', label: '출퇴근' },
@@ -302,7 +303,7 @@ export default function CompanySettingsPage() {
             <div className="set-block">
               <div className="set-block-head">일반</div>
               <div className="set-row">
-                <span className="k">회사명</span>
+                <span className="k">회사명<HelpTip k="general.companyName" /></span>
                 <div>
                   <input
                     className="inp-block"
@@ -314,7 +315,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">국가</span>
+                <span className="k">국가<HelpTip k="general.country" /></span>
                 <div>
                   <select
                     className="sel"
@@ -332,7 +333,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">회사 로고</span>
+                <span className="k">회사 로고<HelpTip k="general.logo" /></span>
                 <div>
                   <input
                     className="inp-block"
@@ -347,6 +348,7 @@ export default function CompanySettingsPage() {
               <div className="set-row">
                 <span className="k">
                   관리 단위 <span className="help">시간대</span>
+                  <HelpTip k="general.timezone" />
                 </span>
                 <div>
                   <select
@@ -365,7 +367,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">1주 시작 요일</span>
+                <span className="k">1주 시작 요일<HelpTip k="general.weekStartDay" /></span>
                 <div>
                   <select
                     className="sel"
@@ -382,7 +384,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row" style={{ gridTemplateColumns: '200px 1fr' }}>
-                <span className="k">회사 지정 휴일</span>
+                <span className="k">회사 지정 휴일<HelpTip k="general.holidays" /></span>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <input
@@ -449,7 +451,7 @@ export default function CompanySettingsPage() {
             <div className="set-block">
               <div className="set-block-head">출퇴근</div>
               <div className="set-row">
-                <span className="k">무일정 출퇴근 정책</span>
+                <span className="k">무일정 출퇴근 정책<HelpTip k="attendance.noShiftPolicy" /></span>
                 <div>
                   <RadioGroup
                     value={settingsForm.noShiftClockPolicy ?? 'if_no_shift'}
@@ -463,7 +465,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">지각 유예 시간</span>
+                <span className="k">지각 유예 시간<HelpTip k="attendance.lateGrace" /></span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input
                     className="inp-block"
@@ -480,7 +482,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">근무 시작 전 출근 허용</span>
+                <span className="k">근무 시작 전 출근 허용<HelpTip k="attendance.earlyArrival" /></span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input
                     className="inp-block"
@@ -494,7 +496,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">PC 출퇴근 사용</span>
+                <span className="k">PC 출퇴근 사용<HelpTip k="attendance.pcTimeclock" /></span>
                 <div>
                   <Toggle
                     on={settingsForm.pcTimeclockEnabled ?? false}
@@ -504,7 +506,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">출퇴근기록 확정 기능</span>
+                <span className="k">출퇴근기록 확정 기능<HelpTip k="attendance.timeclockConfirm" /></span>
                 <div>
                   <Toggle
                     on={settingsForm.timeclockConfirmEnabled ?? false}
@@ -521,7 +523,7 @@ export default function CompanySettingsPage() {
             <div className="set-block">
               <div className="set-block-head">근무일정</div>
               <div className="set-row">
-                <span className="k">주 시작 요일</span>
+                <span className="k">주 시작 요일<HelpTip k="shift.weekStartDay" /></span>
                 <div>
                   <select
                     className="sel"
@@ -538,7 +540,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">근무일정 확정 기능</span>
+                <span className="k">근무일정 확정 기능<HelpTip k="shift.confirm" /></span>
                 <div>
                   <Toggle
                     on={settingsForm.shiftConfirmEnabled ?? false}
@@ -548,7 +550,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">템플릿 코드 기능</span>
+                <span className="k">템플릿 코드 기능<HelpTip k="shift.templateCode" /></span>
                 <div>
                   <Toggle
                     on={settingsForm.shiftTemplateCodeEnabled ?? false}
@@ -558,7 +560,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">간주근로 기능</span>
+                <span className="k">간주근로 기능<HelpTip k="shift.impliedWork" /></span>
                 <div>
                   <Toggle
                     on={settingsForm.impliedWorkEnabled ?? false}
@@ -575,7 +577,7 @@ export default function CompanySettingsPage() {
             <div className="set-block">
               <div className="set-block-head">휴게시간</div>
               <div className="set-row">
-                <span className="k">자동 휴게시간 사용</span>
+                <span className="k">자동 휴게시간 사용<HelpTip k="break.auto" /></span>
                 <div>
                   <Toggle
                     on={settingsForm.autoBreakEnabled ?? false}
@@ -585,7 +587,7 @@ export default function CompanySettingsPage() {
                 </div>
               </div>
               <div className="set-row">
-                <span className="k">근무일정 휴게시간 기능</span>
+                <span className="k">근무일정 휴게시간 기능<HelpTip k="break.shift" /></span>
                 <div>
                   <Toggle
                     on={settingsForm.shiftBreakEnabled ?? false}
@@ -597,7 +599,7 @@ export default function CompanySettingsPage() {
             </div>
           )}
 
-          {/* ── 직무 (임베드 패널) ───────────────────────────── */}
+          {/* ── 직위 (임베드 패널) ───────────────────────────── */}
           {section === 'position' && <PositionsPanel />}
 
           {/* ── 전자결재 (임베드 패널: 공통 관리 — 문서/정책/알림) ─ */}

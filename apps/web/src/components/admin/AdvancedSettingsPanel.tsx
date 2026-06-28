@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Toggle, Note } from '@/components/ab/atoms'
+import { HelpTip } from '@/components/ab/HelpTip'
 import { useToast } from '@/components/ab/Toast'
 import apiClient from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth.store'
@@ -94,7 +95,7 @@ export default function AdvancedSettingsPanel() {
       )}
 
       <div className="set-row">
-        <span className="k">시간 표시 형식</span>
+        <span className="k">시간 표시 형식<HelpTip k="advanced.timeFormat" /></span>
         <div>
           <select
             className="sel"
@@ -113,7 +114,7 @@ export default function AdvancedSettingsPanel() {
       </div>
 
       <div className="set-row">
-        <span className="k">근무일정 템플릿 코드 사용</span>
+        <span className="k">근무일정 템플릿 코드 사용<HelpTip k="advanced.shiftTemplateCode" /></span>
         <div>
           <Toggle
             on={form.shiftTemplateCodeEnabled ?? false}
@@ -124,7 +125,7 @@ export default function AdvancedSettingsPanel() {
       </div>
 
       <div className="set-row">
-        <span className="k">간주근로 사용</span>
+        <span className="k">간주근로 사용<HelpTip k="advanced.impliedWork" /></span>
         <div>
           <Toggle
             on={form.impliedWorkEnabled ?? false}
@@ -135,7 +136,7 @@ export default function AdvancedSettingsPanel() {
       </div>
 
       <div className="set-row">
-        <span className="k">전자결재 서비스 사용</span>
+        <span className="k">전자결재 서비스 사용<HelpTip k="advanced.approvalService" /></span>
         <div>
           <Toggle
             on={form.approvalServiceEnabled ?? false}
@@ -146,7 +147,7 @@ export default function AdvancedSettingsPanel() {
       </div>
 
       <div className="set-row">
-        <span className="k">전단계 반려 허용</span>
+        <span className="k">전단계 반려 허용<HelpTip k="advanced.returnToPrev" /></span>
         <div>
           <Toggle
             on={form.approvalPrevStepReject ?? false}

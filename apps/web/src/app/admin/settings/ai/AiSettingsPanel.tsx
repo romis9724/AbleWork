@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Toggle, RadioGroup } from '@/components/ab/atoms'
+import { HelpTip } from '@/components/ab/HelpTip'
 import { useToast } from '@/components/ab/Toast'
 import apiClient from '@/lib/api-client'
 import { getApiErrorMessage } from '@/lib/api-error'
@@ -112,7 +113,7 @@ export default function AiSettingsPanel() {
       <div className="set-block-head">AI 설정</div>
 
       <div className="set-row">
-        <span className="k">AI 기능 사용</span>
+        <span className="k">AI 기능 사용<HelpTip k="ai.enabled" /></span>
         <div>
           <Toggle
             on={form.enabled}
@@ -123,7 +124,7 @@ export default function AiSettingsPanel() {
       </div>
 
       <div className="set-row">
-        <span className="k">제공자(Provider)</span>
+        <span className="k">제공자(Provider)<HelpTip k="ai.provider" /></span>
         <div>
           <RadioGroup
             value={form.provider}
@@ -141,6 +142,7 @@ export default function AiSettingsPanel() {
       <div className="set-row">
         <span className="k">
           서버 주소 <span className="help">baseUrl</span>
+          <HelpTip k="ai.baseUrl" />
         </span>
         <div>
           <input
@@ -154,7 +156,7 @@ export default function AiSettingsPanel() {
       </div>
 
       <div className="set-row">
-        <span className="k">모델</span>
+        <span className="k">모델<HelpTip k="ai.model" /></span>
         <div>
           <input
             className="inp-block"
@@ -169,6 +171,7 @@ export default function AiSettingsPanel() {
       <div className="set-row">
         <span className="k">
           API 키 <span className="help">vLLM은 보통 불필요</span>
+          <HelpTip k="ai.apiKey" />
         </span>
         <div>
           <input
@@ -186,7 +189,7 @@ export default function AiSettingsPanel() {
       </div>
 
       <div className="set-row">
-        <span className="k">최대 토큰</span>
+        <span className="k">최대 토큰<HelpTip k="ai.maxTokens" /></span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             className="inp-block"
@@ -202,7 +205,7 @@ export default function AiSettingsPanel() {
       </div>
 
       <div className="set-row">
-        <span className="k">Temperature</span>
+        <span className="k">Temperature<HelpTip k="ai.temperature" /></span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             className="inp-block"
