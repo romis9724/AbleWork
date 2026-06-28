@@ -1,4 +1,5 @@
 'use client'
+import { type ReactNode } from 'react'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -14,6 +15,8 @@ interface Props {
   cancelLabel?: string
   confirmColor?: 'error' | 'primary' | 'warning'
   loading?: boolean
+  /** message 아래에 렌더할 추가 콘텐츠(옵션 체크박스 등) */
+  children?: ReactNode
   onConfirm: () => void
   onCancel: () => void
 }
@@ -22,6 +25,7 @@ export default function ConfirmDialog({
   open, title, message,
   confirmLabel = '확인', cancelLabel = '취소',
   confirmColor = 'error', loading = false,
+  children,
   onConfirm, onCancel,
 }: Props) {
   return (
@@ -29,6 +33,7 @@ export default function ConfirmDialog({
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
         <DialogContentText>{message}</DialogContentText>
+        {children}
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel} disabled={loading}>{cancelLabel}</Button>
