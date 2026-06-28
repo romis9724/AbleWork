@@ -31,6 +31,12 @@ export interface ApprovalMessagePayload {
   action: ApprovalAction
 }
 
+/** 버튼 없는 단순 알림 DM 페이로드 (출퇴근 알림·독촉 등) */
+export interface SimpleMessagePayload {
+  title: string
+  description: string
+}
+
 /** 메신저 제공자 추상화 — sendApprovalRequest가 핵심(전송 + 갱신용 식별자 반환) */
 export interface MessengerProvider {
   readonly platform: string
@@ -41,6 +47,8 @@ export interface MessengerProvider {
    * 회사 채널 브로드캐스트(NotificationListener)와 달리 "당사자에게 직접" 보내 즉시 결재를 유도한다.
    */
   sendApprovalRequestToUser(externalUserId: string, payload: ApprovalMessagePayload): Promise<string>
+  /** 버튼 없는 단순 알림을 개인 DM으로 전송한다(출퇴근 알림·독촉 등) */
+  sendDirectMessage(externalUserId: string, payload: SimpleMessagePayload): Promise<string>
 }
 
 /** DI 토큰 — 현재 구현체는 DiscordProvider */

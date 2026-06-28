@@ -11,6 +11,7 @@ export const DomainEvent = {
   ATTENDANCE_CLOCK_OUT: 'attendance.clock_out',
   ATTENDANCE_LATE: 'attendance.late',
   ATTENDANCE_ABSENT: 'attendance.absent',
+  ATTENDANCE_NO_SHOW_REMINDER: 'attendance.no_show_reminder',
   LEAVE_REQUESTED: 'leave.requested',
   LEAVE_APPROVED: 'leave.approved',
   LEAVE_REJECTED: 'leave.rejected',
@@ -51,6 +52,7 @@ export interface NotifiableEvent {
 export const NOTIFIABLE_EVENTS: readonly NotifiableEvent[] = [
   { event: 'attendance.clock_in', label: '출근', group: 'attendance', groupLabel: '출퇴근' },
   { event: 'attendance.late', label: '지각', group: 'attendance', groupLabel: '출퇴근' },
+  { event: 'attendance.no_show_reminder', label: '미출근 독촉', group: 'attendance', groupLabel: '출퇴근' },
 
   { event: 'leave.requested', label: '휴가 신청', group: 'leave', groupLabel: '휴가' },
   { event: 'leave.approved', label: '휴가 승인', group: 'leave', groupLabel: '휴가' },

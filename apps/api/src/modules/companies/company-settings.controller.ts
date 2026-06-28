@@ -23,6 +23,11 @@ const PatchSettingsSchema = z
     earlyArrivalAllowedMinutes: z.number().int().min(0).max(720).optional(),
     pcTimeclockEnabled: z.boolean().optional(),
     timeclockConfirmEnabled: z.boolean().optional(),
+    // 미출근 독촉 발송 시점(분) — 콤마 구분 문자열(예: '1,10,30,60'), 빈 문자열이면 독촉 안 함
+    noShowReminderMinutes: z
+      .string()
+      .regex(/^(\s*\d+\s*)(,\s*\d+\s*)*$|^$/, '예: 1,10,30,60')
+      .optional(),
     shiftConfirmEnabled: z.boolean().optional(),
     shiftTemplateCodeEnabled: z.boolean().optional(),
     impliedWorkEnabled: z.boolean().optional(),

@@ -227,6 +227,11 @@ export class EmployeesService {
       return employee
     })
 
+    // 초기 비밀번호를 입력하지 않은 경우(비활성 계정) → 직원에게 비밀번호 설정(초대) 메일 발송
+    if (!initialPassword && created.userId) {
+      await this.sendSetupInvite(created.userId, email, rest.name)
+    }
+
     await this.audit.record({
       companyId,
       actorId: requester?.employeeId ?? null,
@@ -434,7 +439,7 @@ export class EmployeesService {
   async update(companyId: string, id: string, dto: UpdateEmployeeDto, requester: JwtPayload) {
     const existing = await this.assertEmployee(companyId, id)
     await this.guardOrgScope(requester, existing)
-    this.guardUpdatePermission(requester, id, dto)
+    this.guardUpdatePermission(requester, id, dto, existing.accessLevel)
 
     // 본인 수정(이름/전화번호)은 권한 설정의 영향을 받지 않는다
     if (requester.employeeId !== id) {
@@ -846,20 +851,36 @@ export class EmployeesService {
    * - 타인: ORG_ADMIN 이상만 수정 가능
    * - accessLevel 변경: GENERAL_ADMIN 이상 + 본인 권한 변경 금지 + 자신과 같거나 높은 권한 부여 금지
    */
-  private guardUpdatePermission(requester: JwtPayload, targetId: string, dto: UpdateEmployeeDto) {
+  private guardUpdatePermission(
+    requester: JwtPayload,
+    targetId: string,
+    dto: UpdateEmployeeDto,
+    currentAccessLevel?: string,
+  ) {
     const requesterLevel = ACCESS_LEVEL_HIERARCHY[requester.accessLevel]
     const isSelf = requester.employeeId === targetId
 
     if (isSelf) {
-      const SELF_EDITABLE_FIELDS = new Set(['name', 'phone'])
-      const forbidden = Object.entries(dto)
-        .filter(([key, value]) => value !== undefined && !SELF_EDITABLE_FIELDS.has(key))
-        .map(([key]) => key)
-      if (forbidden.length > 0) {
+      // 본인 권한(accessLevel)을 현재와 다른 값으로 바꾸려는 시도는 권한 셀프 상승 위험 — 항상 금지
+      if (dto.accessLevel !== undefined && dto.accessLevel !== currentAccessLevel) {
         throw new ForbiddenException({
-          code: 'EMPLOYEE_SELF_UPDATE_FORBIDDEN',
-          message: `본인은 이름/전화번호만 수정할 수 있습니다. (불가 필드: ${forbidden.join(', ')})`,
+          code: 'EMPLOYEE_SELF_LEVEL_FORBIDDEN',
+          message: '본인의 권한(액세스 레벨)은 변경할 수 없습니다.',
         })
+      }
+      // 관리자(ORG_ADMIN 이상)는 본인의 관리 정보(조직·직위·고용형태 등)도 수정 가능.
+      // 일반 직원은 셀프서비스로 이름/전화번호만 수정 가능.
+      if (requesterLevel < ACCESS_LEVEL_HIERARCHY[AccessLevel.ORG_ADMIN]) {
+        const SELF_EDITABLE_FIELDS = new Set(['name', 'phone'])
+        const forbidden = Object.entries(dto)
+          .filter(([key, value]) => value !== undefined && !SELF_EDITABLE_FIELDS.has(key))
+          .map(([key]) => key)
+        if (forbidden.length > 0) {
+          throw new ForbiddenException({
+            code: 'EMPLOYEE_SELF_UPDATE_FORBIDDEN',
+            message: `본인은 이름/전화번호만 수정할 수 있습니다. (불가 필드: ${forbidden.join(', ')})`,
+          })
+        }
       }
       return
     }
