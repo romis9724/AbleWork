@@ -54,8 +54,11 @@ export default function BulkCreateDialog({
   }, [open, defaultStartDate, defaultEndDate])
 
   // 선택한 조직 소속 직원만 조회 (BE EmployeeFilterDto.organizationId)
+  // 근무일정 배정 대상이므로 최고관리자 제외
   const { data: employeeData, isLoading: loadingEmployees } = useEmployees(
-    organizationId ? { organizationId } : undefined,
+    organizationId
+      ? { organizationId, excludeSuperAdmin: true }
+      : { excludeSuperAdmin: true },
   )
   const employeeOptions = organizationId ? (employeeData?.items ?? []) : []
 

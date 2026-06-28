@@ -100,7 +100,7 @@ export default function SchedulePatternsPage() {
   })
 
   const { data: templates = [] } = useShiftTemplates()
-  const { data: employeeData } = useEmployees()
+  const { data: employeeData } = useEmployees({ excludeSuperAdmin: true })
   const employees = employeeData?.items ?? []
 
   const createMutation = useMutation({

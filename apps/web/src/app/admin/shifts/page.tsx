@@ -143,7 +143,7 @@ export default function ShiftsPage() {
     () => rawTemplates.map((t) => ({ ...t, startTime: toHHMM(t.startTime), endTime: toHHMM(t.endTime) })),
     [rawTemplates],
   )
-  const { data: employeeData } = useEmployees({ limit: 200 })
+  const { data: employeeData } = useEmployees({ limit: 200, excludeSuperAdmin: true })
   const employees = employeeData?.items ?? []
   const { data: organizations = [] } = useOrganizations()
   const { data: positions = [] } = usePositions()

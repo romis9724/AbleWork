@@ -18,7 +18,7 @@ import { useEmployees, type Employee } from '@/lib/query/employees'
  * PageHeader는 호출하는 page가 렌더한다.
  */
 export default function LeaveCompensationPanel() {
-  const { data: employeesData } = useEmployees({ isActive: true })
+  const { data: employeesData } = useEmployees({ isActive: true, excludeSuperAdmin: true })
   const employees: Employee[] = employeesData?.items ?? []
   const { data: leaveTypes = [] } = useLeaveTypes()
   const compensationAccrual = useCompensationAccrual()

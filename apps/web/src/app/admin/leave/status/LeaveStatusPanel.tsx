@@ -53,7 +53,7 @@ const defaultAccrualForm: AccrualForm = {
 export default function LeaveStatusPanel() {
   const toast = useToast()
 
-  const { data: employeesData } = useEmployees({ isActive: true })
+  const { data: employeesData } = useEmployees({ isActive: true, excludeSuperAdmin: true })
   const employees: Employee[] = employeesData?.items ?? []
 
   const { data: orgsRaw = [] } = useOrganizations()
