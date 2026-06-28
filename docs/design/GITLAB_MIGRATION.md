@@ -9,11 +9,27 @@
 | 단계 | 상태 | 비고 |
 |---|---|---|
 | Phase 1 — 그룹/프로젝트/미러 | ✅ 완료 | 그룹 `abmwc`(id 44, dhkim=Owner), 프로젝트 `abmwc/AbleWork`(id 5), 브랜치 17개 푸시, **G1 통과**(main HEAD `e43602f` 일치) |
-| Phase 2 — Runner/IAM(arm64) | ⏳ 대기 | EC2 SSH + AWS IAM 작업 필요 |
-| Phase 3·4 — `.gitlab-ci.yml` | ✅ 파일 작성 | 루트 `.gitlab-ci.yml` 생성. CI 동작은 Runner 등록(Phase 2) 후 |
-| Phase 5 — CI/CD 변수 | ⏳ 대기 | A-1은 변수 거의 없음 |
-| Phase 6 — GitHub push mirror | ⏳ 대기 | GitHub PAT(repo push) 필요 |
+| Phase 2 — Runner/IAM(arm64) | ✅ 완료 | **A-2 채택**(전용 t4g.medium). 아래 "A-2 실제 구성" 참조. 러너 online, 검증 valid |
+| Phase 3·4 — `.gitlab-ci.yml` | ✅ 완료 | 루트 `.gitlab-ci.yml` + CI Lint 통과. MR !1로 test 잡 E2E 검증 |
+| Phase 5 — CI/CD 변수 | ✅ N/A | A-2 인스턴스 프로파일 인증 → 정적 변수 없음 |
+| Phase 6 — GitHub push mirror | ❌ 제외 | 사용자 결정으로 미러 미설정(2026-06-29). GitLab 단독 정본 |
 | Phase 7 — 로컬 remote 전환 | ⏳ 대기 | 컷오버 시 |
+
+### A-2 실제 구성 (생성 리소스 — 운영 인계용)
+
+| 리소스 | 식별자 |
+|---|---|
+| 빌드 인스턴스 | `i-05a7153e5318c5098` (t4g.medium, arm64, AL2023, 30GB gp3), Name=`ablework-ci-build` |
+| 태그 | Project=ablework, Role=ci-build (**Env=prod 미부여** — deploy의 describe-instances가 운영 인스턴스만 찾도록) |
+| 보안그룹 | `sg-0a8284c7c84faf282` (`ablework-ci-sg`, 인바운드 없음·아웃바운드 전체) |
+| IAM 역할 | `ablework-ci-build-role` (인라인 `ablework-ci-deploy-inline` = gha-inline 복사 + `AmazonSSMManagedInstanceCore`) |
+| 인스턴스 프로파일 | `ablework-ci-build-profile` |
+| IMDS | hop limit **2** (도커 컨테이너 내 aws-cli가 인스턴스 역할 자격증명 획득하도록 필수) |
+| GitLab 러너 | project runner id 1, `ablework-ci-arm64`, tags `test,arm64,aws-deploy`, run_untagged=false, docker executor + privileged |
+
+> **트러블슈팅 기록**: GitLab `external_url`이 내부 LAN IP `192.168.10.153`이라 CI 소스 클론이 AWS에서 실패(`Failed to connect to 192.168.10.153 port 80`). **해결**: 러너 `config.toml`에 `clone_url = "http://59.29.231.14:20350"` 추가(서버 전역 설정 미변경, 러너 로컬 한정). 신규 러너 추가 시 동일 설정 필요.
+
+> **비용 메모**: t4g.medium 상시 가동 시 월 ~$24 + EBS 30GB. 절감하려면 배포 빈도가 낮으므로 유휴 시 인스턴스 stop, 배포 직전 start 자동화(추후). 현재는 상시 online.
 
 > **정정**: 실제 GitHub 브랜치는 **17개**(초기 인벤토리의 34개는 로컬 stale 원격추적 ref였음). PR 머지 ref(`refs/pull/*` 119개)는 방침대로 제외.
 
