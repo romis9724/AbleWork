@@ -36,9 +36,9 @@ export const ADMIN_NAV_MIN_LEVEL: Record<string, AccessLevel> = {
   // 인사 — 직원 관리는 조직관리자(조직 스코프), 조직(부서) 구조는 총괄관리자
   employees: AccessLevel.ORG_ADMIN,
   organizations: AccessLevel.GENERAL_ADMIN,
-  // 전자결재 — 거래성(현황/문서함/대장)은 ORG_ADMIN, 마스터 관리는 GENERAL_ADMIN
-  eStatus: AccessLevel.ORG_ADMIN,
-  eDocs: AccessLevel.ORG_ADMIN,
+  // 전자결재 — 회사 전역 현황/문서대장은 GENERAL_ADMIN, 개인 문서함은 ORG_ADMIN
+  eStatus: AccessLevel.GENERAL_ADMIN,
+  eDocs: AccessLevel.GENERAL_ADMIN,
   eInbox: AccessLevel.ORG_ADMIN,
   eLines: AccessLevel.GENERAL_ADMIN,
   eForms: AccessLevel.GENERAL_ADMIN,
@@ -116,6 +116,8 @@ export const ADMIN_ROUTE_GUARDS: ReadonlyArray<{ prefix: string; minLevel: Acces
   // 회사 추가는 SUPER_ADMIN 전용 (더 구체적인 prefix 가 /admin/settings 가드보다 우선)
   { prefix: '/admin/settings/company/add', minLevel: AccessLevel.SUPER_ADMIN },
   { prefix: '/admin/organizations', minLevel: AccessLevel.GENERAL_ADMIN },
+  { prefix: '/admin/approval/status', minLevel: AccessLevel.GENERAL_ADMIN },
+  { prefix: '/admin/approval/documents', minLevel: AccessLevel.GENERAL_ADMIN },
   { prefix: '/admin/approval/lines', minLevel: AccessLevel.GENERAL_ADMIN },
   { prefix: '/admin/approval/forms', minLevel: AccessLevel.GENERAL_ADMIN },
   { prefix: '/admin/approval/doc-managers', minLevel: AccessLevel.GENERAL_ADMIN },

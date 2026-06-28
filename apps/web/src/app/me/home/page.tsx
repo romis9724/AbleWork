@@ -10,6 +10,7 @@ import {
 import { useLeaveBalance } from '@/lib/query/leaves'
 import { useRequests, type Request } from '@/lib/query/requests'
 import { useAuthStore } from '@/stores/auth.store'
+import { currentEmployeeId } from '@/lib/auth-session'
 import { PageHead, KpiGrid, Kpi, CardBox } from '@/components/ab/Page'
 import { Badge, type BadgeKind } from '@/components/ab/atoms'
 import { HRI } from '@/components/ab/icons'
@@ -50,7 +51,9 @@ function unwrap<T>(raw: unknown): T[] {
 export default function HomePage() {
   const toast = useToast()
   const router = useRouter()
-  const employeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
+  // 본인 식별은 쿠키 토큰의 employeeId 우선(스토어-토큰 desync 방지)
+  const storeEmployeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
+  const employeeId = currentEmployeeId(storeEmployeeId)
 
   // 서버 상태 기반 출근/휴게 판정 — 새로고침해도 상태가 유지된다
   const { data: today, isLoading: isTodayLoading } = useMyTodayAttendance()

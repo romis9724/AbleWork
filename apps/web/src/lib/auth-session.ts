@@ -30,3 +30,23 @@ export function clearAuthCookies(): void {
   document.cookie = 'accessToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT'
   document.cookie = 'refreshToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT'
 }
+
+/** 쿠키의 accessToken 클레임을 읽는다 (백엔드가 인가에 사용하는 동일 출처). */
+export function currentClaims(): JwtClaims | null {
+  if (typeof document === 'undefined') return null
+  const match = document.cookie.match(/(?:^|;\s*)accessToken=([^;]+)/)
+  if (!match) return null
+  try {
+    return parseJwt(decodeURIComponent(match[1]))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 본인 식별용 employeeId — persist된 스토어가 아니라 현재 쿠키 토큰을 우선한다.
+ * 멀티컴퍼니에서 스토어와 토큰이 어긋나도(멀티탭 전환·stale persist) 백엔드 인가와 항상 일치한다.
+ */
+export function currentEmployeeId(fallback?: string): string {
+  return currentClaims()?.employeeId ?? fallback ?? ''
+}
