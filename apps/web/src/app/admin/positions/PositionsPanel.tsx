@@ -6,16 +6,11 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Card from '@mui/material/Card'
-import CardActions from '@mui/material/CardActions'
-import CardContent from '@mui/material/CardContent'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import Divider from '@mui/material/Divider'
-import Grid from '@mui/material/Grid'
 import IconButton from '@mui/material/IconButton'
 import Snackbar from '@mui/material/Snackbar'
 import TextField from '@mui/material/TextField'
@@ -24,6 +19,7 @@ import Tooltip from '@mui/material/Tooltip'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import EmptyState from '@/components/common/EmptyState'
@@ -141,6 +137,10 @@ export default function PositionsPanel() {
   const [editTarget, setEditTarget] = useState<Position | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Position | null>(null)
 
+  // 드래그 재정렬 상태
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
+
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false, message: '', severity: 'success',
   })
@@ -171,15 +171,32 @@ export default function PositionsPanel() {
     })
   }
 
-  // 정렬 순서 이동 — index 항목을 dir(-1=위, +1=아래)로 인접 항목과 교환
+  // 새 순서로 reorder 요청 (낙관적 업데이트는 훅에서 처리)
+  const applyOrder = (next: Position[]) => {
+    reorderMutation.mutate(next.map((p) => p.id), {
+      onError: () => showSnack('정렬 순서 변경에 실패했습니다.', 'error'),
+    })
+  }
+
+  // 보조: 위/아래 버튼 — index 항목을 dir(-1=위, +1=아래)로 인접 항목과 교환
   const handleMove = (index: number, dir: -1 | 1) => {
     const target = index + dir
     if (target < 0 || target >= positions.length) return
     const next = [...positions]
     ;[next[index], next[target]] = [next[target], next[index]]
-    reorderMutation.mutate(next.map((p) => p.id), {
-      onError: () => showSnack('정렬 순서 변경에 실패했습니다.', 'error'),
-    })
+    applyOrder(next)
+  }
+
+  // 드래그앤드롭: from 위치 항목을 to 위치로 이동
+  const handleDrop = (to: number) => {
+    const from = dragIndex
+    setDragIndex(null)
+    setOverIndex(null)
+    if (from === null || from === to) return
+    const next = [...positions]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    applyOrder(next)
   }
 
   if (isLoading) {
@@ -195,7 +212,7 @@ export default function PositionsPanel() {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 2 }}>
         <Typography variant="body2" color="text.secondary">
           {isGeneralAdmin && positions.length > 1
-            ? '위/아래 버튼으로 직위 표시 순서를 변경할 수 있습니다.'
+            ? '행을 드래그하거나 위/아래 버튼으로 표시 순서를 변경할 수 있습니다.'
             : ''}
         </Typography>
         {isGeneralAdmin && (
@@ -223,78 +240,125 @@ export default function PositionsPanel() {
           }
         />
       ) : (
-        <Grid container spacing={2}>
-          {positions.map((pos, index) => (
-            <Grid item xs={12} sm={6} md={3} key={pos.id}>
-              <Card variant="outlined" data-testid="pos-card">
-                <CardContent sx={{ pb: 0.5 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    {pos.color && (
-                      <Box
-                        sx={{
-                          width: 14,
-                          height: 14,
-                          borderRadius: '50%',
-                          bgcolor: pos.color,
-                          flexShrink: 0,
-                          border: '2px solid',
-                          borderColor: 'divider',
-                        }}
-                      />
-                    )}
-                    <Typography fontWeight={600} noWrap>{pos.name}</Typography>
-                  </Box>
-                  {pos.color && (
-                    <Typography variant="caption" color="text.disabled" mt={0.5} display="block">
-                      {pos.color}
-                    </Typography>
-                  )}
-                </CardContent>
+        <Box
+          sx={{
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1,
+            overflow: 'hidden',
+          }}
+        >
+          {positions.map((pos, index) => {
+            const isDragging = dragIndex === index
+            const isOver = overIndex === index && dragIndex !== null && dragIndex !== index
+            return (
+              <Box
+                key={pos.id}
+                data-testid="pos-row"
+                draggable={isGeneralAdmin && !reorderMutation.isPending}
+                onDragStart={() => setDragIndex(index)}
+                onDragOver={(e) => {
+                  if (dragIndex === null) return
+                  e.preventDefault()
+                  setOverIndex(index)
+                }}
+                onDrop={() => handleDrop(index)}
+                onDragEnd={() => {
+                  setDragIndex(null)
+                  setOverIndex(null)
+                }}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  px: 1.5,
+                  py: 1.25,
+                  borderBottom: index < positions.length - 1 ? '1px solid' : 'none',
+                  borderColor: 'divider',
+                  opacity: isDragging ? 0.4 : 1,
+                  boxShadow: isOver ? 'inset 0 2px 0 0 var(--mui-palette-primary-main, #f36f20)' : 'none',
+                  bgcolor: isOver ? 'action.hover' : 'transparent',
+                  transition: 'background-color 120ms',
+                  '&:hover': { bgcolor: 'action.hover' },
+                }}
+              >
                 {isGeneralAdmin && (
-                  <>
-                    <Divider />
-                    <CardActions sx={{ justifyContent: 'space-between', py: 0.5 }}>
-                      <Box>
-                        <Tooltip title="위로 이동">
-                          <span>
-                            <IconButton
-                              size="small"
-                              data-testid="pos-move-up-btn"
-                              disabled={index === 0 || reorderMutation.isPending}
-                              onClick={() => handleMove(index, -1)}
-                            >
-                              <KeyboardArrowUpIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                        <Tooltip title="아래로 이동">
-                          <span>
-                            <IconButton
-                              size="small"
-                              data-testid="pos-move-down-btn"
-                              disabled={index === positions.length - 1 || reorderMutation.isPending}
-                              onClick={() => handleMove(index, 1)}
-                            >
-                              <KeyboardArrowDownIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </Box>
-                      <Box>
-                        <IconButton size="small" data-testid="pos-edit-btn" onClick={() => setEditTarget(pos)}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton size="small" color="error" data-testid="pos-delete-btn" onClick={() => setDeleteTarget(pos)}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    </CardActions>
-                  </>
+                  <Tooltip title="드래그하여 순서 변경">
+                    <DragIndicatorIcon
+                      fontSize="small"
+                      sx={{ color: 'text.disabled', cursor: 'grab', flexShrink: 0 }}
+                    />
+                  </Tooltip>
                 )}
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+                <Typography
+                  variant="caption"
+                  color="text.disabled"
+                  sx={{ width: 20, textAlign: 'right', flexShrink: 0 }}
+                >
+                  {index + 1}
+                </Typography>
+                <Box
+                  sx={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: '50%',
+                    bgcolor: pos.color || 'divider',
+                    flexShrink: 0,
+                    border: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                />
+                <Typography fontWeight={600} noWrap sx={{ flexGrow: 1, minWidth: 0 }}>
+                  {pos.name}
+                </Typography>
+                {pos.color && (
+                  <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>
+                    {pos.color}
+                  </Typography>
+                )}
+                {isGeneralAdmin && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                    <Tooltip title="위로 이동">
+                      <span>
+                        <IconButton
+                          size="small"
+                          data-testid="pos-move-up-btn"
+                          disabled={index === 0 || reorderMutation.isPending}
+                          onClick={() => handleMove(index, -1)}
+                        >
+                          <KeyboardArrowUpIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="아래로 이동">
+                      <span>
+                        <IconButton
+                          size="small"
+                          data-testid="pos-move-down-btn"
+                          disabled={index === positions.length - 1 || reorderMutation.isPending}
+                          onClick={() => handleMove(index, 1)}
+                        >
+                          <KeyboardArrowDownIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <IconButton size="small" data-testid="pos-edit-btn" onClick={() => setEditTarget(pos)}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      data-testid="pos-delete-btn"
+                      onClick={() => setDeleteTarget(pos)}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                )}
+              </Box>
+            )
+          })}
+        </Box>
       )}
 
       {/* 추가 Dialog */}
