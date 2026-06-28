@@ -74,7 +74,11 @@ const mockPrisma = {
     findFirst: jest.fn(),
   },
   employeeOrganization: {
+    findFirst: jest.fn(),
     findMany: jest.fn(),
+  },
+  position: {
+    findFirst: jest.fn(),
   },
   shift: {
     findFirst: jest.fn(),
@@ -129,6 +133,9 @@ describe('AttendancesService', () => {
     )
     // 조직 경계 가드 기본 통과: 요청자·대상 모두 ORG_ID 소속으로 간주
     mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: ORG_ID }])
+    // 조직 소속/직무 검증 기본 통과
+    mockPrisma.employeeOrganization.findFirst.mockResolvedValue({ employeeId: EMPLOYEE_ID })
+    mockPrisma.position.findFirst.mockResolvedValue({ id: 'pos-1' })
   })
 
   // ── determineStatus ──────────────────────────────────────────────────────
@@ -277,6 +284,50 @@ describe('AttendancesService', () => {
       await expect(
         service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'gps', timeclockAreaId: 'other-company-area' }),
       ).rejects.toThrow(NotFoundException)
+    })
+
+    it('선택한 직무를 출근 기록에 저장한다', async () => {
+      await service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
+        method: 'web',
+        organizationId: ORG_ID,
+        positionId: 'pos-1',
+      })
+
+      expect(mockPrisma.attendance.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ positionId: 'pos-1' }) }),
+      )
+    })
+
+    it('본인이 소속되지 않은 조직으로 출근하면 ATTENDANCE_ORG_NOT_MEMBER로 거부한다', async () => {
+      mockPrisma.employeeOrganization.findFirst.mockResolvedValue(null) // 소속 아님
+
+      await expect(
+        service.clockIn(COMPANY_ID, EMPLOYEE_ID, { method: 'web', organizationId: 'other-org' }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'ATTENDANCE_ORG_NOT_MEMBER' }),
+      })
+      expect(mockPrisma.attendance.create).not.toHaveBeenCalled()
+    })
+
+    it('조직과 장소가 불일치하면 TIMECLOCK_AREA_ORG_MISMATCH로 거부한다', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue({
+        id: 'area-1',
+        organizationId: 'org-other',
+        authMethod: 'none',
+        locationLat: null,
+        locationLng: null,
+        locationRadiusMeters: null,
+      })
+
+      await expect(
+        service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
+          method: 'web',
+          organizationId: ORG_ID,
+          timeclockAreaId: 'area-1',
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'TIMECLOCK_AREA_ORG_MISMATCH' }),
+      })
     })
   })
 
@@ -428,19 +479,69 @@ describe('AttendancesService', () => {
       })
     })
 
-    it('gps_or_wifi 장소는 반경을 초과해도 거부하지 않는다 (WiFi 검증 수단 부재 → 통과)', async () => {
+    it('gps_or_wifi 장소는 앱(channel=app)에서 반경을 초과해도 거부하지 않는다 (WiFi 폴백)', async () => {
       mockPrisma.timeclockArea.findFirst.mockResolvedValue(
         makeArea({ authMethod: 'gps_or_wifi' }),
       )
 
       const result = await service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
         method: 'gps',
+        channel: 'app',
         timeclockAreaId: 'area-1',
         lat: 37.6,
         lng: 127.0,
       })
 
       expect(result).toBeDefined()
+    })
+
+    it('gps_or_wifi 장소는 웹(channel=web)에서 반경 초과 시 거부한다 (WiFi 수단 없음 → GPS 필수)', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(
+        makeArea({ authMethod: 'gps_or_wifi' }),
+      )
+
+      await expect(
+        service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
+          method: 'gps',
+          channel: 'web',
+          timeclockAreaId: 'area-1',
+          lat: 37.6,
+          lng: 127.0,
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'ATTENDANCE_OUT_OF_RANGE' }),
+      })
+    })
+
+    it('웹(channel=web)에서 WiFi 필수 장소(wifi)는 ATTENDANCE_WIFI_APP_ONLY로 거부한다', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(makeArea({ authMethod: 'wifi' }))
+
+      await expect(
+        service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
+          method: 'web',
+          channel: 'web',
+          timeclockAreaId: 'area-1',
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'ATTENDANCE_WIFI_APP_ONLY' }),
+      })
+      expect(mockPrisma.attendance.create).not.toHaveBeenCalled()
+    })
+
+    it('웹(channel=web)에서 gps_and_wifi 장소도 ATTENDANCE_WIFI_APP_ONLY로 거부한다', async () => {
+      mockPrisma.timeclockArea.findFirst.mockResolvedValue(makeArea({ authMethod: 'gps_and_wifi' }))
+
+      await expect(
+        service.clockIn(COMPANY_ID, EMPLOYEE_ID, {
+          method: 'gps',
+          channel: 'web',
+          timeclockAreaId: 'area-1',
+          lat: AREA_LAT,
+          lng: AREA_LNG,
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'ATTENDANCE_WIFI_APP_ONLY' }),
+      })
     })
 
     it("authMethod가 'none'이면 GPS 검증을 생략한다", async () => {

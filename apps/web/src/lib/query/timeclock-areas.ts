@@ -19,10 +19,14 @@ export interface TimeclockArea {
 
 const QUERY_KEY = ['timeclock-areas']
 
-export const useTimeclockAreas = () =>
+// organizationId 지정 시 해당 조직의 장소만 조회 (무일정 출근 모달에서 선택 조직 기준)
+export const useTimeclockAreas = (organizationId?: string) =>
   useQuery({
-    queryKey: QUERY_KEY,
-    queryFn: () => apiClient.get('/timeclock-areas') as Promise<TimeclockArea[]>,
+    queryKey: [...QUERY_KEY, organizationId ?? 'all'],
+    queryFn: () =>
+      apiClient.get('/timeclock-areas', {
+        params: organizationId ? { organizationId } : {},
+      }) as Promise<TimeclockArea[]>,
     staleTime: 60_000,
   })
 

@@ -32,7 +32,8 @@ export const authApi = {
 // ── 근태 ────────────────────────────────────────────────────────────────────
 export const attendanceApi = {
   clockIn: (lat: number, lng: number): Promise<Attendance> =>
-    apiClient.post('/attendances/clock-in', { lat, lng, method: 'gps' }) as Promise<Attendance>,
+    // channel: 'app' — 모바일은 WiFi 인증 장소도 사용 가능 (웹은 'web' 기본·WiFi 장소 제외)
+    apiClient.post('/attendances/clock-in', { lat, lng, method: 'gps', channel: 'app' }) as Promise<Attendance>,
   clockOut: (lat: number, lng: number): Promise<Attendance> =>
     apiClient.post('/attendances/clock-out', { lat, lng, method: 'gps' }) as Promise<Attendance>,
   /** 내 출퇴근 내역 — EMPLOYEE 는 서버에서 본인으로 강제 스코핑됨 */

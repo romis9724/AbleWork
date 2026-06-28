@@ -193,14 +193,34 @@ export class AttendancesService {
   // ── 출근 기록 ───────────────────────────────────────────────────────────────
 
   async clockIn(companyId: string, employeeId: string, dto: ClockInDto) {
-    const { lat, lng, method, timeclockAreaId, note } = dto
+    const { lat, lng, method, organizationId, timeclockAreaId, positionId, note } = dto
+    const channel = dto.channel ?? 'web'
 
     await this.assertEmployee(companyId, employeeId)
 
-    // 출퇴근 장소가 지정된 경우 자사 소속인지 검증 (멀티테넌시) + GPS 반경 검증
+    // 선택한 조직이 본인 소속인지 검증 (무일정 출근 모달에서 보낸 조직)
+    if (organizationId) {
+      await this.assertOrgMembership(employeeId, organizationId)
+    }
+
+    // 선택한 직무가 자사 소속·활성인지 검증
+    if (positionId) {
+      await this.assertPositionBelongsToCompany(companyId, positionId)
+    }
+
+    // 출퇴근 장소가 지정된 경우 자사 소속 검증(멀티테넌시) + 채널/조직 정합 + GPS 반경 검증
     if (timeclockAreaId) {
       const area = await this.assertTimeclockAreaBelongsToCompany(companyId, timeclockAreaId)
-      this.assertWithinTimeclockArea(area, lat, lng)
+      // 웹은 WiFi 검증 수단이 없어 WiFi 필수 장소(wifi/gps_and_wifi)를 사용할 수 없다 (앱 전용)
+      this.assertAreaChannelAllowed(area, channel)
+      // 조직과 장소를 함께 보낸 경우, 장소가 그 조직 소속인지 확인
+      if (organizationId && area.organizationId !== organizationId) {
+        throw new BadRequestException({
+          code: 'TIMECLOCK_AREA_ORG_MISMATCH',
+          message: '선택한 조직에 속하지 않는 출퇴근 장소입니다.',
+        })
+      }
+      this.assertWithinTimeclockArea(area, lat, lng, channel)
     }
 
     // 이미 진행 중인 출근 기록 확인
@@ -237,6 +257,7 @@ export class AttendancesService {
         employeeId,
         shiftId: shift?.id ?? null,
         timeclockAreaId: timeclockAreaId ?? null,
+        positionId: positionId ?? null,
         clockInAt: clockInDate,
         clockInLat: lat ?? null,
         clockInLng: lng ?? null,
@@ -833,6 +854,7 @@ export class AttendancesService {
       where: { id: timeclockAreaId, isActive: true, organization: { companyId } },
       select: {
         id: true,
+        organizationId: true,
         authMethod: true,
         locationLat: true,
         locationLng: true,
@@ -846,6 +868,62 @@ export class AttendancesService {
       })
     }
     return area
+  }
+
+  /**
+   * 직원이 해당 조직에 소속되어 있는지 검증 (무일정 출근 모달의 조직 선택 정합).
+   */
+  private async assertOrgMembership(employeeId: string, organizationId: string): Promise<void> {
+    const membership = await this.prisma.employeeOrganization.findFirst({
+      where: { employeeId, organizationId },
+      select: { employeeId: true },
+    })
+    if (!membership) {
+      throw new BadRequestException({
+        code: 'ATTENDANCE_ORG_NOT_MEMBER',
+        message: '본인이 소속되지 않은 조직으로는 출근할 수 없습니다.',
+      })
+    }
+  }
+
+  /**
+   * 선택한 직무가 자사 소속이며 활성인지 검증.
+   */
+  private async assertPositionBelongsToCompany(
+    companyId: string,
+    positionId: string,
+  ): Promise<void> {
+    const position = await this.prisma.position.findFirst({
+      where: { id: positionId, companyId, isActive: true },
+      select: { id: true },
+    })
+    if (!position) {
+      throw new NotFoundException({
+        code: 'POSITION_NOT_FOUND',
+        message: '직무를 찾을 수 없습니다.',
+      })
+    }
+  }
+
+  /**
+   * 채널별 출퇴근 장소 사용 가능 여부 검증.
+   *
+   * 웹은 WiFi 검증 수단이 없으므로 WiFi가 필수인 장소(wifi 단독, gps_and_wifi)는 사용할 수 없다.
+   * 모바일 앱(channel: 'app')만 WiFi 장소를 사용할 수 있다. (프론트에서도 웹에는 노출하지 않음 — 이중 방어)
+   */
+  private assertAreaChannelAllowed(area: { authMethod: string }, channel: string): void {
+    if (channel !== 'web') {
+      return
+    }
+    const requiresWifi =
+      area.authMethod === TimeclockAuthMethod.WIFI ||
+      area.authMethod === TimeclockAuthMethod.GPS_AND_WIFI
+    if (requiresWifi) {
+      throw new BadRequestException({
+        code: 'ATTENDANCE_WIFI_APP_ONLY',
+        message: 'WiFi 인증이 필요한 출퇴근 장소는 모바일 앱에서만 사용할 수 있습니다.',
+      })
+    }
   }
 
   /**
@@ -884,12 +962,14 @@ export class AttendancesService {
    * - 장소 좌표 미설정 또는 반경 0/null → 무제한 허용
    * - lat/lng 미전송 + gps 필수 장소 → ATTENDANCE_LOCATION_REQUIRED
    * - 반경 초과 → ATTENDANCE_OUT_OF_RANGE
-   * - gps_or_wifi는 GPS 검증 실패해도 거부하지 않음 (현재 WiFi 검증 수단이 없으므로 통과)
+   * - gps_or_wifi는 모바일 앱(channel='app')에서만 GPS 실패 시 WiFi로 폴백(통과)한다.
+   *   웹(channel='web')은 WiFi 검증 수단이 없으므로 gps_or_wifi도 GPS 필수로 취급한다.
    */
   private assertWithinTimeclockArea(
     area: TimeclockAreaForGps,
     lat?: number,
     lng?: number,
+    channel = 'web',
   ): void {
     if (!GPS_AUTH_METHODS.includes(area.authMethod)) {
       return // none / wifi → GPS 검증 생략
@@ -902,9 +982,8 @@ export class AttendancesService {
       return // 반경 0 또는 null = 무제한 허용
     }
 
-    // TODO: WiFi SSID 검증 수단 도입 시 gps_or_wifi는 GPS 실패 → WiFi 검증으로 폴백할 것.
-    //       현재는 WiFi 검증 수단이 없으므로 gps_or_wifi는 GPS 실패 시 통과시킨다.
-    const isGpsOptional = area.authMethod === TimeclockAuthMethod.GPS_OR_WIFI
+    // gps_or_wifi는 앱에서만 GPS 실패 시 WiFi 검증으로 폴백한다 (웹은 WiFi 수단 없음 → GPS 필수).
+    const isGpsOptional = area.authMethod === TimeclockAuthMethod.GPS_OR_WIFI && channel === 'app'
 
     if (lat == null || lng == null) {
       if (isGpsOptional) {
