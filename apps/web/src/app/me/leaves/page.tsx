@@ -105,7 +105,7 @@ export default function MyLeavesPage() {
         onClose={resetDialog}
         eyebrow="Leave Request"
         title="휴가 신청"
-        maxWidth={460}
+        maxWidth={600}
         footer={
           <>
             <button className="btn btn-ghost" onClick={resetDialog}>취소</button>

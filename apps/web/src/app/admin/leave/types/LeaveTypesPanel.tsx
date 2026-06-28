@@ -11,6 +11,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import FormHelperText from '@mui/material/FormHelperText'
 import FormLabel from '@mui/material/FormLabel'
 import IconButton from '@mui/material/IconButton'
 import InputLabel from '@mui/material/InputLabel'
@@ -27,6 +28,7 @@ import TableCell from '@mui/material/TableCell'
 import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
+import TableSortLabel from '@mui/material/TableSortLabel'
 import Paper from '@mui/material/Paper'
 import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
@@ -99,6 +101,48 @@ const SPECIAL_OPTIONS: { value: string; label: string }[] = [
   { value: 'holiday', label: '휴일' },
 ]
 
+// 각 설정 항목 설명 (초기 셋팅 시 매뉴얼 없이 이해할 수 있도록)
+const FIELD_HELP = {
+  displayName: '직원 화면에 표시할 이름. 비우면 이름을 그대로 사용합니다.',
+  code: '연동/리포트에서 식별하는 영문 코드 (예: ANNUAL). 회사 내 고유.',
+  group: '잔액·발생규칙이 그룹 단위로 묶입니다. 휴가 신청 시 같은 그룹 잔액에서 차감됩니다.',
+  timeOption:
+    '하루종일: 일 단위로 신청. 시간입력: 시작·종료 시간을 지정하는 시간 단위 휴가(8시간=1일 기준).',
+  deductionDays: '하루 사용 시 차감되는 일수. 1=종일, 0.5=반차. 시간 단위 유형은 유급 시간으로 환산됩니다.',
+  paidHours: '시간 단위 휴가의 유급 시간. 8시간=1일 기준으로 차감 일수를 환산합니다. (시간입력 유형 필수)',
+  specialOption: '장기/휴무/휴일 등 특수 처리 유형. 일반 휴가는 “없음”.',
+  consecutive: '한 번에 신청 가능한 최소·최대 연속 일수 제한. 비우면 제한 없음.',
+} as const
+
+// 유형 목록 정렬 키
+type TypeSortKey = 'group' | 'paidHours' | 'deductionDays'
+
+// 유형 폼 검증 — 필드별 에러 메시지 맵 (빈 객체면 유효)
+function validateTypeForm(form: TypeForm): Partial<Record<keyof TypeForm, string>> {
+  const errors: Partial<Record<keyof TypeForm, string>> = {}
+  if (!form.name.trim()) errors.name = '이름을 입력하세요.'
+  if (!form.groupId) errors.groupId = '그룹을 선택하세요.'
+
+  const deduction = Number(form.deductionDays)
+  if (form.deductionDays === '' || Number.isNaN(deduction) || deduction < 0) {
+    errors.deductionDays = '0 이상의 숫자를 입력하세요.'
+  }
+
+  if (form.timeOption === 'hourly') {
+    const hours = Number(form.paidHours)
+    if (form.paidHours === '' || Number.isNaN(hours) || hours <= 0) {
+      errors.paidHours = '시간입력 유형은 유급 시간(1 이상)이 필요합니다.'
+    }
+  }
+
+  const min = form.minConsecutiveDays !== '' ? Number(form.minConsecutiveDays) : null
+  const max = form.maxConsecutiveDays !== '' ? Number(form.maxConsecutiveDays) : null
+  if (min !== null && max !== null && min > max) {
+    errors.maxConsecutiveDays = '최대 연속 일수는 최소보다 크거나 같아야 합니다.'
+  }
+  return errors
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -133,6 +177,37 @@ export default function LeaveTypesPanel() {
   const [typeDialogOpen, setTypeDialogOpen] = useState(false)
   const [editingType, setEditingType] = useState<LeaveType | null>(null)
   const [typeForm, setTypeForm] = useState<TypeForm>(defaultTypeForm)
+  const [typeSubmitAttempted, setTypeSubmitAttempted] = useState(false)
+
+  // 유형 목록 필터·정렬
+  const [typeGroupFilter, setTypeGroupFilter] = useState('')
+  const [typeSortKey, setTypeSortKey] = useState<TypeSortKey>('group')
+  const [typeSortDir, setTypeSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const typeErrors = validateTypeForm(typeForm)
+  const hasTypeErrors = Object.keys(typeErrors).length > 0
+
+  function toggleTypeSort(key: TypeSortKey) {
+    if (typeSortKey === key) {
+      setTypeSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setTypeSortKey(key)
+      setTypeSortDir('asc')
+    }
+  }
+
+  const displayedTypes = [...types]
+    .filter((t) => !typeGroupFilter || t.group?.id === typeGroupFilter)
+    .sort((a, b) => {
+      const dir = typeSortDir === 'asc' ? 1 : -1
+      if (typeSortKey === 'group') {
+        return (a.group?.name ?? '').localeCompare(b.group?.name ?? '', 'ko') * dir
+      }
+      if (typeSortKey === 'paidHours') {
+        return ((a.paidHours ?? 0) - (b.paidHours ?? 0)) * dir
+      }
+      return (Number(a.deductionDays) - Number(b.deductionDays)) * dir
+    })
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<LeaveType | null>(null)
@@ -202,11 +277,13 @@ export default function LeaveTypesPanel() {
   function openAddType() {
     setEditingType(null)
     setTypeForm(defaultTypeForm)
+    setTypeSubmitAttempted(false)
     setTypeDialogOpen(true)
   }
 
   function openEditType(t: LeaveType) {
     setEditingType(t)
+    setTypeSubmitAttempted(false)
     setTypeForm({
       name: t.name,
       displayName: t.displayName ?? '',
@@ -224,7 +301,8 @@ export default function LeaveTypesPanel() {
   }
 
   async function handleSaveType() {
-    if (!typeForm.name.trim()) return
+    setTypeSubmitAttempted(true)
+    if (Object.keys(validateTypeForm(typeForm)).length > 0) return
     const payload = {
       name: typeForm.name.trim(),
       displayName: typeForm.displayName.trim() || undefined,
@@ -372,8 +450,24 @@ export default function LeaveTypesPanel() {
       {/* ── Tab 1: Types ───────────────────────────────────────────────────────── */}
       {tab === 1 && (
         <>
-          {canManageLeave && (
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 2 }}>
+            <FormControl size="small" sx={{ minWidth: 180 }}>
+              <InputLabel>그룹 필터</InputLabel>
+              <Select
+                value={typeGroupFilter}
+                label="그룹 필터"
+                onChange={(e) => setTypeGroupFilter(e.target.value)}
+                data-testid="leave-type-group-filter"
+              >
+                <MenuItem value="">전체 그룹</MenuItem>
+                {groups.map((g: LeaveGroup) => (
+                  <MenuItem key={g.id} value={g.id}>
+                    {g.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {canManageLeave && (
               <Button
                 variant="contained"
                 startIcon={<AddIcon />}
@@ -382,8 +476,8 @@ export default function LeaveTypesPanel() {
               >
                 유형 추가
               </Button>
-            </Box>
-          )}
+            )}
+          </Box>
           {typesLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
               <CircularProgress />
@@ -415,20 +509,46 @@ export default function LeaveTypesPanel() {
                   <TableRow sx={{ bgcolor: 'background.default' }}>
                     <TableCell>유형명</TableCell>
                     <TableCell>표시 이름</TableCell>
-                    <TableCell>그룹</TableCell>
+                    <TableCell sortDirection={typeSortKey === 'group' ? typeSortDir : false}>
+                      <TableSortLabel
+                        active={typeSortKey === 'group'}
+                        direction={typeSortKey === 'group' ? typeSortDir : 'asc'}
+                        onClick={() => toggleTypeSort('group')}
+                      >
+                        그룹
+                      </TableSortLabel>
+                    </TableCell>
                     <TableCell>단위</TableCell>
-                    <TableCell>차감 일수</TableCell>
+                    <TableCell sortDirection={typeSortKey === 'paidHours' ? typeSortDir : false}>
+                      <TableSortLabel
+                        active={typeSortKey === 'paidHours'}
+                        direction={typeSortKey === 'paidHours' ? typeSortDir : 'asc'}
+                        onClick={() => toggleTypeSort('paidHours')}
+                      >
+                        차감 시간
+                      </TableSortLabel>
+                    </TableCell>
+                    <TableCell sortDirection={typeSortKey === 'deductionDays' ? typeSortDir : false}>
+                      <TableSortLabel
+                        active={typeSortKey === 'deductionDays'}
+                        direction={typeSortKey === 'deductionDays' ? typeSortDir : 'asc'}
+                        onClick={() => toggleTypeSort('deductionDays')}
+                      >
+                        차감 일수
+                      </TableSortLabel>
+                    </TableCell>
                     <TableCell>상태</TableCell>
                     <TableCell align="right">액션</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {types.map((t: LeaveType) => (
+                  {displayedTypes.map((t: LeaveType) => (
                     <TableRow key={t.id} hover data-testid="leave-type-row">
                       <TableCell sx={{ fontWeight: 600 }}>{t.name}</TableCell>
                       <TableCell>{t.displayName ?? '—'}</TableCell>
                       <TableCell>{t.group?.name ?? '—'}</TableCell>
                       <TableCell>{t.timeOption === 'full_day' ? '하루' : '시간 단위'}</TableCell>
+                      <TableCell>{t.paidHours != null ? `${t.paidHours}시간` : '—'}</TableCell>
                       <TableCell>{t.deductionDays}일</TableCell>
                       <TableCell>
                         <Chip
@@ -522,6 +642,8 @@ export default function LeaveTypesPanel() {
             value={typeForm.name}
             onChange={(e) => setTypeForm((f) => ({ ...f, name: e.target.value }))}
             fullWidth
+            error={typeSubmitAttempted && !!typeErrors.name}
+            helperText={(typeSubmitAttempted && typeErrors.name) || '관리·리포트에서 사용하는 휴가 유형의 정식 이름.'}
             inputProps={{ 'data-testid': 'leave-type-name-input' }}
           />
           <Box sx={{ display: 'flex', gap: 2 }}>
@@ -530,6 +652,7 @@ export default function LeaveTypesPanel() {
               value={typeForm.displayName}
               onChange={(e) => setTypeForm((f) => ({ ...f, displayName: e.target.value }))}
               fullWidth
+              helperText={FIELD_HELP.displayName}
             />
             <TextField
               label="코드 (선택)"
@@ -537,22 +660,24 @@ export default function LeaveTypesPanel() {
               onChange={(e) => setTypeForm((f) => ({ ...f, code: e.target.value }))}
               inputProps={{ maxLength: 20 }}
               fullWidth
+              helperText={FIELD_HELP.code}
             />
           </Box>
-          <FormControl fullWidth>
+          <FormControl fullWidth required error={typeSubmitAttempted && !!typeErrors.groupId}>
             <InputLabel>그룹</InputLabel>
             <Select
               value={typeForm.groupId}
               label="그룹"
               onChange={(e) => setTypeForm((f) => ({ ...f, groupId: e.target.value }))}
+              data-testid="leave-type-group-select"
             >
-              <MenuItem value="">없음</MenuItem>
               {groups.map((g: LeaveGroup) => (
                 <MenuItem key={g.id} value={g.id}>
                   {g.name}
                 </MenuItem>
               ))}
             </Select>
+            <FormHelperText>{(typeSubmitAttempted && typeErrors.groupId) || FIELD_HELP.group}</FormHelperText>
           </FormControl>
           <FormControl component="fieldset">
             <FormLabel component="legend">시간 옵션</FormLabel>
@@ -564,6 +689,7 @@ export default function LeaveTypesPanel() {
               <FormControlLabel value="full_day" control={<Radio />} label="하루종일" />
               <FormControlLabel value="hourly" control={<Radio />} label="시간입력" />
             </RadioGroup>
+            <FormHelperText>{FIELD_HELP.timeOption}</FormHelperText>
           </FormControl>
           <Box sx={{ display: 'flex', gap: 2 }}>
             <TextField
@@ -573,14 +699,18 @@ export default function LeaveTypesPanel() {
               onChange={(e) => setTypeForm((f) => ({ ...f, deductionDays: e.target.value }))}
               inputProps={{ min: 0, step: 0.5 }}
               fullWidth
+              error={typeSubmitAttempted && !!typeErrors.deductionDays}
+              helperText={(typeSubmitAttempted && typeErrors.deductionDays) || FIELD_HELP.deductionDays}
             />
             <TextField
-              label="유급 시간 (선택)"
+              label={typeForm.timeOption === 'hourly' ? '유급 시간 (필수)' : '유급 시간 (선택)'}
               type="number"
               value={typeForm.paidHours}
               onChange={(e) => setTypeForm((f) => ({ ...f, paidHours: e.target.value }))}
               inputProps={{ min: 0, step: 1 }}
               fullWidth
+              error={typeSubmitAttempted && !!typeErrors.paidHours}
+              helperText={(typeSubmitAttempted && typeErrors.paidHours) || FIELD_HELP.paidHours}
             />
           </Box>
           <FormControl fullWidth>
@@ -597,6 +727,7 @@ export default function LeaveTypesPanel() {
                 </MenuItem>
               ))}
             </Select>
+            <FormHelperText>{FIELD_HELP.specialOption}</FormHelperText>
           </FormControl>
           <Box sx={{ display: 'flex', gap: 2 }}>
             <TextField
@@ -606,6 +737,7 @@ export default function LeaveTypesPanel() {
               onChange={(e) => setTypeForm((f) => ({ ...f, minConsecutiveDays: e.target.value }))}
               inputProps={{ min: 1, step: 1 }}
               fullWidth
+              helperText={FIELD_HELP.consecutive}
             />
             <TextField
               label="최대 연속 일수 (선택)"
@@ -614,6 +746,8 @@ export default function LeaveTypesPanel() {
               onChange={(e) => setTypeForm((f) => ({ ...f, maxConsecutiveDays: e.target.value }))}
               inputProps={{ min: 1, step: 1 }}
               fullWidth
+              error={typeSubmitAttempted && !!typeErrors.maxConsecutiveDays}
+              helperText={(typeSubmitAttempted && typeErrors.maxConsecutiveDays) || ' '}
             />
           </Box>
           <FormControlLabel
@@ -631,7 +765,7 @@ export default function LeaveTypesPanel() {
           <Button
             variant="contained"
             onClick={handleSaveType}
-            disabled={isTypeSaving || !typeForm.name.trim()}
+            disabled={isTypeSaving || (typeSubmitAttempted && hasTypeErrors)}
             data-testid="leave-type-submit-btn"
           >
             {editingType ? '수정' : '추가'}
