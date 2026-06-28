@@ -66,11 +66,21 @@ export const useNowAtWork = (organizationId?: string) =>
     refetchInterval: 30_000,
   })
 
+export interface ClockInPayload {
+  lat?: number
+  lng?: number
+  method: string
+  organizationId?: string
+  timeclockAreaId?: string
+  positionId?: string
+  channel?: 'web' | 'app'
+  note?: string
+}
+
 export const useClockIn = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { lat?: number; lng?: number; method: string }) =>
-      apiClient.post('/attendances/clock-in', data),
+    mutationFn: (data: ClockInPayload) => apiClient.post('/attendances/clock-in', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }

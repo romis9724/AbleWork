@@ -1,7 +1,7 @@
 'use client'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  useClockIn,
   useClockOut,
   useBreakStart,
   useBreakEnd,
@@ -15,6 +15,7 @@ import { PageHead, KpiGrid, Kpi, CardBox } from '@/components/ab/Page'
 import { Badge, type BadgeKind } from '@/components/ab/atoms'
 import { HRI } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
+import { ClockInModal } from '@/components/attendance/ClockInModal'
 
 const REQUEST_TYPE_LABEL: Record<string, string> = {
   LEAVE_CREATE: '휴가 신청',
@@ -62,7 +63,7 @@ export default function HomePage() {
   const clockedOut = !!attendance?.clockOutAt
   const onBreak = !!today?.openBreak
 
-  const clockInMutation = useClockIn()
+  const [clockInOpen, setClockInOpen] = useState(false)
   const clockOutMutation = useClockOut()
   const breakStartMutation = useBreakStart()
   const breakEndMutation = useBreakEnd()
@@ -82,7 +83,6 @@ export default function HomePage() {
 
   const busy =
     isTodayLoading ||
-    clockInMutation.isPending ||
     clockOutMutation.isPending ||
     breakStartMutation.isPending ||
     breakEndMutation.isPending
@@ -100,17 +100,6 @@ export default function HomePage() {
     } catch {
       toast('위치 정보를 가져오지 못했습니다')
       return null
-    }
-  }
-
-  const handleClockIn = async () => {
-    const coords = await withGeolocation()
-    if (!coords) return
-    try {
-      await clockInMutation.mutateAsync({ ...coords, method: 'gps' })
-      toast('출근 기록이 완료됐습니다')
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '출근 처리 중 오류가 발생했습니다')
     }
   }
 
@@ -172,8 +161,8 @@ export default function HomePage() {
 
         <div className="me-clock-actions">
           {!clockedIn && !clockedOut && (
-            <button data-testid="me-clock-in-btn" className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockIn}>
-              {clockInMutation.isPending ? '처리 중…' : '출근하기'}
+            <button data-testid="me-clock-in-btn" className="btn btn-primary btn-lg" disabled={busy} onClick={() => setClockInOpen(true)}>
+              출근하기
             </button>
           )}
 
@@ -250,6 +239,12 @@ export default function HomePage() {
           </div>
         </CardBox>
       )}
+
+      <ClockInModal
+        open={clockInOpen}
+        employeeId={employeeId}
+        onClose={() => setClockInOpen(false)}
+      />
     </>
   )
 }

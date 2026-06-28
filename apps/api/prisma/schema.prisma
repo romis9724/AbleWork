@@ -274,6 +274,7 @@ model Position {
   employees EmployeePosition[]
   approvalRuleDetails ApprovalRuleDetail[]
   standardizationRules StandardizationRule[]
+  attendances Attendance[]
 
   @@map("positions")
 }
@@ -483,6 +484,7 @@ model Attendance {
   employeeId      String    @map("employee_id")
   shiftId         String?   @unique @map("shift_id")
   timeclockAreaId String?   @map("timeclock_area_id")
+  positionId      String?   @map("position_id")
   clockInAt       DateTime  @map("clock_in_at")
   clockOutAt      DateTime? @map("clock_out_at")
   clockInLat      Decimal?  @map("clock_in_lat") @db.Decimal(10, 7)
@@ -503,11 +505,13 @@ model Attendance {
   employee      Employee       @relation(fields: [employeeId], references: [id])
   shift         Shift?         @relation(fields: [shiftId], references: [id])
   timeclockArea TimeclockArea? @relation(fields: [timeclockAreaId], references: [id])
+  position      Position?      @relation(fields: [positionId], references: [id])
   confirmer     Employee?      @relation("AttendanceConfirmer", fields: [confirmedBy], references: [id])
   breaks        AttendanceBreak[]
 
   @@index([employeeId, clockInAt])
   @@index([employeeId, status])
+  @@index([positionId])
   @@map("attendances")
 }
 

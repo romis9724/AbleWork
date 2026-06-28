@@ -392,6 +392,11 @@ export default function TimeclockAreasPage() {
         }
       />
 
+      <Alert severity="info" sx={{ mb: 2 }}>
+        장소는 소속 <b>조직별로 직원의 출근 모달</b>에 표시됩니다. <b>WiFi 인증이 필요한 장소(WiFi · GPS+WiFi)는 모바일 앱 전용</b>이며,
+        웹 출근에서는 GPS·인증 없음 장소만 선택할 수 있습니다.
+      </Alert>
+
       {areas.length === 0 ? (
         <EmptyState
           message="등록된 출퇴근 장소가 없습니다."
@@ -415,11 +420,16 @@ export default function TimeclockAreasPage() {
                       <CardContent sx={{ pb: 1 }}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <Typography variant="subtitle1" fontWeight={600}>{area.name}</Typography>
-                          <Chip
-                            label={AUTH_LABELS[area.authMethod]}
-                            color={AUTH_COLORS[area.authMethod]}
-                            size="small"
-                          />
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            <Chip
+                              label={AUTH_LABELS[area.authMethod]}
+                              color={AUTH_COLORS[area.authMethod]}
+                              size="small"
+                            />
+                            {(area.authMethod === 'wifi' || area.authMethod === 'gps_and_wifi') && (
+                              <Chip label="앱 전용" color="default" variant="outlined" size="small" />
+                            )}
+                          </Box>
                         </Box>
                         {(area.authMethod === 'gps' || area.authMethod === 'gps_or_wifi' || area.authMethod === 'gps_and_wifi') && area.locationLat != null && (
                           <Typography variant="body2" color="text.secondary" mt={1} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
