@@ -105,6 +105,10 @@ const mockPrisma = {
   },
   leaveType: {
     findFirst: jest.fn(),
+    findUnique: jest.fn().mockResolvedValue({ groupId: 'lg-1' }),
+    findMany: jest.fn().mockResolvedValue([
+      { id: 'lt-1', deductionDays: 1, timeOption: 'full_day', isActive: true },
+    ]),
   },
   leaveBalance: {
     findUnique: jest.fn(),
@@ -419,6 +423,27 @@ describe('RequestsService', () => {
 
       expect(mockPrisma.leave.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ daysUsed: 0.5 }) }),
+      )
+    })
+
+    it('시간 단위 휴가 신청 시간이 유형 설정 시간(paidHours)을 초과하면 거부한다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      // 09:00~15:00 = 6시간 > 설정 4시간
+      const dto = {
+        type: 'LEAVE_CREATE' as const,
+        payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15', startTime: '09:00', endTime: '15:00' },
+      }
+      mockPrisma.leaveType.findFirst.mockResolvedValue({
+        id: 'lt-1',
+        groupId: 'lg-1',
+        deductionDays: 1,
+        isActive: true,
+        timeOption: 'hourly',
+        paidHours: 4,
+      })
+
+      await expect(service.createRequest(COMPANY_ID, dto, requester)).rejects.toThrow(
+        '설정 시간(4시간)을 초과',
       )
     })
 
