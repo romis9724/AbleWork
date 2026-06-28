@@ -127,11 +127,13 @@ export interface Leave {
   leaveTypeId: string
   startDate: string
   endDate: string
+  startTime?: string | null
+  endTime?: string | null
   daysUsed: number
   status: string
   reason?: string | null
   employee?: { id: string; name: string }
-  leaveType?: { id: string; name: string; displayName?: string | null }
+  leaveType?: { id: string; name: string; displayName?: string | null; timeOption?: string }
 }
 
 export interface LeaveListFilter {

@@ -35,14 +35,28 @@ export function LeaveCreateDialog({ open, submitting, onClose, onSubmit }: Reque
   const [leaveTypeId, setLeaveTypeId] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
   const [reason, setReason] = useState('')
 
-  const canSubmit = !!leaveTypeId && !!startDate && !!endDate && endDate >= startDate
+  const isHourly = leaveTypes.find((lt) => lt.id === leaveTypeId)?.timeOption === 'hourly'
+  const canSubmit =
+    !!leaveTypeId &&
+    !!startDate &&
+    (isHourly ? !!startTime && !!endTime && endTime > startTime : !!endDate && endDate >= startDate)
 
   // 시작일 선택 시 종료일이 비었거나 더 빠르면 자동으로 시작일과 맞춘다(기본 1일)
   const handleStart = (value: string) => {
     setStartDate(value)
     if (!endDate || endDate < value) setEndDate(value)
+  }
+
+  const handleSubmit = () => {
+    // 시간 단위 휴가는 당일만(시작일=종료일)
+    const payload = isHourly
+      ? { leaveTypeId, startDate, endDate: startDate, startTime, endTime, reason }
+      : { leaveTypeId, startDate, endDate, reason }
+    onSubmit('LEAVE_CREATE', payload)
   }
 
   return (
@@ -54,8 +68,15 @@ export function LeaveCreateDialog({ open, submitting, onClose, onSubmit }: Reque
             <MenuItem key={lt.id} value={lt.id}>{lt.displayName ?? lt.name}</MenuItem>
           ))}
         </TextField>
-        <TextField label="시작일" type="date" value={startDate} onChange={(e) => handleStart(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
-        <TextField label="종료일" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} inputProps={{ min: startDate || undefined }} helperText="차감 일수는 영업일(주말·공휴일 제외) 기준입니다." />
+        <TextField label={isHourly ? '날짜' : '시작일'} type="date" value={startDate} onChange={(e) => handleStart(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
+        {isHourly ? (
+          <>
+            <TextField label="시작 시간" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
+            <TextField label="종료 시간" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} inputProps={{ min: startTime || undefined }} helperText="시간 단위 휴가는 당일만 가능, 8시간=1일 기준 차감." />
+          </>
+        ) : (
+          <TextField label="종료일" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} inputProps={{ min: startDate || undefined }} helperText="차감 일수는 영업일(주말·공휴일 제외) 기준입니다." />
+        )}
         <TextField label="사유" value={reason} onChange={(e) => setReason(e.target.value)} fullWidth multiline rows={3} />
       </DialogContent>
       <DialogActions>
@@ -64,7 +85,7 @@ export function LeaveCreateDialog({ open, submitting, onClose, onSubmit }: Reque
           data-testid="req-submit-btn"
           variant="contained"
           disabled={!canSubmit || submitting}
-          onClick={() => onSubmit('LEAVE_CREATE', { leaveTypeId, startDate, endDate, reason })}
+          onClick={handleSubmit}
         >
           {submitting ? <CircularProgress size={20} color="inherit" /> : '신청'}
         </Button>
@@ -75,12 +96,20 @@ export function LeaveCreateDialog({ open, submitting, onClose, onSubmit }: Reque
 
 // ── LEAVE_MODIFY ──────────────────────────────────────────────────────────────
 
+// @db.Time 직렬화 값('1970-01-01T09:00:00.000Z' 등) → 'HH:MM'
+const timeHHMM = (iso?: string | null): string => (iso ? iso.slice(11, 16) : '')
+
 export function LeaveModifyDialog({ open, employeeId, submitting, onClose, onSubmit }: RequestFormDialogProps) {
   const { leaves, isLoading } = useMyApprovedLeaves(employeeId)
   const [leaveId, setLeaveId] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
   const [reason, setReason] = useState('')
+
+  const selectedLeave = leaves.find((l) => l.id === leaveId)
+  const isHourly = selectedLeave?.leaveType?.timeOption === 'hourly'
 
   const handleSelect = (id: string) => {
     setLeaveId(id)
@@ -88,10 +117,23 @@ export function LeaveModifyDialog({ open, employeeId, submitting, onClose, onSub
     if (leave) {
       setStartDate(leave.startDate.slice(0, 10))
       setEndDate(leave.endDate.slice(0, 10))
+      setStartTime(timeHHMM(leave.startTime))
+      setEndTime(timeHHMM(leave.endTime))
     }
   }
 
-  const canSubmit = !!leaveId && !!startDate && !!endDate
+  const canSubmit =
+    !!leaveId &&
+    !!startDate &&
+    (isHourly ? !!startTime && !!endTime && endTime > startTime : !!endDate && endDate >= startDate)
+
+  const handleSubmit = () => {
+    // 시간 단위 휴가는 당일만(시작일=종료일)
+    const payload = isHourly
+      ? { leaveId, startDate, endDate: startDate, startTime, endTime, ...(reason && { reason }) }
+      : { leaveId, startDate, endDate, ...(reason && { reason }) }
+    onSubmit('LEAVE_MODIFY', payload)
+  }
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
@@ -110,8 +152,15 @@ export function LeaveModifyDialog({ open, employeeId, submitting, onClose, onSub
             <MenuItem key={l.id} value={l.id}>{leaveOptionLabel(l)}</MenuItem>
           ))}
         </TextField>
-        <TextField label="새 시작일" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
-        <TextField label="새 종료일" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
+        <TextField label={isHourly ? '날짜' : '새 시작일'} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
+        {isHourly ? (
+          <>
+            <TextField label="시작 시간" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} />
+            <TextField label="종료 시간" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} inputProps={{ min: startTime || undefined }} helperText="시간 단위 휴가는 당일만 가능, 8시간=1일 기준 차감." />
+          </>
+        ) : (
+          <TextField label="새 종료일" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth required InputLabelProps={{ shrink: true }} inputProps={{ min: startDate || undefined }} />
+        )}
         <TextField label="사유" value={reason} onChange={(e) => setReason(e.target.value)} fullWidth multiline rows={3} />
       </DialogContent>
       <DialogActions>
@@ -120,7 +169,7 @@ export function LeaveModifyDialog({ open, employeeId, submitting, onClose, onSub
           data-testid="req-submit-btn"
           variant="contained"
           disabled={!canSubmit || submitting}
-          onClick={() => onSubmit('LEAVE_MODIFY', { leaveId, startDate, endDate, ...(reason && { reason }) })}
+          onClick={handleSubmit}
         >
           {submitting ? <CircularProgress size={20} color="inherit" /> : '신청'}
         </Button>

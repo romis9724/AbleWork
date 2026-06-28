@@ -639,7 +639,7 @@ export class LeavesService {
         orderBy: { startDate: 'desc' },
         include: {
           employee: { select: { id: true, name: true } },
-          leaveType: { select: { id: true, name: true, displayName: true } },
+          leaveType: { select: { id: true, name: true, displayName: true, timeOption: true } },
         },
       }),
       this.prisma.leave.count({ where }),
