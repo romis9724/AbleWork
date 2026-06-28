@@ -989,7 +989,7 @@ notification_rules {
 | 불변식 | 규칙 | 에러코드 |
 |---|---|---|
 | **레코드 소유권** | HR 요청의 승인 반영(`LEAVE/SHIFT/ATTENDANCE`의 `MODIFY/DELETE/EDIT`)은 대상 레코드가 **요청자 본인 소유**일 때만 수행한다. apply 단계 쿼리 `where`에 `employeeId`를 강제하여 타 직원 레코드 조작을 차단. | `LEAVE_NOT_FOUND` 등(소유 불일치 시 미발견 처리) |
-| **요청 부서 승인자** | HR 요청(휴가/근무/근태 등)의 부서 승인자는 **요청자 소속(대표) 부서의 조직관리자(`ORG_ADMIN` 이상)** 이며, 같은 부서에 없으면 **상위 부서로 올라가며** 탐색한다(`resolveDeptApprover`). 적용 `ApprovalRule`(직위)이 있으면 그 규칙이 우선하고, 부서 조직관리자는 미지정 시 fallback이다. 모두 없으면 회사 `GENERAL_ADMIN` 이상으로 fallback. 상신 알림은 1차 결재자(`assigneeId`)에게 발송. **전자결재의 부서 결재권자(`organization.approverId`)와는 별개 체계** — [HR 요청 ↔ 전자결재 이원화] 참조. | — |
+| **요청 부서 승인자** | HR 요청(휴가/근무/근태 등)의 부서 승인자는 **요청자 소속(대표) 부서의 조직관리자(`ORG_ADMIN`)** 이며, 같은 부서에 없으면 **상위 부서로 올라가며** `ORG_ADMIN`을 탐색한다(`resolveDeptApprover`). `GENERAL_ADMIN`/`SUPER_ADMIN`은 회사 전역 관리자라 부서 승인자로 보지 않으며, 트리에 `ORG_ADMIN`이 전혀 없을 때만 회사 `GENERAL_ADMIN` 이상으로 fallback. 적용 `ApprovalRule`(직위)이 있으면 그 규칙 우선. 상신 알림은 1차 결재자(`assigneeId`)에게 발송(연동 시 DM, 미연동 시 인앱+이메일). 조직관리자는 **사용자 "요청" 메뉴의 "승인 대기" 탭**에서 소속 부서 구성원의 PENDING 요청을 승인/반려한다. **전자결재의 부서 결재권자(`organization.approverId`)와는 별개 체계** — [HR 요청 ↔ 전자결재 이원화] 참조. | — |
 | **자기결재 금지 ①** | 요청 생성 시 본인 외 결재 가능한 관리자(`GENERAL_ADMIN` 이상)가 없으면 요청을 거부한다(자기 자신을 결재자로 fallback 하지 않는다). | `REQUEST_NO_APPROVER` |
 | **자기결재 금지 ②** | 결재 처리 시 `요청자 == 결재자`이면 차단한다(관리자 포함). | `REQUEST_SELF_APPROVAL` |
 | **휴가 잔액 조회** | 본인 또는 `ORG_ADMIN` 이상만 타 직원 잔액을 조회할 수 있다. | `LEAVE_BALANCE_FORBIDDEN` |
