@@ -98,11 +98,12 @@ export const useActivateEmployee = () => {
   })
 }
 
-/** 직원 완전 삭제 (이력 없는 경우만, GENERAL_ADMIN 이상) */
+/** 직원 완전 삭제 (GENERAL_ADMIN 이상). force=true면 이력까지 모두 삭제 */
 export const useDeleteEmployee = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => apiClient.delete(`/employees/${id}`),
+    mutationFn: ({ id, force }: { id: string; force?: boolean }) =>
+      apiClient.delete(`/employees/${id}${force ? '?force=true' : ''}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }

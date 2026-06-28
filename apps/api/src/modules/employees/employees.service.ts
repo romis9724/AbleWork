@@ -581,61 +581,133 @@ export class EmployeesService {
    * (오등록 정리 용도) 이력이 있으면 차단하고 비활성화(퇴사)를 안내한다.
    * 부속 관계(조직·직위·커스텀필드·휴가잔액·근로정보)는 함께 정리한다.
    */
-  async remove(companyId: string, id: string, requester: JwtPayload) {
+  async remove(companyId: string, id: string, requester: JwtPayload, force = false) {
     const existing = await this.assertEmployee(companyId, id)
     await this.guardOrgScope(requester, existing)
 
-    // 이력성 참조 검사 — 하나라도 있으면 완전 삭제 불가
-    const [att, shift, leave, req, doc, step, hist] = await Promise.all([
-      this.prisma.attendance.count({ where: { OR: [{ employeeId: id }, { confirmedBy: id }] } }),
-      this.prisma.shift.count({
-        where: { OR: [{ employeeId: id }, { confirmedBy: id }, { createdBy: id }] },
-      }),
-      this.prisma.leave.count({ where: { employeeId: id } }),
-      this.prisma.request.count({ where: { requesterId: id } }),
-      this.prisma.document.count({ where: { drafterId: id } }),
-      this.prisma.approvalStep.count({ where: { OR: [{ assigneeId: id }, { proxyId: id }] } }),
-      this.prisma.approvalHistory.count({ where: { actorId: id } }),
-    ])
-    if (att + shift + leave + req + doc + step + hist > 0) {
-      throw new ForbiddenException({
-        code: 'EMPLOYEE_HAS_REFERENCES',
-        message:
-          '출퇴근·근무일정·휴가·결재 이력이 있어 완전 삭제할 수 없습니다. 비활성화(퇴사)를 사용하세요.',
-      })
-    }
-
-    try {
-      await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        // 조직 결재자/문서담당 참조 해제
-        await tx.organization.updateMany({ where: { approverId: id, companyId }, data: { approverId: null } })
-        await tx.organization.updateMany({ where: { docManagerId: id, companyId }, data: { docManagerId: null } })
-        // 부속 관계 정리 (messengerAccount·organizationDocManager는 Cascade로 자동 삭제)
-        await tx.employeeOrganization.deleteMany({ where: { employeeId: id } })
-        await tx.employeePosition.deleteMany({ where: { employeeId: id } })
-        await tx.employeeCustomFieldValue.deleteMany({ where: { employeeId: id } })
-        await tx.leaveBalance.deleteMany({ where: { employeeId: id } })
-        await tx.wageInfo.deleteMany({ where: { employeeId: id } })
-        await tx.employee.delete({ where: { id } })
-      })
-    } catch (e) {
-      // 미처 거르지 못한 Restrict 참조가 남아 있으면 FK 위반(P2003) — 안전하게 차단 안내
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
+    if (force) {
+      // 이력까지 모두 삭제 (강제). 트랜잭션이므로 중간 실패 시 전체 롤백되어 데이터가 손상되지 않는다.
+      await this.forceRemoveCascade(companyId, id, requester.employeeId)
+    } else {
+      // 이력성 참조 검사 — 하나라도 있으면 완전 삭제 불가
+      const [att, shift, leave, req, doc, step, hist] = await Promise.all([
+        this.prisma.attendance.count({ where: { OR: [{ employeeId: id }, { confirmedBy: id }] } }),
+        this.prisma.shift.count({
+          where: { OR: [{ employeeId: id }, { confirmedBy: id }, { createdBy: id }] },
+        }),
+        this.prisma.leave.count({ where: { employeeId: id } }),
+        this.prisma.request.count({ where: { requesterId: id } }),
+        this.prisma.document.count({ where: { drafterId: id } }),
+        this.prisma.approvalStep.count({ where: { OR: [{ assigneeId: id }, { proxyId: id }] } }),
+        this.prisma.approvalHistory.count({ where: { actorId: id } }),
+      ])
+      if (att + shift + leave + req + doc + step + hist > 0) {
         throw new ForbiddenException({
           code: 'EMPLOYEE_HAS_REFERENCES',
-          message: '연관 데이터가 있어 완전 삭제할 수 없습니다. 비활성화(퇴사)를 사용하세요.',
+          message:
+            '출퇴근·근무일정·휴가·결재 이력이 있어 완전 삭제할 수 없습니다. 이력까지 삭제하려면 "이력 포함" 옵션을 사용하거나 비활성화(퇴사)를 사용하세요.',
         })
       }
-      throw e
+
+      try {
+        await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+          await tx.organization.updateMany({ where: { approverId: id, companyId }, data: { approverId: null } })
+          await tx.organization.updateMany({ where: { docManagerId: id, companyId }, data: { docManagerId: null } })
+          await tx.employeeOrganization.deleteMany({ where: { employeeId: id } })
+          await tx.employeePosition.deleteMany({ where: { employeeId: id } })
+          await tx.employeeCustomFieldValue.deleteMany({ where: { employeeId: id } })
+          await tx.leaveBalance.deleteMany({ where: { employeeId: id } })
+          await tx.wageInfo.deleteMany({ where: { employeeId: id } })
+          await tx.employee.delete({ where: { id } })
+        })
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
+          throw new ForbiddenException({
+            code: 'EMPLOYEE_HAS_REFERENCES',
+            message: '연관 데이터가 있어 완전 삭제할 수 없습니다. 비활성화(퇴사)를 사용하세요.',
+          })
+        }
+        throw e
+      }
     }
 
     await this.audit.record({
       companyId,
       actorId: requester.employeeId,
-      action: 'EMPLOYEE_DELETE',
+      action: force ? 'EMPLOYEE_FORCE_DELETE' : 'EMPLOYEE_DELETE',
       targetType: 'EMPLOYEE',
       targetId: id,
       targetLabel: existing.name,
+    })
+  }
+
+  /**
+   * 직원 + 모든 관련 이력 강제 삭제 (force).
+   * 단일 트랜잭션이라 중간에 실패하면 전체 롤백되어 데이터가 손상되지 않는다.
+   * - 본인 소유 데이터(출퇴근·근무일정·휴가·요청·기안문서 등): 삭제
+   * - 타 대상의 "행위자" 참조(확정자·작성자·업로더 등): null 처리 또는 삭제 실행자로 재할당
+   */
+  private async forceRemoveCascade(companyId: string, id: string, actorEmployeeId: string) {
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // 1) 행위자 참조 정리 (nullable → null, not-null → 삭제 실행자로 재할당하여 타 데이터 보존)
+      await tx.organization.updateMany({ where: { approverId: id, companyId }, data: { approverId: null } })
+      await tx.organization.updateMany({ where: { docManagerId: id, companyId }, data: { docManagerId: null } })
+      await tx.attendance.updateMany({ where: { confirmedBy: id }, data: { confirmedBy: null } })
+      await tx.shift.updateMany({ where: { confirmedBy: id }, data: { confirmedBy: null } })
+      await tx.shift.updateMany({ where: { createdBy: id }, data: { createdBy: actorEmployeeId } })
+      await tx.reportSnapshot.updateMany({ where: { lockedBy: id }, data: { lockedBy: null } })
+      await tx.message.updateMany({ where: { senderId: id }, data: { senderId: null } })
+      await tx.documentAttachment.updateMany({ where: { uploaderId: id }, data: { uploaderId: actorEmployeeId } })
+      await tx.approvalStep.updateMany({ where: { proxyId: id }, data: { proxyId: null } })
+
+      // 2) 대리 설정·요청 승인자 (not-null Restrict) 삭제
+      await tx.proxySettings.deleteMany({ where: { OR: [{ principalId: id }, { proxyId: id }] } })
+      await tx.requestApproval.deleteMany({ where: { approverId: id } })
+
+      // 3) 기안 문서 삭제 (ApprovalHistory는 documentId Restrict라 먼저, 나머지는 Cascade)
+      const docs = await tx.document.findMany({ where: { drafterId: id }, select: { id: true } })
+      const docIds = docs.map((d) => d.id)
+      if (docIds.length > 0) {
+        await tx.approvalHistory.deleteMany({ where: { documentId: { in: docIds } } })
+        await tx.document.deleteMany({ where: { id: { in: docIds } } })
+      }
+
+      // 4) 이 직원이 결재자/이력 행위자인 잔여(타 문서) 정리
+      await tx.approvalHistory.deleteMany({ where: { actorId: id } })
+      const steps = await tx.approvalStep.findMany({ where: { assigneeId: id }, select: { id: true } })
+      const stepIds = steps.map((s) => s.id)
+      if (stepIds.length > 0) {
+        await tx.approvalHistory.deleteMany({ where: { stepId: { in: stepIds } } })
+        await tx.approvalStep.deleteMany({ where: { assigneeId: id } })
+      }
+
+      // 5) 본인 요청과 그에 연결된 문서
+      const reqs = await tx.request.findMany({ where: { requesterId: id }, select: { id: true } })
+      const reqIds = reqs.map((r) => r.id)
+      if (reqIds.length > 0) {
+        const reqDocs = await tx.document.findMany({
+          where: { requestId: { in: reqIds } },
+          select: { id: true },
+        })
+        const reqDocIds = reqDocs.map((d) => d.id)
+        if (reqDocIds.length > 0) {
+          await tx.approvalHistory.deleteMany({ where: { documentId: { in: reqDocIds } } })
+          await tx.document.deleteMany({ where: { id: { in: reqDocIds } } })
+        }
+        await tx.request.deleteMany({ where: { requesterId: id } })
+      }
+
+      // 6) 본인 소유 데이터
+      await tx.leave.deleteMany({ where: { employeeId: id } })
+      await tx.leaveBalance.deleteMany({ where: { employeeId: id } })
+      await tx.attendance.deleteMany({ where: { employeeId: id } })
+      await tx.shift.deleteMany({ where: { employeeId: id } })
+      await tx.wageInfo.deleteMany({ where: { employeeId: id } })
+      await tx.employeeCustomFieldValue.deleteMany({ where: { employeeId: id } })
+      await tx.employeeOrganization.deleteMany({ where: { employeeId: id } })
+      await tx.employeePosition.deleteMany({ where: { employeeId: id } })
+      // messengerAccount·organizationDocManager는 Cascade로 자동 삭제
+      await tx.employee.delete({ where: { id } })
     })
   }
 

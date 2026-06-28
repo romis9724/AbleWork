@@ -140,6 +140,7 @@ export default function EmployeeDetailPage() {
   const [deactivateOpen, setDeactivateOpen] = useState(false)
   const [activateOpen, setActivateOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [forceDelete, setForceDelete] = useState(false)
   const [resetDeviceOpen, setResetDeviceOpen] = useState(false)
   const [resetPwOpen, setResetPwOpen] = useState(false)
   const [newPassword, setNewPassword] = useState('')
@@ -265,13 +266,15 @@ export default function EmployeeDetailPage() {
 
   async function handleDelete() {
     try {
-      await deleteMutation.mutateAsync(id)
+      await deleteMutation.mutateAsync({ id, force: forceDelete })
       setDeleteOpen(false)
+      setForceDelete(false)
       setSnack({ open: true, message: '직원이 완전히 삭제되었습니다.', severity: 'success' })
       setTimeout(() => router.push('/admin/employees'), 600)
     } catch (e) {
       setDeleteOpen(false)
-      // 이력이 있으면 EMPLOYEE_HAS_REFERENCES — 비활성화 안내 메시지가 그대로 노출된다
+      setForceDelete(false)
+      // 이력이 있으면 EMPLOYEE_HAS_REFERENCES — 이력 포함 안내 메시지가 그대로 노출된다
       setSnack({ open: true, message: getApiErrorMessage(e, '삭제에 실패했습니다.'), severity: 'error' })
     }
   }
@@ -779,13 +782,32 @@ export default function EmployeeDetailPage() {
       <ConfirmDialog
         open={deleteOpen}
         title="직원 완전 삭제"
-        message={`${employee.name} 직원을 완전히 삭제합니다. 되돌릴 수 없으며, 출퇴근·결재 등 이력이 있으면 삭제되지 않고 비활성화(퇴사)를 사용해야 합니다. 계속하시겠습니까?`}
-        confirmLabel="완전 삭제"
+        message={
+          forceDelete
+            ? `${employee.name} 직원과 모든 관련 데이터(출퇴근·근무일정·휴가·결재·요청·기안문서 등)를 영구 삭제합니다. 되돌릴 수 없습니다. 계속하시겠습니까?`
+            : `${employee.name} 직원을 완전히 삭제합니다. 출퇴근·결재 등 이력이 있으면 삭제되지 않으며, 이력까지 함께 지우려면 아래 옵션을 선택하세요.`
+        }
+        confirmLabel={forceDelete ? '이력 포함 영구 삭제' : '완전 삭제'}
         confirmColor="error"
         loading={deleteMutation.isPending}
         onConfirm={handleDelete}
-        onCancel={() => setDeleteOpen(false)}
-      />
+        onCancel={() => {
+          setDeleteOpen(false)
+          setForceDelete(false)
+        }}
+      >
+        <FormControlLabel
+          sx={{ mt: 1 }}
+          control={
+            <Checkbox
+              checked={forceDelete}
+              color="error"
+              onChange={(e) => setForceDelete(e.target.checked)}
+            />
+          }
+          label="이력까지 모두 삭제 (되돌릴 수 없음)"
+        />
+      </ConfirmDialog>
 
       {/* 기기 초기화 ConfirmDialog */}
       <ConfirmDialog

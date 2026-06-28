@@ -73,27 +73,55 @@ const mockPrisma = {
   },
   approvalStep: {
     count: jest.fn(),
+    findMany: jest.fn(),
+    updateMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
   approvalHistory: {
     count: jest.fn(),
+    deleteMany: jest.fn(),
   },
   attendance: {
     count: jest.fn(),
+    updateMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
   shift: {
     count: jest.fn(),
+    updateMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
   leave: {
     count: jest.fn(),
+    deleteMany: jest.fn(),
   },
   leaveBalance: {
     deleteMany: jest.fn(),
   },
   request: {
     count: jest.fn(),
+    findMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
   document: {
     count: jest.fn(),
+    findMany: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  documentAttachment: {
+    updateMany: jest.fn(),
+  },
+  reportSnapshot: {
+    updateMany: jest.fn(),
+  },
+  message: {
+    updateMany: jest.fn(),
+  },
+  proxySettings: {
+    deleteMany: jest.fn(),
+  },
+  requestApproval: {
+    deleteMany: jest.fn(),
   },
   wageInfo: {
     findMany: jest.fn(),
@@ -769,6 +797,26 @@ describe('EmployeesService', () => {
       await service.remove(COMPANY_ID, TARGET_ID, requester)
 
       expect(mockPrisma.employeeOrganization.deleteMany).toHaveBeenCalledWith({
+        where: { employeeId: TARGET_ID },
+      })
+      expect(mockPrisma.employee.delete).toHaveBeenCalledWith({ where: { id: TARGET_ID } })
+    })
+
+    it('force=true면 이력 검사 없이 강제 cascade 삭제한다', async () => {
+      const requester = makeRequester(AccessLevel.GENERAL_ADMIN)
+      mockPrisma.attendance.count.mockResolvedValue(99) // 이력이 있어도
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: typeof mockPrisma) => unknown) =>
+        fn(mockPrisma),
+      )
+      mockPrisma.document.findMany.mockResolvedValue([])
+      mockPrisma.request.findMany.mockResolvedValue([])
+      mockPrisma.approvalStep.findMany.mockResolvedValue([])
+
+      await service.remove(COMPANY_ID, TARGET_ID, requester, true)
+
+      // 강제 삭제는 대리설정·본인소유 데이터 정리 후 employee.delete까지 수행
+      expect(mockPrisma.proxySettings.deleteMany).toHaveBeenCalled()
+      expect(mockPrisma.attendance.deleteMany).toHaveBeenCalledWith({
         where: { employeeId: TARGET_ID },
       })
       expect(mockPrisma.employee.delete).toHaveBeenCalledWith({ where: { id: TARGET_ID } })
