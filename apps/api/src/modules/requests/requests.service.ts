@@ -1192,14 +1192,15 @@ export class RequestsService {
     let orgId: string | null = primary?.organizationId ?? null
     let guard = 0
     while (orgId && guard++ < 20) {
+      // 부서 승인자는 해당 부서의 '조직관리자(ORG_ADMIN)'다.
+      // (GENERAL_ADMIN/SUPER_ADMIN은 회사 전역 관리자이므로 부서 승인자로 보지 않고,
+      //  부서 트리에 ORG_ADMIN이 전혀 없을 때만 createRequest의 회사 관리자 fallback이 적용된다.)
       const admin = await client.employee.findFirst({
         where: {
           companyId,
           isActive: true,
           id: { not: requesterId },
-          accessLevel: {
-            in: [AccessLevel.ORG_ADMIN, AccessLevel.GENERAL_ADMIN, AccessLevel.SUPER_ADMIN],
-          },
+          accessLevel: AccessLevel.ORG_ADMIN,
           organizations: { some: { organizationId: orgId } },
         },
         orderBy: { createdAt: 'asc' },

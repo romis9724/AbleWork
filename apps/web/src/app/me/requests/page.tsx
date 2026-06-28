@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { useRequests, useCreateRequest, useCancelRequest } from '@/lib/query/requests'
+import { useRequests, useCreateRequest, useCancelRequest, useApproveRequest, useRejectRequest, type Request } from '@/lib/query/requests'
 import { useAuthStore } from '@/stores/auth.store'
 import { currentEmployeeId } from '@/lib/auth-session'
 import { PageHead, TableBar } from '@/components/ab/Page'
@@ -19,7 +19,9 @@ import {
 import { DeviceChangeDialog } from './device-request-dialog'
 import { OffsiteWorkDialog, CustomRequestDialog } from './offsite-custom-request-dialogs'
 
-type TabValue = 'ALL' | 'PENDING' | 'DONE'
+type TabValue = 'ALL' | 'PENDING' | 'DONE' | 'APPROVE'
+
+const APPROVER_LEVELS = new Set(['ORG_ADMIN', 'GENERAL_ADMIN', 'SUPER_ADMIN'])
 
 type RequestDialogType =
   | 'LEAVE_CREATE'
@@ -59,10 +61,11 @@ const STATUS: Record<string, { label: string; kind: BadgeKind }> = {
   CANCELLED: { label: '취소', kind: 'b-submit' },
 }
 
-const TABS: { value: TabValue; label: string }[] = [
+const TABS: { value: TabValue; label: string; approverOnly?: boolean }[] = [
   { value: 'ALL', label: '전체' },
   { value: 'PENDING', label: '대기중' },
   { value: 'DONE', label: '완료' },
+  { value: 'APPROVE', label: '승인 대기', approverOnly: true },
 ]
 
 interface MenuGroup {
@@ -120,9 +123,14 @@ export default function RequestsPage() {
   // (멀티컴퍼니 전환 시 스토어-토큰 desync로 대상 목록이 비어 보이던 문제 방지)
   const storeEmployeeId = useAuthStore((s) => s.user?.employeeId) ?? ''
   const employeeId = currentEmployeeId(storeEmployeeId)
+  const accessLevel = useAuthStore((s) => s.user?.accessLevel) ?? ''
+  const isApprover = APPROVER_LEVELS.has(accessLevel)
 
+  // 승인 대기 탭(조직관리자 이상): 내 소속 부서 구성원의 PENDING 요청 (본인 것 제외)
   const queryParams =
-    tab === 'ALL'
+    tab === 'APPROVE'
+      ? { scope: 'mine', allEmployees: true, status: 'PENDING' }
+      : tab === 'ALL'
       ? undefined
       : tab === 'PENDING'
       ? { status: 'PENDING' }
@@ -131,8 +139,31 @@ export default function RequestsPage() {
   const { data, isLoading } = useRequests(queryParams)
   const createRequest = useCreateRequest()
   const cancelRequest = useCancelRequest()
+  const approveRequest = useApproveRequest()
+  const rejectRequest = useRejectRequest()
 
-  const requests = Array.isArray(data) ? data : data?.items ?? []
+  const allRequests = Array.isArray(data) ? data : data?.items ?? []
+  // 승인 대기 탭에서는 본인이 올린 요청은 제외(자기결재 불가)
+  const requests =
+    tab === 'APPROVE' ? allRequests.filter((r) => r.requesterId !== employeeId) : allRequests
+
+  const handleApprove = async (id: string) => {
+    try {
+      await approveRequest.mutateAsync({ id })
+      toast('요청을 승인했습니다')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '승인 중 오류가 발생했습니다')
+    }
+  }
+
+  const handleReject = async (id: string) => {
+    try {
+      await rejectRequest.mutateAsync({ id })
+      toast('요청을 반려했습니다')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '반려 중 오류가 발생했습니다')
+    }
+  }
 
   const closeDialog = () => setDialogMode(null)
 
@@ -182,7 +213,7 @@ export default function RequestsPage() {
       />
 
       <div className="tabs" style={{ marginBottom: 18 }}>
-        {TABS.map((t) => (
+        {TABS.filter((t) => !t.approverOnly || isApprover).map((t) => (
           <button key={t.value} className={'tab' + (tab === t.value ? ' on' : '')} onClick={() => setTab(t.value)}>
             {t.label}
           </button>
@@ -195,6 +226,7 @@ export default function RequestsPage() {
         <table className="tbl">
           <thead>
             <tr>
+              {tab === 'APPROVE' && <th>신청자</th>}
               <th>요청 유형</th>
               <th className="c">신청일</th>
               <th className="c">상태</th>
@@ -203,19 +235,26 @@ export default function RequestsPage() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td className="tbl-empty" colSpan={4}>불러오는 중…</td></tr>
+              <tr><td className="tbl-empty" colSpan={5}>불러오는 중…</td></tr>
             ) : requests.length === 0 ? (
-              <tr><td className="tbl-empty" colSpan={4}>요청 내역이 없습니다</td></tr>
+              <tr><td className="tbl-empty" colSpan={5}>{tab === 'APPROVE' ? '승인 대기 중인 요청이 없습니다' : '요청 내역이 없습니다'}</td></tr>
             ) : (
               requests.map((r) => {
                 const st = STATUS[r.status] ?? { label: r.status, kind: 'b-submit' as BadgeKind }
+                const busy = approveRequest.isPending || rejectRequest.isPending
                 return (
                   <tr key={r.id}>
-                    <td className="lead">{TYPE_LABEL[r.type] ?? r.type}</td>
+                    {tab === 'APPROVE' && <td className="lead">{r.requester?.name ?? '—'}</td>}
+                    <td className={tab === 'APPROVE' ? '' : 'lead'}>{TYPE_LABEL[r.type] ?? r.type}</td>
                     <td className="c muted">{new Date(r.createdAt).toLocaleDateString('ko-KR')}</td>
                     <td className="c"><Badge kind={st.kind}>{st.label}</Badge></td>
                     <td className="c">
-                      {isCancellable(r) ? (
+                      {tab === 'APPROVE' ? (
+                        <span style={{ display: 'inline-flex', gap: 6, justifyContent: 'center' }}>
+                          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => handleApprove(r.id)}>승인</button>
+                          <button className="btn btn-line btn-sm" disabled={busy} onClick={() => handleReject(r.id)}>반려</button>
+                        </span>
+                      ) : isCancellable(r) ? (
                         <button data-testid="req-cancel-btn" className="btn btn-line btn-sm" onClick={() => setCancelTargetId(r.id)}>
                           신청 취소
                         </button>
