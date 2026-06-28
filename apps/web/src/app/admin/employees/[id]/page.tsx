@@ -508,7 +508,7 @@ export default function EmployeeDetailPage() {
                         <Chip {...getTagProps({ index })} key={option.id} label={option.name} size="small" />
                       ))
                     }
-                    renderInput={(params) => <TextField {...params} label="직무" />}
+                    renderInput={(params) => <TextField {...params} label="직위" />}
                   />
                 )}
               />

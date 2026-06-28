@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { ForbiddenException, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { PositionsService } from './positions.service'
 import { PrismaService } from '../../prisma/prisma.service'
 
@@ -21,10 +21,13 @@ const mockPrisma = {
     create: jest.fn(),
     findFirst: jest.fn(),
     update: jest.fn(),
+    count: jest.fn(),
   },
   employeePosition: {
     count: jest.fn(),
   },
+  // 배열(operation 묶음)을 받는 트랜잭션 형태를 지원
+  $transaction: jest.fn((ops: unknown[]) => Promise.all(ops as Promise<unknown>[])),
 }
 
 describe('PositionsService', () => {
@@ -45,7 +48,7 @@ describe('PositionsService', () => {
   // ── findAll ──────────────────────────────────────────────────────────────────
 
   describe('findAll', () => {
-    it('해당 회사의 활성 직무 목록을 반환한다', async () => {
+    it('해당 회사의 활성 직위 목록을 반환한다', async () => {
       mockPrisma.position.findMany.mockResolvedValue([basePosition])
       const result = await service.findAll(COMPANY_ID)
       expect(result).toEqual([basePosition])
@@ -60,7 +63,7 @@ describe('PositionsService', () => {
   // ── create ───────────────────────────────────────────────────────────────────
 
   describe('create', () => {
-    it('직무를 생성하고 반환한다', async () => {
+    it('직위를 생성하고 반환한다', async () => {
       const dto = { name: '파트타이머', color: '#3498DB', sortOrder: 1 }
       mockPrisma.position.create.mockResolvedValue({ ...basePosition, ...dto })
 
@@ -77,7 +80,7 @@ describe('PositionsService', () => {
   // ── update ───────────────────────────────────────────────────────────────────
 
   describe('update', () => {
-    it('존재하는 직무를 수정한다', async () => {
+    it('존재하는 직위를 수정한다', async () => {
       mockPrisma.position.findFirst.mockResolvedValue(basePosition)
       mockPrisma.position.update.mockResolvedValue({ ...basePosition, name: '시니어 매니저' })
 
@@ -91,6 +94,38 @@ describe('PositionsService', () => {
       await expect(
         service.update(COMPANY_ID, 'nonexistent', { name: '변경' }),
       ).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  // ── reorder ──────────────────────────────────────────────────────────────────
+
+  describe('reorder', () => {
+    it('ids 순서대로 sortOrder를 0..n으로 재설정한다', async () => {
+      mockPrisma.position.count.mockResolvedValue(2)
+      mockPrisma.position.update.mockResolvedValue(basePosition)
+      mockPrisma.position.findMany.mockResolvedValue([basePosition])
+
+      await service.reorder(COMPANY_ID, ['pos-2', 'pos-1'])
+
+      expect(mockPrisma.position.update).toHaveBeenNthCalledWith(1, {
+        where: { id: 'pos-2', companyId: COMPANY_ID },
+        data: { sortOrder: 0 },
+      })
+      expect(mockPrisma.position.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'pos-1', companyId: COMPANY_ID },
+        data: { sortOrder: 1 },
+      })
+      expect(mockPrisma.$transaction).toHaveBeenCalled()
+    })
+
+    it('타사 직위가 섞여 있으면 BadRequestException(POSITION_NOT_FOUND)을 던진다', async () => {
+      // 요청 id 2개 중 1개만 자사 활성 직위로 확인됨
+      mockPrisma.position.count.mockResolvedValue(1)
+
+      await expect(service.reorder(COMPANY_ID, ['pos-1', 'pos-x'])).rejects.toThrow(
+        BadRequestException,
+      )
+      expect(mockPrisma.position.update).not.toHaveBeenCalled()
     })
   })
 

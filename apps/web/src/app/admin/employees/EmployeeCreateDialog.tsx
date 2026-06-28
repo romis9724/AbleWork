@@ -251,7 +251,7 @@ export default function EmployeeCreateDialog({ open, loading, onSubmit, onClose 
                 ))
               }
               renderInput={(params) => (
-                <TextField {...params} label="직무 (선택)" size="small" />
+                <TextField {...params} label="직위 (선택)" size="small" />
               )}
             />
           )}

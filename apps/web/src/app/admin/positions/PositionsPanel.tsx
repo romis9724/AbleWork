@@ -20,9 +20,12 @@ import IconButton from '@mui/material/IconButton'
 import Snackbar from '@mui/material/Snackbar'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import Tooltip from '@mui/material/Tooltip'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import { getApiErrorMessage } from '@/lib/api-error'
@@ -32,6 +35,7 @@ import {
   useCreatePosition,
   useUpdatePosition,
   useDeletePosition,
+  useReorderPositions,
   type Position,
 } from '@/lib/query/positions'
 
@@ -39,7 +43,7 @@ import {
 // Schema
 // ──────────────────────────────────────────────
 const positionSchema = z.object({
-  name: z.string().min(1, '직무명을 입력해 주세요.'),
+  name: z.string().min(1, '직위명을 입력해 주세요.'),
   color: z.string().optional(),
 })
 
@@ -67,7 +71,7 @@ function PositionDialog({ open, initial, loading, onSubmit, onClose }: PositionD
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{initial ? '직무 수정' : '직무 추가'}</DialogTitle>
+      <DialogTitle>{initial ? '직위 수정' : '직위 추가'}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: '16px !important' }}>
         <Controller
           name="name"
@@ -75,7 +79,7 @@ function PositionDialog({ open, initial, loading, onSubmit, onClose }: PositionD
           render={({ field }) => (
             <TextField
               {...field}
-              label="직무명"
+              label="직위명"
               required
               fullWidth
               error={!!errors.name}
@@ -121,8 +125,8 @@ function PositionDialog({ open, initial, loading, onSubmit, onClose }: PositionD
 }
 
 // ──────────────────────────────────────────────
-// PositionsPanel — 직무 목록/추가/수정/삭제 (헤더 없는 임베드용 패널).
-// 단독 페이지(/admin/positions)와 회사 설정 '직무' 탭에서 공통 사용한다.
+// PositionsPanel — 직위 목록/추가/수정/삭제 (헤더 없는 임베드용 패널).
+// 단독 페이지(/admin/positions)와 회사 설정 '직위' 탭에서 공통 사용한다.
 // ──────────────────────────────────────────────
 export default function PositionsPanel() {
   const { isGeneralAdmin } = usePermission()
@@ -131,6 +135,7 @@ export default function PositionsPanel() {
   const createMutation = useCreatePosition()
   const updateMutation = useUpdatePosition()
   const deleteMutation = useDeletePosition()
+  const reorderMutation = useReorderPositions()
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Position | null>(null)
@@ -145,24 +150,35 @@ export default function PositionsPanel() {
 
   const handleCreate = (values: PositionFormValues) => {
     createMutation.mutate(values, {
-      onSuccess: () => { setDialogOpen(false); showSnack('직무가 추가되었습니다.', 'success') },
-      onError: () => showSnack('직무 추가에 실패했습니다.', 'error'),
+      onSuccess: () => { setDialogOpen(false); showSnack('직위가 추가되었습니다.', 'success') },
+      onError: () => showSnack('직위 추가에 실패했습니다.', 'error'),
     })
   }
 
   const handleUpdate = (values: PositionFormValues) => {
     if (!editTarget) return
     updateMutation.mutate({ id: editTarget.id, ...values }, {
-      onSuccess: () => { setEditTarget(null); showSnack('직무가 수정되었습니다.', 'success') },
-      onError: () => showSnack('직무 수정에 실패했습니다.', 'error'),
+      onSuccess: () => { setEditTarget(null); showSnack('직위가 수정되었습니다.', 'success') },
+      onError: () => showSnack('직위 수정에 실패했습니다.', 'error'),
     })
   }
 
   const handleDelete = () => {
     if (!deleteTarget) return
     deleteMutation.mutate(deleteTarget.id, {
-      onSuccess: () => { setDeleteTarget(null); showSnack('직무가 삭제되었습니다.', 'success') },
-      onError: (e) => showSnack(getApiErrorMessage(e, '직무 삭제에 실패했습니다.'), 'error'),
+      onSuccess: () => { setDeleteTarget(null); showSnack('직위가 삭제되었습니다.', 'success') },
+      onError: (e) => showSnack(getApiErrorMessage(e, '직위 삭제에 실패했습니다.'), 'error'),
+    })
+  }
+
+  // 정렬 순서 이동 — index 항목을 dir(-1=위, +1=아래)로 인접 항목과 교환
+  const handleMove = (index: number, dir: -1 | 1) => {
+    const target = index + dir
+    if (target < 0 || target >= positions.length) return
+    const next = [...positions]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    reorderMutation.mutate(next.map((p) => p.id), {
+      onError: () => showSnack('정렬 순서 변경에 실패했습니다.', 'error'),
     })
   }
 
@@ -176,33 +192,39 @@ export default function PositionsPanel() {
 
   return (
     <>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">
+          {isGeneralAdmin && positions.length > 1
+            ? '위/아래 버튼으로 직위 표시 순서를 변경할 수 있습니다.'
+            : ''}
+        </Typography>
         {isGeneralAdmin && (
           <Button
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => setDialogOpen(true)}
             data-testid="pos-add-btn"
+            sx={{ flexShrink: 0 }}
           >
-            직무 추가
+            직위 추가
           </Button>
         )}
       </Box>
 
       {positions.length === 0 ? (
         <EmptyState
-          message="등록된 직무가 없습니다."
+          message="등록된 직위가 없습니다."
           action={
             isGeneralAdmin ? (
               <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
-                첫 번째 직무 추가
+                첫 번째 직위 추가
               </Button>
             ) : undefined
           }
         />
       ) : (
         <Grid container spacing={2}>
-          {positions.map((pos) => (
+          {positions.map((pos, index) => (
             <Grid item xs={12} sm={6} md={3} key={pos.id}>
               <Card variant="outlined" data-testid="pos-card">
                 <CardContent sx={{ pb: 0.5 }}>
@@ -231,13 +253,41 @@ export default function PositionsPanel() {
                 {isGeneralAdmin && (
                   <>
                     <Divider />
-                    <CardActions sx={{ justifyContent: 'flex-end', py: 0.5 }}>
-                      <IconButton size="small" data-testid="pos-edit-btn" onClick={() => setEditTarget(pos)}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton size="small" color="error" data-testid="pos-delete-btn" onClick={() => setDeleteTarget(pos)}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
+                    <CardActions sx={{ justifyContent: 'space-between', py: 0.5 }}>
+                      <Box>
+                        <Tooltip title="위로 이동">
+                          <span>
+                            <IconButton
+                              size="small"
+                              data-testid="pos-move-up-btn"
+                              disabled={index === 0 || reorderMutation.isPending}
+                              onClick={() => handleMove(index, -1)}
+                            >
+                              <KeyboardArrowUpIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="아래로 이동">
+                          <span>
+                            <IconButton
+                              size="small"
+                              data-testid="pos-move-down-btn"
+                              disabled={index === positions.length - 1 || reorderMutation.isPending}
+                              onClick={() => handleMove(index, 1)}
+                            >
+                              <KeyboardArrowDownIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Box>
+                      <Box>
+                        <IconButton size="small" data-testid="pos-edit-btn" onClick={() => setEditTarget(pos)}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton size="small" color="error" data-testid="pos-delete-btn" onClick={() => setDeleteTarget(pos)}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
                     </CardActions>
                   </>
                 )}
@@ -271,8 +321,8 @@ export default function PositionsPanel() {
       {/* 삭제 Confirm */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="직무 삭제"
-        message={`"${deleteTarget?.name}" 직무를 삭제하시겠습니까?`}
+        title="직위 삭제"
+        message={`"${deleteTarget?.name}" 직위를 삭제하시겠습니까?`}
         loading={deleteMutation.isPending}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}

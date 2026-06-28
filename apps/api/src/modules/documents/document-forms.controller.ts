@@ -101,7 +101,7 @@ export class DocumentFormsController {
     return this.documentFormsService.upsertNumberRule(companyId, id, dto)
   }
 
-  // ── AP-01-07 양식 접근규칙 (조직/직무 단위 작성 권한) ─────────────────────────
+  // ── AP-01-07 양식 접근규칙 (조직/직위 단위 작성 권한) ─────────────────────────
 
   @Get(':id/access-rules')
   @Roles(AccessLevel.GENERAL_ADMIN)
@@ -113,7 +113,7 @@ export class DocumentFormsController {
 
   @Post(':id/access-rules')
   @Roles(AccessLevel.GENERAL_ADMIN)
-  @ApiOperation({ summary: '양식 접근규칙 추가 (조직/직무 scope, GENERAL_ADMIN)' })
+  @ApiOperation({ summary: '양식 접근규칙 추가 (조직/직위 scope, GENERAL_ADMIN)' })
   @ApiParam({ name: 'id', type: String })
   createAccessRule(
     @CompanyId() companyId: string,

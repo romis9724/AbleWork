@@ -295,7 +295,7 @@ export class RequestsService {
 
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
-      // 1. 승인 규칙 조회 (type 매칭, 조직/직무 범위 필터) — Request보다 먼저 결정해 ruleId 스냅샷에 기록
+      // 1. 승인 규칙 조회 (type 매칭, 조직/직위 범위 필터) — Request보다 먼저 결정해 ruleId 스냅샷에 기록
       const requesterEmployee = await tx.employee.findFirst({
         where: { id: requesterId, companyId },
         include: {
@@ -444,7 +444,7 @@ export class RequestsService {
           let assigneeId: string | null = null
 
           if (detail.positionId) {
-            // 해당 직무를 가진 GENERAL_ADMIN 이상 직원 중 첫 번째 찾기
+            // 해당 직위를 가진 GENERAL_ADMIN 이상 직원 중 첫 번째 찾기
             const approverEmployee = await tx.employee.findFirst({
               where: {
                 companyId,

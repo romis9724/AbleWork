@@ -89,7 +89,7 @@ interface ShiftForm {
   shiftTypeId: string
 }
 
-type AddTab = '템플릿 기준' | '조직 기준' | '직무 기준' | '직원 기준'
+type AddTab = '템플릿 기준' | '조직 기준' | '직위 기준' | '직원 기준'
 
 const today = toLocalDateStr(new Date())
 
@@ -192,7 +192,7 @@ export default function ShiftsPage() {
         e.organizations?.some((o) => o.organization.id === form.organizationId),
       )
     }
-    if (addTab === '직무 기준') {
+    if (addTab === '직위 기준') {
       if (!form.positionId) return []
       return active.filter(
         (e) =>
@@ -282,7 +282,7 @@ export default function ShiftsPage() {
     ? !!form.employeeId
     : addTab === '조직 기준'
       ? !!form.organizationId && targetEmployees.length > 0
-      : addTab === '직무 기준'
+      : addTab === '직위 기준'
         ? !!form.positionId && targetEmployees.length > 0
         : addTab === '템플릿 기준'
           ? !!form.employeeId && !!form.templateId
@@ -290,7 +290,7 @@ export default function ShiftsPage() {
 
   const formValid = commonValid && targetValid
 
-  /** 대상 직원의 소속 조직 id 해석 (조직/직무 기준 벌크 생성용) */
+  /** 대상 직원의 소속 조직 id 해석 (조직/직위 기준 벌크 생성용) */
   function resolveOrgId(emp: Employee): string {
     return (
       emp.organizations?.find((o) => o.isPrimary)?.organization.id ??
@@ -349,8 +349,8 @@ export default function ShiftsPage() {
       return
     }
 
-    // 조직/직무 기준은 각 직원의 소속 조직을, 직원/템플릿 기준은 폼의 조직을 사용
-    const useEmployeeOrg = addTab === '조직 기준' || addTab === '직무 기준'
+    // 조직/직위 기준은 각 직원의 소속 조직을, 직원/템플릿 기준은 폼의 조직을 사용
+    const useEmployeeOrg = addTab === '조직 기준' || addTab === '직위 기준'
 
     const results = await Promise.allSettled(
       targets.map((emp) =>
@@ -644,7 +644,7 @@ export default function ShiftsPage() {
       >
         {!editing && (
           <div className="tabs">
-            {(['템플릿 기준', '조직 기준', '직무 기준', '직원 기준'] as AddTab[]).map((t) => (
+            {(['템플릿 기준', '조직 기준', '직위 기준', '직원 기준'] as AddTab[]).map((t) => (
               <button key={t} className={'tab' + (addTab === t ? ' on' : '')} onClick={() => setAddTab(t)}>
                 {t}
               </button>
@@ -732,12 +732,12 @@ export default function ShiftsPage() {
                   )}
                 </span>
               </div>
-            ) : addTab === '직무 기준' ? (
+            ) : addTab === '직위 기준' ? (
               <div
                 className="doc-field"
                 style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
               >
-                <span className="fk" style={{ paddingTop: 7 }}>직무</span>
+                <span className="fk" style={{ paddingTop: 7 }}>직위</span>
                 <span className="fv" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <select
                     className="sel"
