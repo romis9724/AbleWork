@@ -24,8 +24,16 @@ export default function LeaveCompensationPanel() {
   const compensationAccrual = useCompensationAccrual()
 
   const [employee, setEmployee] = useState<Employee | null>(null)
+  const [groupId, setGroupId] = useState('')
   const [leaveTypeId, setLeaveTypeId] = useState('')
   const [days, setDays] = useState('1')
+
+  // 휴가 유형 2단계 선택 — 1) 그룹 2) 유형
+  const activeTypes = (leaveTypes as LeaveType[]).filter((t) => t.isActive)
+  const groups = Array.from(
+    new Map(activeTypes.filter((t) => t.group).map((t) => [t.group!.id, t.group!])).values(),
+  )
+  const typesInGroup = activeTypes.filter((t) => t.group?.id === groupId)
   const [reason, setReason] = useState('')
   const [year, setYear] = useState(String(new Date().getFullYear()))
   const [expiresAt, setExpiresAt] = useState('')
@@ -47,6 +55,8 @@ export default function LeaveCompensationPanel() {
       })
       setSnack({ open: true, msg: '보상휴가가 발생됐습니다.', sev: 'success' })
       setEmployee(null)
+      setGroupId('')
+      setLeaveTypeId('')
       setDays('1')
       setReason('')
       setExpiresAt('')
@@ -70,14 +80,31 @@ export default function LeaveCompensationPanel() {
             renderInput={(params) => <TextField {...params} label="직원" required />}
           />
           <TextField
+            label="휴가 그룹"
+            select
+            required
+            value={groupId}
+            onChange={(e) => {
+              setGroupId(e.target.value)
+              setLeaveTypeId('') // 그룹 변경 시 유형 초기화
+            }}
+            fullWidth
+          >
+            {groups.map((g) => (
+              <MenuItem key={g.id} value={g.id}>{g.name}</MenuItem>
+            ))}
+          </TextField>
+          <TextField
             label="휴가 유형"
             select
             required
             value={leaveTypeId}
             onChange={(e) => setLeaveTypeId(e.target.value)}
             fullWidth
+            disabled={!groupId}
+            helperText={!groupId ? '휴가 그룹을 먼저 선택하세요' : undefined}
           >
-            {(leaveTypes as LeaveType[]).map((t) => (
+            {typesInGroup.map((t) => (
               <MenuItem key={t.id} value={t.id}>
                 {t.displayName ?? t.name}
               </MenuItem>

@@ -55,10 +55,20 @@ export default function CreateLeaveDialog({ open, onClose, onResult }: CreateLea
   const createLeaveMutation = useCreateLeave()
 
   const [form, setForm] = useState<LeaveForm>(defaultLeaveForm)
+  // 휴가 유형 2단계 선택 — 1) 그룹 2) 유형
+  const [groupId, setGroupId] = useState('')
+  const activeTypes = (leaveTypes as LeaveType[]).filter((t) => t.isActive)
+  const groups = Array.from(
+    new Map(activeTypes.filter((t) => t.group).map((t) => [t.group!.id, t.group!])).values(),
+  )
+  const typesInGroup = activeTypes.filter((t) => t.group?.id === groupId)
 
   // 열릴 때마다 폼 초기화
   useEffect(() => {
-    if (open) setForm(defaultLeaveForm)
+    if (open) {
+      setForm(defaultLeaveForm)
+      setGroupId('')
+    }
   }, [open])
 
   async function handleSubmit() {
@@ -90,19 +100,32 @@ export default function CreateLeaveDialog({ open, onClose, onResult }: CreateLea
           renderInput={(params) => <TextField {...params} label="직원 선택" required />}
         />
         <FormControl fullWidth required>
+          <InputLabel>휴가 그룹</InputLabel>
+          <Select
+            value={groupId}
+            label="휴가 그룹"
+            onChange={(e) => {
+              setGroupId(e.target.value)
+              setForm((f) => ({ ...f, leaveTypeId: '' })) // 그룹 변경 시 유형 초기화
+            }}
+          >
+            {groups.map((g) => (
+              <MenuItem key={g.id} value={g.id}>{g.name}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl fullWidth required disabled={!groupId}>
           <InputLabel>휴가 유형</InputLabel>
           <Select
             value={form.leaveTypeId}
             label="휴가 유형"
             onChange={(e) => setForm((f) => ({ ...f, leaveTypeId: e.target.value }))}
           >
-            {(leaveTypes as LeaveType[])
-              .filter((t) => t.isActive)
-              .map((t) => (
-                <MenuItem key={t.id} value={t.id}>
-                  {t.displayName ?? t.name}
-                </MenuItem>
-              ))}
+            {typesInGroup.map((t) => (
+              <MenuItem key={t.id} value={t.id}>
+                {t.displayName ?? t.name}
+              </MenuItem>
+            ))}
           </Select>
         </FormControl>
         <Box sx={{ display: 'flex', gap: 2 }}>
