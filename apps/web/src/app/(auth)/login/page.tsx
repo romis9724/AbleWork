@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { Sigil } from '@/components/ab/icons'
 import { ThemeSwitcher } from '@/components/ab/ThemeSwitcher'
 import { parseJwt, writeAuthCookies } from '@/lib/auth-session'
+import { isMobileViewport } from '@/lib/device'
 
 interface LoginResponse {
   accessToken: string
@@ -39,8 +40,10 @@ export default function LoginPage() {
         accessLevel: claims.accessLevel,
       })
 
+      // 모바일은 관리자라도 무조건 직원 모드로(관리자 화면은 PC 전용)
       const adminLevels = ['SUPER_ADMIN', 'GENERAL_ADMIN', 'ORG_ADMIN']
-      router.push(adminLevels.includes(claims.accessLevel) ? '/admin/dashboard' : '/me/home')
+      const goAdmin = adminLevels.includes(claims.accessLevel) && !isMobileViewport()
+      router.push(goAdmin ? '/admin/dashboard' : '/me/home')
     } catch {
       setError('이메일 또는 비밀번호가 올바르지 않습니다.')
     } finally {
