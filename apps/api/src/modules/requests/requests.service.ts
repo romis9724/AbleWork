@@ -1254,7 +1254,8 @@ export class RequestsService {
 
   /**
    * HR 요청(휴가/근무/근태 등)의 부서 승인자 해석 — **전자결재와 무관**.
-   * 요청자 소속(대표) 부서의 조직관리자(ORG_ADMIN 이상)를 찾고, 없으면 상위 부서로 올라가며 탐색한다.
+   * 요청자 소속(대표) 부서에서 **조직관리자(ORG_ADMIN) 우선, 없으면 총괄관리자(GENERAL_ADMIN)** 를 찾고,
+   * 그 부서에 둘 다 없으면 상위 부서로 올라가며 탐색한다.
    * (전자결재의 부서 결재권자 organization.approverId 와는 별개 체계)
    */
   private async resolveDeptApprover(
@@ -1271,21 +1272,22 @@ export class RequestsService {
     let orgId: string | null = primary?.organizationId ?? null
     let guard = 0
     while (orgId && guard++ < 20) {
-      // 부서 승인자는 해당 부서의 '조직관리자(ORG_ADMIN)'다.
-      // (GENERAL_ADMIN/SUPER_ADMIN은 회사 전역 관리자이므로 부서 승인자로 보지 않고,
-      //  부서 트리에 ORG_ADMIN이 전혀 없을 때만 createRequest의 회사 관리자 fallback이 적용된다.)
-      const admin = await client.employee.findFirst({
-        where: {
-          companyId,
-          isActive: true,
-          id: { not: requesterId },
-          accessLevel: AccessLevel.ORG_ADMIN,
-          organizations: { some: { organizationId: orgId } },
-        },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      })
-      if (admin) return admin.id
+      // 부서 승인자: 같은 부서의 조직관리자(ORG_ADMIN)를 먼저 찾고, 없으면 총괄관리자(GENERAL_ADMIN)도 인정한다.
+      // (SUPER_ADMIN 등은 부서 트리에 승인자가 전혀 없을 때 createRequest의 회사 관리자 fallback이 처리)
+      for (const level of [AccessLevel.ORG_ADMIN, AccessLevel.GENERAL_ADMIN]) {
+        const admin = await client.employee.findFirst({
+          where: {
+            companyId,
+            isActive: true,
+            id: { not: requesterId },
+            accessLevel: level,
+            organizations: { some: { organizationId: orgId } },
+          },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        })
+        if (admin) return admin.id
+      }
       const org = await client.organization.findUnique({
         where: { id: orgId },
         select: { parentId: true },
