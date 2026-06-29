@@ -1,8 +1,9 @@
+# syntax=docker/dockerfile:1
 # AbleWork 프로덕션 이미지 (멀티타겟: api / web)
-# 빌드 컨텍스트 = 모노레포 루트. 서버(x86_64)에서 빌드한다.
+# 빌드 컨텍스트 = 모노레포 루트. GitLab CI 전용 arm64 빌드 인스턴스(buildkit)에서 빌드한다.
 # - API: 현 프로젝트 방식대로 ts-node 런타임으로 실행(공유 패키지가 TS 소스라 컴파일 대신 ts-node 사용)
 # - WEB: next build → next start
-# syntax=docker/dockerfile:1
+# (parser 지시문 syntax 는 반드시 첫 줄 — 앞에 주석 있으면 무시되어 RUN --mount 미동작)
 
 FROM node:22-bookworm-slim AS base
 RUN apt-get update \
@@ -36,7 +37,10 @@ FROM deps AS web
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 COPY apps/web ./apps/web
-RUN pnpm --filter web build
+# .next/cache를 BuildKit 캐시 마운트로 빌드 간 보존 → next build 증분화(영속 빌더에서 큰 효과).
+# web 소스가 바뀌어도 변경분만 재컴파일되어 "No build cache found" 전체 빌드를 피한다.
+RUN --mount=type=cache,target=/app/apps/web/.next/cache,sharing=locked \
+    pnpm --filter web build
 ENV NODE_ENV=production
 WORKDIR /app/apps/web
 EXPOSE 3000
