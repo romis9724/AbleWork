@@ -1,8 +1,9 @@
+# syntax=docker/dockerfile:1
 # AbleWork 프로덕션 이미지 (멀티타겟: api / web)
-# 빌드 컨텍스트 = 모노레포 루트. 서버(x86_64)에서 빌드한다.
+# 빌드 컨텍스트 = 모노레포 루트. GitLab CI 전용 arm64 빌드 인스턴스(buildkit)에서 빌드한다.
 # - API: 현 프로젝트 방식대로 ts-node 런타임으로 실행(공유 패키지가 TS 소스라 컴파일 대신 ts-node 사용)
 # - WEB: next build → next start
-# syntax=docker/dockerfile:1
+# (parser 지시문 syntax 는 반드시 첫 줄 — 앞에 주석 있으면 무시되어 RUN --mount 미동작)
 
 FROM node:22-bookworm-slim AS base
 RUN apt-get update \
