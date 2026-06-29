@@ -103,7 +103,7 @@ export default function LeaveAccrualRulesPanel() {
   const rules: AccrualRule[] = Array.isArray(rawRules) ? rawRules : []
 
   const { data: groups = [] } = useLeaveGroups()
-  const { data: employeeData } = useEmployees({ isActive: true, excludeSuperAdmin: true })
+  const { data: employeeData } = useEmployees({ isActive: true, excludeSuperAdmin: true, limit: 500 })
   const employees = employeeData?.items ?? []
 
   const createRuleMutation = useCreateAccrualRule()
