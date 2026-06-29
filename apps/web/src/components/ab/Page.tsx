@@ -23,8 +23,16 @@ export function PageHead({ eyebrow, title, right }: PageHeadProps) {
   )
 }
 
-export function KpiGrid({ children }: { children: ReactNode }) {
-  return <div className="kpi-grid">{children}</div>
+export function KpiGrid({ children, cols }: { children: ReactNode; cols?: number }) {
+  // cols 지정 시 열 수를 고정(인라인이 .kpi-grid 클래스 규칙보다 우선). 예: 홈 연차현황 1행 3열.
+  return (
+    <div
+      className="kpi-grid"
+      style={cols ? { gridTemplateColumns: `repeat(${cols}, 1fr)` } : undefined}
+    >
+      {children}
+    </div>
+  )
 }
 
 interface KpiProps {
