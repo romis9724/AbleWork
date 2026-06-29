@@ -3,7 +3,8 @@
 > 버전: 2.2.0  
 > 작성일: 2026-06-11  
 > 최종 점검: 2026-06-12 (5라운드 순환 점검 완료)  
-> 대상: 중소규모 기업 (50~300인)
+> 대상: 중소규모 기업 (50~300인)  
+> 변경 이력(SSOT): 기능·설계·데이터·운영 변경의 권위 있는 단일 이력은 [CHANGELOG.md](./CHANGELOG.md). 본 문서와 충돌 시 CHANGELOG가 우선.
 
 ---
 
@@ -263,11 +264,13 @@ created_by      UUID REFERENCES employees
 id              UUID PRIMARY KEY
 employee_id     UUID REFERENCES employees
 shift_id        UUID REFERENCES shifts         -- nullable
+position_id     UUID REFERENCES positions      -- nullable, 출근 시 선택한 직무 기록
 clock_in_at     TIMESTAMPTZ NOT NULL
 clock_out_at    TIMESTAMPTZ
 location_lat    DECIMAL(10,7)
 location_lng    DECIMAL(10,7)
-clock_in_method VARCHAR(20)                    -- gps/wifi/manual
+clock_in_method VARCHAR(20)                    -- gps/wifi/gps_or_wifi/gps_and_wifi/manual
+channel         VARCHAR(10) DEFAULT 'web'      -- web/app (WiFi 인증 장소는 app 전용)
 status          VARCHAR(20)                    -- normal/late/early_leave/absent
 note            TEXT
 ```
@@ -461,13 +464,16 @@ draft → confirmed → cancelled
 
 #### 5.2.2 출퇴근 장소 관리
 
-출퇴근 장소는 **조직별**로 등록하며, 하나의 조직에 복수 장소를 설정할 수 있다.
+출퇴근 장소는 **회사 단위**(`TimeclockArea.companyId`)로 등록하며(장소 생성 시 조직 미지정), 조직과는 조인 테이블 `organization_timeclock_areas`로 **N:N** 연결한다(2026-06-29 전환, 기존 조직 1:N 폐기). 한 장소를 여러 조직에 연결할 수 있고, 한 조직에 복수 장소를 연결할 수 있다.
+
+- **관리 위치**: 출퇴근 장소 자체(주소·인증)는 회사설정 > 출퇴근 패널(또는 `/admin/timeclock-areas`)에서 평면 목록으로 관리하며, 조직 연결은 **조직 관리(추가/수정) 다이얼로그에서 다중 선택**으로 설정한다(저장 시 연결 집합 교체).
+- 조직 삭제 시 장소 연결만 해제되고(Cascade) 장소 자체는 보존된다 — 조직 삭제 가드 `ORG_HAS_TIMECLOCK_AREAS`는 폐기.
 
 | 인증 방식 | 설명 |
 |---|---|
 | GPS 좌표 | 반경(미터) 설정, 위치정보 즉시 폐기 |
-| WiFi SSID | 특정 WiFi 연결 시 인증, 위치정보 미저장 |
-| GPS + WiFi | 두 조건 AND / OR 선택 가능 |
+| WiFi SSID | 특정 WiFi 연결 시 인증, 위치정보 미저장 — **앱 전용**(웹 출근 미노출) |
+| GPS + WiFi | 두 조건 AND(`gps_and_wifi`) / OR(`gps_or_wifi`) 선택 가능. AND는 WiFi 포함이므로 앱 전용 |
 | 무인증 | 인증 없이 출퇴근 기록 허용 |
 
 #### 5.2.3 출퇴근 기록
@@ -475,7 +481,8 @@ draft → confirmed → cancelled
 | 기능 | 설명 |
 |---|---|
 | 출퇴근 기록 방식 | GPS / WiFi / 수동 입력 / PC 웹 |
-| 출퇴근 장소 설정 | 조직별 복수 장소 (5.2.2 참고) |
+| 출퇴근 장소 설정 | 회사 단위 장소 ↔ 조직 N:N (5.2.2 참고) |
+| 출근 선택 | 출근 시 **조직 → (그 조직에 연결된) 출퇴근 장소 → 직무**를 선택. 직무는 `Attendance.positionId`에 기록 |
 | 무일정 근무 | 회사 설정에 따라 항상/조건부/불허 |
 | 상태 자동 판단 | 정상 / 지각 / 조퇴 / 결근 자동 분류 |
 | 휴게시간 기록 | 자동 집계 + 수동 기록 이원 관리 |
@@ -502,6 +509,18 @@ draft → confirmed → cancelled
 | 무일정 출근 | 승인 대기 중 근무일정이 있으면 해당 일정으로 미리 출근 가능 (승인 후 자동 연결) |
 | 휴가 잔액 검증 | 잔액 차감 시 `leave_balances.expires_at` 이내 발생 건에 대해서만 차감 |
 | 휴가 그룹 일치 검증 | 휴가 사용 시 `leave_types.group_id` ↔ `leave_balances.leave_type_id` 그룹 일치 확인 |
+
+**출근(clockIn) 검증:** clockIn DTO는 `organizationId`·`positionId`·`channel`(`web`|`app`, 기본 `web`)을 받아 다음을 강제한다.
+
+| 검증 | 내용 | 에러코드 |
+|---|---|---|
+| 조직 소속 | 요청자가 지정 조직 소속이어야 함 | `ATTENDANCE_ORG_NOT_MEMBER` |
+| 조직 ↔ 장소 정합 | 선택 장소가 지정 조직에 연결(`area.organizations`)되어 있어야 함 | `TIMECLOCK_AREA_ORG_MISMATCH` |
+| 직무 자사 | `positionId`가 회사 소속 직무여야 함 | `POSITION_NOT_FOUND` |
+| 웹 WiFi 차단 | 웹(`channel=web`)에서는 WiFi 인증 필수 장소(`wifi`·`gps_and_wifi`) 사용 불가 (앱 전용) | `ATTENDANCE_WIFI_APP_ONLY` |
+| 웹 GPS 필수 | 웹에서는 `gps_or_wifi` 장소도 GPS 필수(반경 검증) — WiFi 단독 우회 불가 | — |
+
+**출퇴근기록 조회 스코프(`GET /attendances?scope=org`):** `scope=org`이면 **서버가 요청자 소속 조직을 직접 해석**해 그 조직 직원으로 결과를 한정한다(클라이언트가 보낸 조직 ID는 신뢰하지 않음 → 타 조직 열람 불가). `EMPLOYEE`는 `scope` 값과 무관하게 본인 기록만 강제. 직원 셀프서비스 출퇴근기록 화면의 '우리 조직' 탭(`ORG_ADMIN` 이상)에서 사용한다.
 
 #### 5.2.4 휴가 관리
 
@@ -534,11 +553,15 @@ draft → confirmed → cancelled
 연 기준: 2년→15일, 3년→16일, 4년→16일, 5년→17일, ... 최대 25일
 ```
 
+**휴가 유형 선택 2단계(그룹 → 유형):** 휴가 유형을 고르는 모든 화면(직원 신청/수정, 관리자 휴가 부여, 휴가 현황 부여, 보상휴가)은 **휴가 그룹 선택 → 그 그룹의 유형만 노출**하는 2단계 UI로 통일한다(그룹 변경 시 유형 초기화). 메시지 자동화의 트리거 필터·휴가 유형 관리(유형 CRUD)는 대상 외.
+
+**연차 잔여 계산 원칙:** 잔여 = **발생규칙 부여(accrued) − 사용(used)**. 발생(accrual)은 그룹 대표 유형(`deductionDays=1`·`full_day`)에만 생성되므로, 연차 KPI/현황은 **대표 유형(연차 전일) 기준으로 그룹 잔액(accrued/used/remaining)을 집계**한다(시간/반일 등 비대표 유형 사용도 같은 그룹 대표 유형 잔액에서 차감 — §6.5 `resolveBalanceTypeId`).
+
 #### 5.2.5 요청 (HR 결재 연동)
 
 > **[HR 요청 ↔ 전자결재 이원화]** (2026-06 정책 정정)
 > 사용자 "휴가/요청" 메뉴의 HR 요청과 "전자결재"는 **별개 승인 체계**로 운영한다(두 플랫폼 통합 과정의 설계 오류를 분리).
-> - **HR 요청 부서 승인자** = 요청자 소속 부서의 **조직관리자(`ORG_ADMIN` 이상, 직원 관리 기준)**. 같은 부서에 없으면 **상위 부서**의 조직관리자(`resolveDeptApprover`).
+> - **HR 요청 부서 승인자** = 요청자 소속 부서의 **조직관리자(`ORG_ADMIN`)** 를 우선 인정하되, 같은 부서에 `ORG_ADMIN`이 없으면 그 부서의 **총괄관리자(`GENERAL_ADMIN`)** 도 부서 승인자로 인정한다. 부서에 둘 다 없으면 **상위 부서**로 올라가며 동일 규칙으로 탐색한다(`resolveDeptApprover`).
 > - **전자결재 부서 승인자** = "조직관리 > 조직도 > 특정 부서"의 **결재권자(`organization.approverId`)**.
 > - **향후 통합 계획**: 두 승인 체계를 하나의 승인선 엔진으로 합치는 것을 로드맵에 둔다(현재는 이원화 유지). 합칠 때 부서 승인자 정의(조직관리자 vs 결재권자)를 단일화하고, HR 요청의 문서 자동생성/알림 경로를 전자결재와 통일한다.
 
@@ -889,7 +912,6 @@ notification_rules {
 |---|---|---|
 | 조직 `Organization` | 하위 조직 존재 | `ORG_HAS_CHILDREN` |
 | 조직 `Organization` | 소속 활성 직원 존재 | `ORG_HAS_EMPLOYEES` |
-| 조직 `Organization` | 출퇴근 장소 존재 | `ORG_HAS_TIMECLOCK_AREAS` |
 | 조직 `Organization` | 근무일정 존재 | `ORG_HAS_SHIFTS` |
 | 직무 `Position` | 활성 직원에게 배정됨 | `POSITION_IN_USE` |
 | 근무유형 `ShiftType` | 사용 중인 템플릿/근무일정 존재 | `SHIFT_TYPE_IN_USE` |
@@ -989,7 +1011,7 @@ notification_rules {
 | 불변식 | 규칙 | 에러코드 |
 |---|---|---|
 | **레코드 소유권** | HR 요청의 승인 반영(`LEAVE/SHIFT/ATTENDANCE`의 `MODIFY/DELETE/EDIT`)은 대상 레코드가 **요청자 본인 소유**일 때만 수행한다. apply 단계 쿼리 `where`에 `employeeId`를 강제하여 타 직원 레코드 조작을 차단. | `LEAVE_NOT_FOUND` 등(소유 불일치 시 미발견 처리) |
-| **요청 부서 승인자** | HR 요청(휴가/근무/근태 등)의 부서 승인자는 **요청자 소속(대표) 부서의 조직관리자(`ORG_ADMIN`)** 이며, 같은 부서에 없으면 **상위 부서로 올라가며** `ORG_ADMIN`을 탐색한다(`resolveDeptApprover`). `GENERAL_ADMIN`/`SUPER_ADMIN`은 회사 전역 관리자라 부서 승인자로 보지 않으며, 트리에 `ORG_ADMIN`이 전혀 없을 때만 회사 `GENERAL_ADMIN` 이상으로 fallback. 적용 `ApprovalRule`(직위)이 있으면 그 규칙 우선. 상신 알림은 1차 결재자(`assigneeId`)에게 발송(연동 시 DM, 미연동 시 인앱+이메일). 조직관리자는 **사용자 "요청" 메뉴의 "승인 대기" 탭**에서 소속 부서 구성원의 PENDING 요청을 승인/반려한다. **전자결재의 부서 결재권자(`organization.approverId`)와는 별개 체계** — [HR 요청 ↔ 전자결재 이원화] 참조. | — |
+| **요청 부서 승인자** | HR 요청(휴가/근무/근태 등)의 부서 승인자는 **요청자 소속(대표) 부서의 조직관리자(`ORG_ADMIN`)** 를 우선하되, 같은 부서에 `ORG_ADMIN`이 없으면 그 부서의 **총괄관리자(`GENERAL_ADMIN`)** 도 인정한다. 둘 다 없으면 **상위 부서로 올라가며** 동일 규칙으로 탐색한다(`resolveDeptApprover`). 트리 어디에도 없으면 최종적으로 회사 `GENERAL_ADMIN` 이상으로 fallback. 적용 `ApprovalRule`(직위)이 있으면 그 규칙 우선. 상신 알림은 1차 결재자(`assigneeId`)에게 발송(연동 시 DM, 미연동 시 인앱+이메일). 조직관리자는 **사용자 "요청" 메뉴의 "승인 대기" 탭**에서 소속 부서 구성원의 PENDING 요청을 승인/반려한다. **전자결재의 부서 결재권자(`organization.approverId`)와는 별개 체계** — [HR 요청 ↔ 전자결재 이원화] 참조. | — |
 | **자기결재 금지 ①** | 요청 생성 시 본인 외 결재 가능한 관리자(`GENERAL_ADMIN` 이상)가 없으면 요청을 거부한다(자기 자신을 결재자로 fallback 하지 않는다). | `REQUEST_NO_APPROVER` |
 | **자기결재 금지 ②** | 결재 처리 시 `요청자 == 결재자`이면 차단한다(관리자 포함). | `REQUEST_SELF_APPROVAL` |
 | **휴가 잔액 조회** | 본인 또는 `ORG_ADMIN` 이상만 타 직원 잔액을 조회할 수 있다. | `LEAVE_BALANCE_FORBIDDEN` |
@@ -1030,7 +1052,9 @@ notification_rules {
 │   ├── GET    /                      # 조직 트리 조회
 │   ├── POST   /                      # 조직 생성
 │   ├── PATCH  /:id                   # 조직 수정
-│   └── DELETE /:id                   # 조직 삭제
+│   ├── DELETE /:id                   # 조직 삭제
+│   ├── GET    /:id/timeclock-areas   # 조직에 연결된 출퇴근 장소 목록
+│   └── PATCH  /:id/timeclock-areas   # 조직-장소 연결 집합 교체 (GENERAL_ADMIN+)
 │
 ├── employees/
 │   ├── GET    /                      # 직원 목록 (필터/검색)
@@ -1044,9 +1068,9 @@ notification_rules {
 │   ├── GET    /:id/custom-fields     # 커스텀 필드 값 조회
 │   └── PATCH  /:id/custom-fields     # 커스텀 필드 값 수정
 │
-├── timeclock-areas/
-│   ├── GET    /                      # 출퇴근 장소 목록 (조직 필터)
-│   ├── POST   /                      # 출퇴근 장소 등록
+├── timeclock-areas/                  # 회사 단위 장소. 조직 연결은 organizations/:id/timeclock-areas
+│   ├── GET    /                      # 출퇴근 장소 목록 (조직 필터=연결 조인)
+│   ├── POST   /                      # 출퇴근 장소 등록 (조직 미지정, 회사 단위)
 │   ├── PATCH  /:id                   # 출퇴근 장소 수정
 │   └── DELETE /:id                   # 출퇴근 장소 삭제
 │
@@ -1066,8 +1090,8 @@ notification_rules {
 │   └── DELETE /:id                   # 템플릿 삭제
 │
 ├── attendances/
-│   ├── GET    /                      # 출퇴근 목록 조회
-│   ├── POST   /clock-in              # 출근 기록
+│   ├── GET    /                      # 출퇴근 목록 조회 (scope=org → 요청자 소속 조직, 서버 해석)
+│   ├── POST   /clock-in              # 출근 기록 (organizationId/positionId/channel + 검증)
 │   ├── POST   /clock-out             # 퇴근 기록
 │   ├── POST   /break-start           # 휴게 시작
 │   ├── POST   /break-end             # 휴게 종료

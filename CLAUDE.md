@@ -336,9 +336,11 @@ pnpm dev
 
 | 문서 | 내용 |
 |---|---|
+| `docs/design/CHANGELOG.md` | **변경 이력 SSOT** — 기능·설계·데이터·운영 변경 추적. 신규 작업/추적/롤백 판단 시 먼저 읽고, 변경 후 갱신할 것 |
 | `docs/design/SYSTEM_DESIGN.md` | 아키텍처, 모듈 상세, API 엔드포인트 전체, 연동 플로우 |
-| `docs/design/ERD.md` | 52개 테이블 Mermaid ERD + company_settings 키 목록 |
+| `docs/design/ERD.md` | 테이블 Mermaid ERD + company_settings 키 목록 |
 | `docs/design/FEATURE_LIST.md` | 기능 목록, 우선순위, 화면 경로 목록 |
+| `docs/design/DATA_MIGRATION.md` | kakaowork+Shiftee → AbleWork 데이터 이전 절차·규칙(에이비웍스 적용 완료) |
 | `docs/design/ENGINEERING_DESIGN.md` | 기술 스택, 디렉토리 구조, 설정 코드, 배포 |
 | `docs/design/THEMING.md` | 멀티 테마(6종) SSOT·전환·SSR. 색 토큰 추가/변경은 `apps/web/src/theme/tokens.ts` 한 곳에서 |
 | `docs/design/AWS_OPERATIONS.md` | **AWS 운영 런북** — 계정·리소스 ID·접속(SSM)·배포·SSM 파라미터·로그·트러블슈팅. 다른 세션에서 AWS 작업 시 먼저 읽을 것. 스크립트는 `deploy/aws/` |

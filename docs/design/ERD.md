@@ -1,7 +1,8 @@
 # AbleWork ERP — 데이터베이스 ERD
 
-> 버전: 2.2.0 (2026-06-12 5라운드 순환 점검 완료)  
-> 표기법: Mermaid ERD (GitHub/GitBook 렌더링 지원)
+> 버전: 2.2.0 (2026-06-12 5라운드 순환 점검 완료) · 2026-06-29 출퇴근 스키마 갱신  
+> 표기법: Mermaid ERD (GitHub/GitBook 렌더링 지원)  
+> 스키마 변경 이력은 [CHANGELOG.md](./CHANGELOG.md) 참조. 최근(2026-06-29): `20260629090000_add_attendance_position`(attendances.position_id), `20260629120000_timeclock_area_org_n_to_n`(timeclock_areas 회사 스코프 전환 + organization_timeclock_areas 조인 신설).
 
 ```mermaid
 erDiagram
@@ -165,7 +166,7 @@ erDiagram
 
   timeclock_areas {
     uuid    id PK
-    uuid    organization_id FK
+    uuid    company_id FK
     string  name
     string  auth_method
     decimal location_lat
@@ -176,8 +177,18 @@ erDiagram
   }
   %% auth_method: gps / wifi / gps_or_wifi / gps_and_wifi / none
   %% gps_and_wifi = GPS 반경 AND WiFi 연결 모두 충족해야 인증
+  %% 회사 단위 스코프(company_id). 조직 연결은 organization_timeclock_areas(N:N)로 관리.
 
-  organizations ||--o{ timeclock_areas : "has"
+  organization_timeclock_areas {
+    uuid   organization_id PK,FK
+    uuid   timeclock_area_id PK,FK
+    timestamptz created_at
+  }
+  %% 출퇴근 장소 ↔ 조직 N:N 조인 (한 장소를 여러 조직이 공유). 복합 PK.
+
+  companies ||--o{ timeclock_areas : "owns"
+  timeclock_areas ||--o{ organization_timeclock_areas : "linked via"
+  organizations ||--o{ organization_timeclock_areas : "linked via"
 
   %% ════════════════════════════════════════════════
   %% 5. 근무일정
@@ -268,6 +279,7 @@ erDiagram
     uuid    employee_id FK
     uuid    shift_id FK
     uuid    timeclock_area_id FK
+    uuid    position_id FK
     timestamptz clock_in_at
     timestamptz clock_out_at
     decimal clock_in_lat
@@ -296,7 +308,9 @@ erDiagram
   employees ||--o{ attendances : "records"
   shifts ||--o| attendances : "linked to"
   timeclock_areas ||--o{ attendances : "recorded at"
+  positions ||--o{ attendances : "worked as"
   attendances ||--o{ attendance_breaks : "has"
+  %% position_id: 무일정 출근 시 선택한 직무 기록 (nullable, onDelete SetNull)
 
   %% ════════════════════════════════════════════════
   %% 7. 휴가
@@ -797,7 +811,7 @@ erDiagram
 
 ---
 
-## 테이블 목록 (55개 도메인 테이블)
+## 테이블 목록 (56개 도메인 테이블)
 
 | # | 테이블 | 설명 |
 |---|---|---|
@@ -813,7 +827,7 @@ erDiagram
 | 10 | employee_custom_fields | 직원 커스텀 필드 정의 |
 | 11 | employee_custom_field_values | 직원 커스텀 필드 값 |
 | 12 | wage_infos | 근로정보 이력 (시급·소정근로규칙) |
-| 13 | **timeclock_areas** | **출퇴근 장소 (GPS/WiFi)** |
+| 13 | **timeclock_areas** | **출퇴근 장소 (GPS/WiFi, 회사 단위 스코프)** |
 | 14 | shift_types | 근무일정 유형 |
 | 15 | shift_templates | 근무일정 템플릿 |
 | 16 | schedule_patterns | 반복 스케줄 패턴 |
@@ -856,6 +870,7 @@ erDiagram
 | 53 | **document_attachments** | **기안 첨부파일 (MinIO 오브젝트 메타)** |
 | 54 | **form_categories** | **기안양식 분류(양식함)** |
 | 55 | **document_categories** | **문서성격(채번 대분류 — 사업/일반/인사/LABL CHINA)** |
+| 56 | **organization_timeclock_areas** | **출퇴근 장소 ↔ 조직 N:N 조인** |
 
 ---
 
