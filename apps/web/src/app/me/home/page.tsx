@@ -152,7 +152,7 @@ export default function HomePage() {
             </button>
           )}
 
-          {clockedOut && <div className="me-clock-done">오늘 근무가 마감됐습니다</div>}
+          {clockedOut && <div className="me-clock-done">근무 마감</div>}
 
           {/* 요청 — 홈에서 바로 새 요청(요청 유형 선택) 팝업 */}
           <button data-testid="me-request-btn" className="btn btn-line btn-lg" onClick={() => setReqOpen(true)}>
@@ -165,11 +165,11 @@ export default function HomePage() {
       <KpiGrid cols={3}>
         <Kpi label="전체 연차" value={annual ? annual.accruedDays : 0} unit="일" desc="발생(부여)" />
         <Kpi label="사용 연차" value={annual ? annual.usedDays : 0} unit="일" desc="사용" />
-        <Kpi label="잔여 연차" value={annual ? annual.remainingDays : 0} unit="일" accent desc="잔여" />
+        <Kpi label="잔여 연차" value={annual ? annual.remainingDays : 0} unit="일" desc="잔여" />
       </KpiGrid>
 
-      {/* 최근 요청 + 결재 대기 문서 — 1행 2열 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, alignItems: 'start' }}>
+      {/* 최근 요청 + 결재 대기 문서 — 2행 1열(세로 스택) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
         <CardBox title="최근 요청" more="요청 내역 →" onMore={() => router.push('/me/requests')}>
           <div className="mini">
             {recentReqs.length === 0 ? (

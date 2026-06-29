@@ -190,3 +190,13 @@
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .dash-grid { grid-template-columns: 1fr; }
 }
+
+/* 모바일: 좁은 열에서도 KPI가 깨지지 않도록 패딩·폰트·자간 축소.
+   (홈 연차현황은 cols=3 인라인으로 3열을 유지하므로 각 열 폭이 매우 좁다) */
+@media (max-width: 560px) {
+  .kpi { padding: 16px 12px; }
+  .kpi-k { font-size: 10px; letter-spacing: 0.06em; margin-bottom: 10px; white-space: nowrap; }
+  .kpi-v { font-size: clamp(22px, 7vw, 32px); }
+  .kpi-v .u { font-size: 12px; margin-left: 3px; }
+  .kpi-d { font-size: 11px; margin-top: 8px; }
+}
