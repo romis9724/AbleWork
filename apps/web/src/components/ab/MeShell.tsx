@@ -8,6 +8,8 @@ import type { ReactNode } from 'react'
 import { Sigil, I, HRI } from './icons'
 import { useAuthStore } from '@/stores/auth.store'
 import { ThemeSwitcher } from './ThemeSwitcher'
+import { useToast } from './Toast'
+import { isMobileViewport } from '@/lib/device'
 
 // 프로필은 헤더 우측 아바타 아이콘으로 접근하므로 네비에서 제외하고 '출퇴근기록'을 노출
 const ME_NAV = [
@@ -24,8 +26,23 @@ const ADMIN_ROLES = new Set(['SUPER_ADMIN', 'GENERAL_ADMIN', 'ORG_ADMIN'])
 export function MeShell({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
+  const toast = useToast()
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.accessLevel ? ADMIN_ROLES.has(user.accessLevel) : false
+
+  // 관리자 모드는 PC 전용 — 모바일에서는 안내 메시지만 띄우고 이동하지 않는다.
+  const goAdmin = () => {
+    if (isMobileViewport()) {
+      toast('관리자 모드는 PC에서 이용해 주세요')
+      return
+    }
+    router.push('/admin/dashboard')
+  }
+  // 로고(홈): 모바일이거나 비관리자는 직원 홈으로, PC 관리자는 관리자 대시보드로.
+  const goLogoHome = () => {
+    if (isAdmin && !isMobileViewport()) router.push('/admin/dashboard')
+    else router.push('/me/home')
+  }
 
   return (
     <div className="me-shell">
@@ -33,11 +50,11 @@ export function MeShell({ children }: { children: ReactNode }) {
         <div
           role="button"
           tabIndex={0}
-          onClick={() => router.push(isAdmin ? '/admin/dashboard' : '/me/home')}
+          onClick={goLogoHome}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
-              router.push(isAdmin ? '/admin/dashboard' : '/me/home')
+              goLogoHome()
             }
           }}
           style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
@@ -52,11 +69,11 @@ export function MeShell({ children }: { children: ReactNode }) {
               className="me-head-switch"
               role="button"
               tabIndex={0}
-              onClick={() => router.push('/admin/dashboard')}
+              onClick={goAdmin}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
-                  router.push('/admin/dashboard')
+                  goAdmin()
                 }
               }}
             >
