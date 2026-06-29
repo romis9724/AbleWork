@@ -78,7 +78,7 @@
   - '최근 요청'+'결재 대기 문서' 그리드 `repeat(2,…)` → **`1fr`(2행 1열·세로 스택)**. `app/me/home/page.tsx`.
   - '잔여 연차' KPI의 **액센트 강조 바(`.kpi.accent::after`) 제거** — `Kpi`의 `accent` prop 해제. 칸 구분은 기본 `border-right`만 유지(색 없음).
 - **영향**: FE만(`page.tsx`, `ab-hr.css`). 마이그레이션·API 없음. KPI 모바일 축소 규칙은 me/* 전 화면 KPI에 공통 적용(개선).
-- **배포**: 미배포(작업 트리). 직전 `7b68aa1` 배포가 CI 빌드 인스턴스 OOM freeze로 web 미반영 상태 → 복구 후 다음 배포에 함께 포함 예정.
+- **배포**: main `a03738b`(2026-06-29). 직전 `7b68aa1` 배포는 CI 빌드 인스턴스 OOM freeze로 web 미반영이었음 → 빌드 인스턴스 리부팅 + resource_group `prod-deploy` 리네임(`7145200`, 옛 락 우회)으로 복구, 본 배포에서 모바일 직원모드 등 7b68aa1 web 변경까지 함께 반영. web 컨테이너 재생성 확인(digest 일치).
 
 ---
 
