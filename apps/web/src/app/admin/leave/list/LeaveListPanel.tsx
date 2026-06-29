@@ -51,7 +51,7 @@ const DEFAULT_LIMIT = 20
  * PageHeader는 호출하는 page가 렌더하고, 패널은 자체 툴바(휴가 추가)를 가진다.
  */
 export default function LeaveListPanel() {
-  const { data: employeesData } = useEmployees({ isActive: true, excludeSuperAdmin: true })
+  const { data: employeesData } = useEmployees({ isActive: true, excludeSuperAdmin: true, limit: 500 })
   const employees: Employee[] = employeesData?.items ?? []
 
   // Filters
