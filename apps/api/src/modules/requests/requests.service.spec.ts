@@ -285,6 +285,42 @@ describe('RequestsService', () => {
       )
     })
 
+    it('부서에 조직관리자가 없고 총괄관리자(GENERAL_ADMIN)만 있으면 그 총괄관리자를 부서 승인자로 지정한다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE)
+      const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' } }
+
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => callback(mockPrisma),
+      )
+      mockPrisma.request.create.mockResolvedValue({ ...basePendingRequest, documentId: null })
+      // ORG_ADMIN 조회는 null, GENERAL_ADMIN 조회는 genadmin-1 반환 (부서 단계 우선순위 검증)
+      mockPrisma.employee.findFirst.mockImplementation(
+        (args: { where?: { accessLevel?: unknown } }) => {
+          const lvl = args?.where?.accessLevel
+          if (lvl === AccessLevel.ORG_ADMIN) return Promise.resolve(null)
+          if (lvl === AccessLevel.GENERAL_ADMIN) return Promise.resolve({ id: 'genadmin-1' })
+          if (lvl) return Promise.resolve(null)
+          return Promise.resolve({
+            id: EMPLOYEE_ID, companyId: COMPANY_ID, name: '홍길동',
+            organizations: [{ organizationId: 'org-1' }], positions: [],
+          })
+        },
+      )
+      mockPrisma.employeeOrganization.findFirst.mockResolvedValue({ organizationId: 'org-1' })
+      mockPrisma.approvalRule.findMany.mockResolvedValue([])
+      mockPrisma.documentForm.findFirst.mockResolvedValue({ id: 'form-1', companyId: COMPANY_ID, category: 'leave_request' })
+      mockPrisma.document.create.mockResolvedValue({ id: DOCUMENT_ID, companyId: COMPANY_ID })
+      mockPrisma.approvalLine.create.mockResolvedValue({ id: 'line-1', documentId: DOCUMENT_ID })
+      mockPrisma.approvalStep.create.mockResolvedValue({})
+      mockPrisma.request.update.mockResolvedValue({ ...basePendingRequest })
+
+      await service.createRequest(COMPANY_ID, dto, requester)
+
+      expect(mockPrisma.approvalStep.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ assigneeId: 'genadmin-1' }) }),
+      )
+    })
+
     it('적용 규칙이 있으면 Request.ruleId에 규칙 id를 스냅샷한다 (§6.6 #3)', async () => {
       const requester = makeRequester(AccessLevel.EMPLOYEE)
       const dto = { type: 'LEAVE_CREATE' as const, payload: { leaveTypeId: 'lt-1', startDate: '2026-06-15', endDate: '2026-06-15' } }
