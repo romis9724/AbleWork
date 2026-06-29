@@ -10,7 +10,7 @@ export const AuthMethod = {
 
 export const CreateTimeclockAreaSchema = z
   .object({
-    organizationId: z.string().min(1, '유효한 조직 ID를 입력하세요.'),
+    // 출퇴근 장소 ↔ 조직은 N:N. 조직 연결은 '조직 관리' 화면에서 설정하므로 장소 생성 시엔 조직을 받지 않는다.
     name: z.string().min(1, '장소 이름을 입력하세요.').max(100),
     authMethod: z.enum(['gps', 'wifi', 'gps_or_wifi', 'gps_and_wifi', 'none'], {
       errorMap: () => ({ message: '인증 방식이 올바르지 않습니다.' }),

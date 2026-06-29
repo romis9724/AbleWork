@@ -74,6 +74,7 @@ model Company {
   auditLogs            AuditLog[]
   messengerAccounts    MessengerAccount[]
   errorAnalysisLogs    ErrorAnalysisLog[]
+  timeclockAreas       TimeclockArea[]
 
   @@index([groupId])
   @@map("companies")
@@ -103,7 +104,7 @@ model Organization {
   docManagers      OrganizationDocManager[]
   deptSteps        ApprovalStep[]         @relation("StepDept")
   employeeOrgs     EmployeeOrganization[]
-  timeclockAreas   TimeclockArea[]
+  timeclockAreas   OrganizationTimeclockArea[]
   shifts           Shift[]
 
   @@index([companyId, isActive])
@@ -344,7 +345,7 @@ model WageInfo {
 
 model TimeclockArea {
   id                    String   @id @default(uuid())
-  organizationId        String   @map("organization_id")
+  companyId             String   @map("company_id")
   name                  String   @db.VarChar(100)
   authMethod            String   @map("auth_method") @db.VarChar(20)
   locationLat           Decimal? @map("location_lat") @db.Decimal(10, 7)
@@ -355,10 +356,27 @@ model TimeclockArea {
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  attendances  Attendance[]
+  // 출퇴근 장소 ↔ 조직 N:N (한 장소를 여러 조직이 공유). 회사 단위로 직접 스코프.
+  company       Company                      @relation(fields: [companyId], references: [id])
+  organizations OrganizationTimeclockArea[]
+  attendances   Attendance[]
 
+  @@index([companyId, isActive])
   @@map("timeclock_areas")
+}
+
+// 출퇴근 장소 ↔ 조직 N:N 조인. 조직 관리 화면에서 장소를 다중 선택해 연결한다.
+model OrganizationTimeclockArea {
+  organizationId  String   @map("organization_id")
+  timeclockAreaId String   @map("timeclock_area_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  timeclockArea TimeclockArea @relation(fields: [timeclockAreaId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, timeclockAreaId])
+  @@index([timeclockAreaId])
+  @@map("organization_timeclock_areas")
 }
 
 // ════════════════════════════════════════════════

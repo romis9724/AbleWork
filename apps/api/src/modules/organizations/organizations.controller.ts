@@ -22,6 +22,7 @@ import { AccessLevel } from '@ablework/shared-constants'
 import { CreateOrganizationSchema, CreateOrganizationDto } from './dto/create-organization.dto'
 import { UpdateOrganizationSchema, UpdateOrganizationDto } from './dto/update-organization.dto'
 import { SetDocManagersSchema, SetDocManagersDto } from './dto/set-doc-managers.dto'
+import { SetTimeclockAreasSchema, SetTimeclockAreasDto } from './dto/set-timeclock-areas.dto'
 
 @ApiTags('organizations')
 @Controller('organizations')
@@ -87,5 +88,25 @@ export class OrganizationsController {
     @Body(new ZodValidationPipe(SetDocManagersSchema)) dto: SetDocManagersDto,
   ) {
     return this.organizationsService.setDocManagers(companyId, id, dto.employeeIds)
+  }
+
+  // ── 출퇴근 장소 연결(다중, N:N) ─────────────────────────────────────────────
+
+  @Get(':id/timeclock-areas')
+  @ApiOperation({ summary: '조직에 연결된 출퇴근 장소 목록' })
+  getTimeclockAreas(@Param('id') id: string, @CompanyId() companyId: string) {
+    return this.organizationsService.getTimeclockAreas(companyId, id)
+  }
+
+  @Patch(':id/timeclock-areas')
+  @UseGuards(RolesGuard)
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '조직 출퇴근 장소 연결 집합 교체 (GENERAL_ADMIN 이상)' })
+  setTimeclockAreas(
+    @Param('id') id: string,
+    @CompanyId() companyId: string,
+    @Body(new ZodValidationPipe(SetTimeclockAreasSchema)) dto: SetTimeclockAreasDto,
+  ) {
+    return this.organizationsService.setTimeclockAreas(companyId, id, dto.areaIds)
   }
 }

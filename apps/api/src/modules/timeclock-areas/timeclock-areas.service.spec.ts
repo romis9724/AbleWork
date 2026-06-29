@@ -11,7 +11,7 @@ const AREA_ID = 'area-1'
 
 const baseArea = {
   id: AREA_ID,
-  organizationId: ORG_ID,
+  companyId: COMPANY_ID,
   name: '본사 1층',
   authMethod: 'gps',
   locationLat: 37.5665,
@@ -21,7 +21,7 @@ const baseArea = {
   isActive: true,
   createdAt: new Date(),
   updatedAt: new Date(),
-  organization: { id: ORG_ID, name: '개발팀' },
+  organizations: [{ organization: { id: ORG_ID, name: '개발팀' } }],
 }
 
 const mockPrisma = {
@@ -94,12 +94,10 @@ describe('TimeclockAreasService', () => {
   // ── create ───────────────────────────────────────────────────────────────────
 
   describe('create', () => {
-    it('GPS 인증 방식으로 장소를 생성한다', async () => {
-      mockPrisma.organization.findFirst.mockResolvedValue({ id: ORG_ID, companyId: COMPANY_ID })
+    it('조직 없이 회사 소속으로 장소를 생성한다(조직 연결은 조직 관리에서)', async () => {
       mockPrisma.timeclockArea.create.mockResolvedValue(baseArea)
 
       const dto = {
-        organizationId: ORG_ID,
         name: '본사 1층',
         authMethod: 'gps' as const,
         locationLat: 37.5665,
@@ -110,23 +108,13 @@ describe('TimeclockAreasService', () => {
       const result = await service.create(COMPANY_ID, dto)
 
       expect(result).toEqual(baseArea)
+      // 회사 스코프로 생성, 조직은 받지 않는다
       expect(mockPrisma.timeclockArea.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ name: '본사 1층', authMethod: 'gps' }),
+          data: expect.objectContaining({ companyId: COMPANY_ID, name: '본사 1층', authMethod: 'gps' }),
         }),
       )
-    })
-
-    it('유효하지 않은 조직이면 BadRequestException을 던진다', async () => {
-      mockPrisma.organization.findFirst.mockResolvedValue(null)
-
-      await expect(
-        service.create(COMPANY_ID, {
-          organizationId: 'bad-org',
-          name: '장소',
-          authMethod: 'none' as const,
-        }),
-      ).rejects.toThrow(BadRequestException)
+      expect(mockPrisma.organization.findFirst).not.toHaveBeenCalled()
     })
   })
 

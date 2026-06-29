@@ -41,6 +41,11 @@ const mockPrisma = {
     deleteMany: jest.fn(),
     createMany: jest.fn(),
   },
+  organizationTimeclockArea: {
+    findMany: jest.fn(),
+    deleteMany: jest.fn(),
+    createMany: jest.fn(),
+  },
   employee: {
     count: jest.fn(),
   },
@@ -282,16 +287,19 @@ describe('OrganizationsService', () => {
       expect(mockPrisma.organization.update).not.toHaveBeenCalled()
     })
 
-    it('출퇴근 장소가 있으면 ORG_HAS_TIMECLOCK_AREAS로 차단한다', async () => {
+    it('출퇴근 장소(N:N)는 조직 삭제를 막지 않는다 — 연결만 Cascade로 해제된다', async () => {
       mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
       mockPrisma.organization.count.mockResolvedValue(0)
       mockPrisma.employeeOrganization.count.mockResolvedValue(0)
-      mockPrisma.timeclockArea.count.mockResolvedValue(1)
+      mockPrisma.shift.count.mockResolvedValue(0)
+      mockPrisma.organization.update.mockResolvedValue(makeOrg({ isActive: false }))
 
-      await expect(service.remove('org-1', 'company-1')).rejects.toMatchObject({
-        response: { code: 'ORG_HAS_TIMECLOCK_AREAS' },
-      })
-      expect(mockPrisma.organization.update).not.toHaveBeenCalled()
+      await service.remove('org-1', 'company-1')
+
+      // 장소 연결 여부와 무관하게 소프트 삭제까지 진행
+      expect(mockPrisma.organization.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { isActive: false } }),
+      )
     })
 
     it('근무일정이 있으면 ORG_HAS_SHIFTS로 차단한다', async () => {
@@ -367,6 +375,55 @@ describe('OrganizationsService', () => {
         where: { id: 'org-1' },
         data: { docManagerId: null },
       })
+    })
+  })
+
+  describe('조직 출퇴근 장소 연결 (N:N)', () => {
+    it('getTimeclockAreas: 조직이 없으면 404', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(null)
+      await expect(service.getTimeclockAreas('company-1', 'org-x')).rejects.toThrow(NotFoundException)
+    })
+
+    it('setTimeclockAreas: 타사/비활성 장소 포함 시 TIMECLOCK_AREA_NOT_FOUND', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
+      mockPrisma.timeclockArea.count.mockResolvedValue(1) // 2개 중 1개만 자사·활성
+
+      await expect(
+        service.setTimeclockAreas('company-1', 'org-1', ['area-1', 'area-2']),
+      ).rejects.toMatchObject({ response: { code: 'TIMECLOCK_AREA_NOT_FOUND' } })
+    })
+
+    it('setTimeclockAreas: 조인 집합을 통째로 교체한다', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
+      mockPrisma.timeclockArea.count.mockResolvedValue(2)
+      mockPrisma.organizationTimeclockArea.deleteMany.mockResolvedValue({ count: 0 })
+      mockPrisma.organizationTimeclockArea.createMany.mockResolvedValue({ count: 2 })
+      mockPrisma.organizationTimeclockArea.findMany.mockResolvedValue([])
+
+      await service.setTimeclockAreas('company-1', 'org-1', ['area-1', 'area-2'])
+
+      expect(mockPrisma.organizationTimeclockArea.deleteMany).toHaveBeenCalledWith({
+        where: { organizationId: 'org-1' },
+      })
+      expect(mockPrisma.organizationTimeclockArea.createMany).toHaveBeenCalledWith({
+        data: [
+          { organizationId: 'org-1', timeclockAreaId: 'area-1' },
+          { organizationId: 'org-1', timeclockAreaId: 'area-2' },
+        ],
+      })
+    })
+
+    it('setTimeclockAreas: 빈 목록이면 연결만 모두 해제', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue(makeOrg())
+      mockPrisma.organizationTimeclockArea.deleteMany.mockResolvedValue({ count: 3 })
+      mockPrisma.organizationTimeclockArea.findMany.mockResolvedValue([])
+
+      await service.setTimeclockAreas('company-1', 'org-1', [])
+
+      expect(mockPrisma.organizationTimeclockArea.deleteMany).toHaveBeenCalledWith({
+        where: { organizationId: 'org-1' },
+      })
+      expect(mockPrisma.organizationTimeclockArea.createMany).not.toHaveBeenCalled()
     })
   })
 })

@@ -213,8 +213,11 @@ export class AttendancesService {
       const area = await this.assertTimeclockAreaBelongsToCompany(companyId, timeclockAreaId)
       // 웹은 WiFi 검증 수단이 없어 WiFi 필수 장소(wifi/gps_and_wifi)를 사용할 수 없다 (앱 전용)
       this.assertAreaChannelAllowed(area, channel)
-      // 조직과 장소를 함께 보낸 경우, 장소가 그 조직 소속인지 확인
-      if (organizationId && area.organizationId !== organizationId) {
+      // 조직과 장소를 함께 보낸 경우, 장소가 그 조직에 연결(N:N)돼 있는지 확인
+      if (
+        organizationId &&
+        !area.organizations.some((o) => o.organizationId === organizationId)
+      ) {
         throw new BadRequestException({
           code: 'TIMECLOCK_AREA_ORG_MISMATCH',
           message: '선택한 조직에 속하지 않는 출퇴근 장소입니다.',
@@ -851,14 +854,14 @@ export class AttendancesService {
 
   private async assertTimeclockAreaBelongsToCompany(companyId: string, timeclockAreaId: string) {
     const area = await this.prisma.timeclockArea.findFirst({
-      where: { id: timeclockAreaId, isActive: true, organization: { companyId } },
+      where: { id: timeclockAreaId, isActive: true, companyId },
       select: {
         id: true,
-        organizationId: true,
         authMethod: true,
         locationLat: true,
         locationLng: true,
         locationRadiusMeters: true,
+        organizations: { select: { organizationId: true } },
       },
     })
     if (!area) {

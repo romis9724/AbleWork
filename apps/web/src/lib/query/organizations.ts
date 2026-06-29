@@ -76,3 +76,29 @@ export const useSetOrgDocManagers = () => {
     },
   })
 }
+
+// 조직 ↔ 출퇴근 장소 연결 (N:N)
+export interface OrgTimeclockArea {
+  timeclockAreaId: string
+  timeclockArea: { id: string; name: string; authMethod: string }
+}
+
+export const useOrgTimeclockAreas = (orgId: string | null) =>
+  useQuery({
+    queryKey: [...QUERY_KEY, orgId, 'timeclock-areas'],
+    queryFn: () =>
+      apiClient.get(`/organizations/${orgId}/timeclock-areas`) as Promise<OrgTimeclockArea[]>,
+    enabled: !!orgId,
+  })
+
+export const useSetOrgTimeclockAreas = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ orgId, areaIds }: { orgId: string; areaIds: string[] }) =>
+      apiClient.patch(`/organizations/${orgId}/timeclock-areas`, { areaIds }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: [...QUERY_KEY, vars.orgId, 'timeclock-areas'] })
+      qc.invalidateQueries({ queryKey: ['timeclock-areas'] })
+    },
+  })
+}

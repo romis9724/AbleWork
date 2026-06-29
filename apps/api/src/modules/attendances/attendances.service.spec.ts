@@ -312,11 +312,11 @@ describe('AttendancesService', () => {
     it('조직과 장소가 불일치하면 TIMECLOCK_AREA_ORG_MISMATCH로 거부한다', async () => {
       mockPrisma.timeclockArea.findFirst.mockResolvedValue({
         id: 'area-1',
-        organizationId: 'org-other',
         authMethod: 'none',
         locationLat: null,
         locationLng: null,
         locationRadiusMeters: null,
+        organizations: [{ organizationId: 'org-other' }], // 다른 조직에만 연결
       })
 
       await expect(
