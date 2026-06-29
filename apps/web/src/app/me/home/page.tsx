@@ -3,8 +3,6 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   useClockOut,
-  useBreakStart,
-  useBreakEnd,
   useMyTodayAttendance,
 } from '@/lib/query/attendances'
 import { useLeaveBalance } from '@/lib/query/leaves'
@@ -16,6 +14,7 @@ import { Badge, type BadgeKind } from '@/components/ab/atoms'
 import { HRI } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
 import { ClockInModal } from '@/components/attendance/ClockInModal'
+import { NewRequestModal } from '@/app/me/requests/NewRequestModal'
 
 const REQUEST_TYPE_LABEL: Record<string, string> = {
   LEAVE_CREATE: '휴가 신청',
@@ -64,28 +63,23 @@ export default function HomePage() {
   const onBreak = !!today?.openBreak
 
   const [clockInOpen, setClockInOpen] = useState(false)
+  const [reqOpen, setReqOpen] = useState(false)
   const clockOutMutation = useClockOut()
-  const breakStartMutation = useBreakStart()
-  const breakEndMutation = useBreakEnd()
 
   const { data: balances = [] } = useLeaveBalance(employeeId)
-  const totalRemain = balances.reduce((sum, b) => sum + (b.remainingDays ?? 0), 0)
-  // ANNUAL 매칭 실패 시 balances[0]로 폴백하므로 KPI 라벨도 실제 유형명으로 동적 표기
-  const annual = balances.find((b) => b.leaveType?.code === 'ANNUAL') ?? balances[0]
-  const annualLabel = annual
-    ? `잔여 ${annual.leaveType?.displayName ?? annual.leaveType?.name ?? '연차'}`
-    : '잔여 연차'
+  // 연차 잔액 = 연차휴가 그룹(대표 유형 '연차전일'). 유형명이 '연차'로 시작하는 잔액으로 식별.
+  const annual =
+    balances.find((b) => {
+      const n = b.leaveType?.name ?? b.leaveType?.displayName ?? ''
+      return n.startsWith('연차') || b.leaveType?.code === 'ANNUAL'
+    }) ?? null
 
   const { data: reqRaw } = useRequests()
   const reqItems = unwrap<Request>(reqRaw)
   const pendingCount = reqItems.filter((r) => r.status === 'PENDING').length
   const recentReqs = reqItems.slice(0, 5)
 
-  const busy =
-    isTodayLoading ||
-    clockOutMutation.isPending ||
-    breakStartMutation.isPending ||
-    breakEndMutation.isPending
+  const busy = isTodayLoading || clockOutMutation.isPending
 
   const withGeolocation = async (): Promise<{ lat: number; lng: number } | null> => {
     if (!navigator.geolocation) {
@@ -111,24 +105,6 @@ export default function HomePage() {
       toast('퇴근 기록이 완료됐습니다')
     } catch (err) {
       toast(err instanceof Error ? err.message : '퇴근 처리 중 오류가 발생했습니다')
-    }
-  }
-
-  const handleBreakStart = async (breakType: 'rest' | 'meal' = 'rest') => {
-    try {
-      await breakStartMutation.mutateAsync(breakType)
-      toast(breakType === 'meal' ? '식사 시간이 시작됐습니다' : '휴게 시간이 시작됐습니다')
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '휴게 처리 중 오류가 발생했습니다')
-    }
-  }
-
-  const handleBreakEnd = async () => {
-    try {
-      await breakEndMutation.mutateAsync()
-      toast('휴게 시간이 종료됐습니다')
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '휴게 종료 처리 중 오류가 발생했습니다')
     }
   }
 
@@ -166,40 +142,26 @@ export default function HomePage() {
             </button>
           )}
 
-          {clockedIn && !onBreak && (
-            <>
-              <button data-testid="me-break-rest-btn" className="btn btn-line btn-lg" disabled={busy} onClick={() => handleBreakStart('rest')}>
-                {breakStartMutation.isPending ? '처리 중…' : '휴게 시작'}
-              </button>
-              <button data-testid="me-break-meal-btn" className="btn btn-line btn-lg" disabled={busy} onClick={() => handleBreakStart('meal')}>
-                식사 시작
-              </button>
-              <button data-testid="me-clock-out-btn" className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockOut}>
-                {clockOutMutation.isPending ? '처리 중…' : '퇴근하기'}
-              </button>
-            </>
-          )}
-
-          {clockedIn && onBreak && (
-            <button data-testid="me-break-end-btn" className="btn btn-primary btn-lg" disabled={busy} onClick={handleBreakEnd}>
-              {breakEndMutation.isPending ? '처리 중…' : '휴게 종료'}
+          {clockedIn && (
+            <button data-testid="me-clock-out-btn" className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockOut}>
+              {clockOutMutation.isPending ? '처리 중…' : '퇴근하기'}
             </button>
           )}
 
           {clockedOut && <div className="me-clock-done">오늘 근무가 마감됐습니다</div>}
+
+          {/* 요청 — 홈에서 바로 새 요청(요청 유형 선택) 팝업 */}
+          <button data-testid="me-request-btn" className="btn btn-line btn-lg" onClick={() => setReqOpen(true)}>
+            요청
+          </button>
         </div>
       </div>
 
-      {/* 내 휴가잔액 KPI */}
+      {/* 연차 현황 KPI — 관리자모드 '휴가'와 동일(전체/사용/잔여 연차) */}
       <KpiGrid>
-        <Kpi
-          label={annualLabel}
-          value={annual ? annual.remainingDays : 0}
-          unit="일"
-          accent
-          desc={annual ? `${annual.leaveType?.displayName ?? annual.leaveType?.name ?? '연차'}` : '발생 없음'}
-        />
-        <Kpi label="전체 잔여" value={totalRemain} unit="일" desc={`${balances.length}개 휴가`} />
+        <Kpi label="전체 연차" value={annual ? annual.accruedDays : 0} unit="일" desc="발생(부여)" />
+        <Kpi label="사용 연차" value={annual ? annual.usedDays : 0} unit="일" desc="사용" />
+        <Kpi label="잔여 연차" value={annual ? annual.remainingDays : 0} unit="일" accent desc="잔여" />
       </KpiGrid>
 
       {/* 최근 내 요청 요약 */}
@@ -244,6 +206,12 @@ export default function HomePage() {
         open={clockInOpen}
         employeeId={employeeId}
         onClose={() => setClockInOpen(false)}
+      />
+
+      <NewRequestModal
+        open={reqOpen}
+        employeeId={employeeId}
+        onClose={() => setReqOpen(false)}
       />
     </>
   )

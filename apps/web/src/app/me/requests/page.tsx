@@ -1,23 +1,14 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useRequests, useCreateRequest, useCancelRequest, useApproveRequest, useRejectRequest, useUpdateRequest, type Request } from '@/lib/query/requests'
+import { useRequests, useCancelRequest, useApproveRequest, useRejectRequest, useUpdateRequest, type Request } from '@/lib/query/requests'
 import { useAuthStore } from '@/stores/auth.store'
 import { currentEmployeeId } from '@/lib/auth-session'
 import { PageHead, TableBar } from '@/components/ab/Page'
 import { Badge, Seg, type BadgeKind } from '@/components/ab/atoms'
 import { Modal, ConfirmDialog } from '@/components/ab/Modal'
-import { I, HRI } from '@/components/ab/icons'
+import { I } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
-import { LeaveDeleteDialog } from './leave-request-dialogs'
-import { LeaveFormModal } from '@/components/leave/LeaveFormModal'
-import { ShiftCreateDialog, ShiftModifyDialog, ShiftDeleteDialog } from './shift-request-dialogs'
-import {
-  AttendanceEditDialog,
-  AttendanceCreateDialog,
-  AttendanceDeleteDialog,
-} from './attendance-request-dialogs'
-import { DeviceChangeDialog } from './device-request-dialog'
-import { OffsiteWorkDialog, CustomRequestDialog } from './offsite-custom-request-dialogs'
+import { NewRequestModal } from './NewRequestModal'
 
 type Mode = 'mine' | 'staff'
 type SubTab = 'ALL' | 'PENDING' | 'DONE'
@@ -46,22 +37,6 @@ const PAYLOAD_FIELD_LABELS: Record<string, string> = {
   content: '내용',
 }
 
-type RequestDialogType =
-  | 'LEAVE_CREATE'
-  | 'LEAVE_MODIFY'
-  | 'LEAVE_DELETE'
-  | 'SHIFT_CREATE'
-  | 'SHIFT_MODIFY'
-  | 'SHIFT_DELETE'
-  | 'ATTENDANCE_EDIT'
-  | 'ATTENDANCE_CREATE'
-  | 'ATTENDANCE_DELETE'
-  | 'DEVICE_CHANGE'
-  | 'OFFSITE_WORK'
-  | 'CUSTOM'
-
-type DialogMode = null | 'menu' | RequestDialogType
-
 const TYPE_LABEL: Record<string, string> = {
   LEAVE_CREATE: '휴가 신청',
   LEAVE_MODIFY: '휴가 수정 요청',
@@ -84,51 +59,6 @@ const STATUS: Record<string, { label: string; kind: BadgeKind }> = {
   CANCELLED: { label: '취소', kind: 'b-submit' },
 }
 
-
-interface MenuGroup {
-  title: string
-  icon: () => React.ReactElement
-  items: { type: RequestDialogType; label: string }[]
-}
-
-const MENU_GROUPS: MenuGroup[] = [
-  {
-    title: '휴가',
-    icon: HRI.leave,
-    items: [
-      { type: 'LEAVE_CREATE', label: '휴가 신청' },
-      { type: 'LEAVE_MODIFY', label: '휴가 수정' },
-      { type: 'LEAVE_DELETE', label: '휴가 취소(삭제)' },
-    ],
-  },
-  {
-    title: '근무일정',
-    icon: HRI.schedule,
-    items: [
-      { type: 'SHIFT_CREATE', label: '일정 신청' },
-      { type: 'SHIFT_MODIFY', label: '일정 수정' },
-      { type: 'SHIFT_DELETE', label: '일정 삭제' },
-    ],
-  },
-  {
-    title: '출퇴근',
-    icon: HRI.clock,
-    items: [
-      { type: 'ATTENDANCE_EDIT', label: '출퇴근 정정' },
-      { type: 'ATTENDANCE_CREATE', label: '기록 생성' },
-      { type: 'ATTENDANCE_DELETE', label: '기록 삭제' },
-    ],
-  },
-  {
-    title: '기타',
-    icon: HRI.settings,
-    items: [
-      { type: 'OFFSITE_WORK', label: '외근/출장' },
-      { type: 'DEVICE_CHANGE', label: '기기 변경' },
-      { type: 'CUSTOM', label: '기타 요청' },
-    ],
-  },
-]
 
 const DATE_KEYS = new Set(['startDate', 'endDate', 'date'])
 const TIME_KEYS = new Set(['startTime', 'endTime'])
@@ -164,7 +94,7 @@ export default function RequestsPage() {
   const toast = useToast()
   const [mode, setMode] = useState<Mode>('mine')
   const [subTab, setSubTab] = useState<SubTab>('ALL')
-  const [dialogMode, setDialogMode] = useState<DialogMode>(null)
+  const [newReqOpen, setNewReqOpen] = useState(false)
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null)
   const [detailReq, setDetailReq] = useState<Request | null>(null)
   const [editing, setEditing] = useState(false)
@@ -185,11 +115,19 @@ export default function RequestsPage() {
   const queryParams = isStaff ? { scope: 'mine', allEmployees: true, ...statusParam } : statusParam
 
   const { data, isLoading } = useRequests(queryParams)
-  const createRequest = useCreateRequest()
   const cancelRequest = useCancelRequest()
   const approveRequest = useApproveRequest()
   const rejectRequest = useRejectRequest()
   const updateRequest = useUpdateRequest()
+
+  // 홈 화면의 '요청' 버튼(/me/requests?new=1) 진입 시 새 요청(요청 유형 선택) 팝업 자동 오픈
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('new') === '1') {
+      setNewReqOpen(true)
+      window.history.replaceState({}, '', '/me/requests') // 뒤로가기·새로고침 시 재오픈 방지
+    }
+  }, [])
 
   // 상세 모달 열림/변경 시 편집 상태 초기화
   useEffect(() => {
@@ -238,18 +176,6 @@ export default function RequestsPage() {
     }
   }
 
-  const closeDialog = () => setDialogMode(null)
-
-  const handleSubmit = async (type: string, payload: Record<string, unknown>) => {
-    try {
-      await createRequest.mutateAsync({ type, payload })
-      toast(`${TYPE_LABEL[type] ?? '요청'} 접수가 완료됐습니다`)
-      closeDialog()
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '신청 중 오류가 발생했습니다')
-    }
-  }
-
   const handleCancelConfirm = async () => {
     if (!cancelTargetId) return
     try {
@@ -266,20 +192,13 @@ export default function RequestsPage() {
   const isCancellable = (r: { status: string; requesterId?: string }) =>
     r.status === 'PENDING' && (!r.requesterId || r.requesterId === employeeId)
 
-  const dialogProps = {
-    employeeId,
-    submitting: createRequest.isPending,
-    onClose: closeDialog,
-    onSubmit: handleSubmit,
-  }
-
   return (
     <>
       <PageHead
         eyebrow="Requests"
         title="내 요청"
         right={
-          <button data-testid="req-new-btn" className="btn btn-primary btn-sm" onClick={() => setDialogMode('menu')}>
+          <button data-testid="req-new-btn" className="btn btn-primary btn-sm" onClick={() => setNewReqOpen(true)}>
             {I.plus()} 새 요청
           </button>
         }
@@ -413,46 +332,8 @@ export default function RequestsPage() {
         )}
       </Modal>
 
-      {/* 유형 선택 메뉴 (그룹 구분) */}
-      <Modal open={dialogMode === 'menu'} onClose={closeDialog} eyebrow="New Request" title="요청 유형 선택" maxWidth={460}>
-        <div className="me-req-menu">
-          {MENU_GROUPS.map((group) => (
-            <div className="me-req-group" key={group.title}>
-              <div className="me-req-group-head">
-                <span className="ic">{group.icon()}</span>
-                {group.title}
-              </div>
-              <div className="me-req-group-items">
-                {group.items.map((item) => (
-                  <button key={item.type} data-testid={`req-type-${item.type}`} className="me-req-item" onClick={() => setDialogMode(item.type)}>
-                    {item.label}
-                    <span className="arr">{I.arrow()}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Modal>
-
-      {/* 유형별 신청 다이얼로그 — 열릴 때만 마운트해 내부 조회/입력 상태를 초기화 */}
-      {/* 휴가 신청·수정은 '휴가 > 휴가 신청'과 동일한 공용 모달 사용 */}
-      {dialogMode === 'LEAVE_CREATE' && (
-        <LeaveFormModal open mode="create" employeeId={employeeId} onClose={closeDialog} />
-      )}
-      {dialogMode === 'LEAVE_MODIFY' && (
-        <LeaveFormModal open mode="modify" employeeId={employeeId} onClose={closeDialog} />
-      )}
-      {dialogMode === 'LEAVE_DELETE' && <LeaveDeleteDialog open {...dialogProps} />}
-      {dialogMode === 'SHIFT_CREATE' && <ShiftCreateDialog open {...dialogProps} />}
-      {dialogMode === 'SHIFT_MODIFY' && <ShiftModifyDialog open {...dialogProps} />}
-      {dialogMode === 'SHIFT_DELETE' && <ShiftDeleteDialog open {...dialogProps} />}
-      {dialogMode === 'ATTENDANCE_EDIT' && <AttendanceEditDialog open {...dialogProps} />}
-      {dialogMode === 'ATTENDANCE_CREATE' && <AttendanceCreateDialog open {...dialogProps} />}
-      {dialogMode === 'ATTENDANCE_DELETE' && <AttendanceDeleteDialog open {...dialogProps} />}
-      {dialogMode === 'DEVICE_CHANGE' && <DeviceChangeDialog open {...dialogProps} />}
-      {dialogMode === 'OFFSITE_WORK' && <OffsiteWorkDialog open {...dialogProps} />}
-      {dialogMode === 'CUSTOM' && <CustomRequestDialog open {...dialogProps} />}
+      {/* 새 요청(유형 선택 + 유형별 신청) — 홈/요청 공용 컴포넌트 */}
+      <NewRequestModal open={newReqOpen} employeeId={employeeId} onClose={() => setNewReqOpen(false)} />
 
       {/* 신청 취소 확인 */}
       <ConfirmDialog
