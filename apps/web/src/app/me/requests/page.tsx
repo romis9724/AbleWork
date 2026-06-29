@@ -191,6 +191,15 @@ export default function RequestsPage() {
   const rejectRequest = useRejectRequest()
   const updateRequest = useUpdateRequest()
 
+  // 홈 화면의 '요청' 버튼(/me/requests?new=1) 진입 시 새 요청(요청 유형 선택) 팝업 자동 오픈
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('new') === '1') {
+      setDialogMode('menu')
+      window.history.replaceState({}, '', '/me/requests') // 뒤로가기·새로고침 시 재오픈 방지
+    }
+  }, [])
+
   // 상세 모달 열림/변경 시 편집 상태 초기화
   useEffect(() => {
     setEditing(false)
