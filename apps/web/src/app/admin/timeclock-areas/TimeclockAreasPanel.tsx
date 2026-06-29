@@ -4,7 +4,6 @@ import { useForm, Controller } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Alert from '@mui/material/Alert'
-import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -33,6 +32,7 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import GpsFixedIcon from '@mui/icons-material/GpsFixed'
 import WifiIcon from '@mui/icons-material/Wifi'
+import ApartmentIcon from '@mui/icons-material/Apartment'
 import EmptyState from '@/components/common/EmptyState'
 import ConfirmDialog from '@/components/common/ConfirmDialog'
 import {
@@ -43,16 +43,14 @@ import {
   type TimeclockArea,
   type AuthMethod,
 } from '@/lib/query/timeclock-areas'
-import { useOrganizations, type Organization } from '@/lib/query/organizations'
 import { getApiErrorMessage } from '@/lib/api-error'
 
 // ──────────────────────────────────────────────
-// Schema — 폼은 문자열로 받고, submit 시 변환
+// Schema — 폼은 문자열로 받고, submit 시 변환. 조직 연결은 '조직 관리'에서 설정(N:N).
 // ──────────────────────────────────────────────
 const areaSchema = z
   .object({
     name: z.string().min(1, '장소명을 입력해 주세요.'),
-    organizationId: z.string().min(1, '조직을 선택해 주세요.'),
     authMethod: z.enum(['gps', 'wifi', 'gps_or_wifi', 'gps_and_wifi', 'none']),
     // 폼 입력값은 string으로 관리
     locationLat: z.string().optional(),
@@ -81,7 +79,6 @@ type AreaFormValues = z.infer<typeof areaSchema>
 function toApiPayload(values: AreaFormValues) {
   return {
     name: values.name,
-    organizationId: values.organizationId,
     authMethod: values.authMethod,
     ...(values.locationLat ? { locationLat: Number(values.locationLat) } : {}),
     ...(values.locationLng ? { locationLng: Number(values.locationLng) } : {}),
@@ -111,31 +108,22 @@ const AUTH_COLORS: Record<AuthMethod, 'primary' | 'secondary' | 'success' | 'war
   none: 'default',
 }
 
-function flattenTree(orgs: Organization[], depth = 0): (Organization & { depth: number })[] {
-  return orgs.flatMap((o) => [
-    { ...o, depth },
-    ...(o.children ? flattenTree(o.children, depth + 1) : []),
-  ])
-}
-
 // ──────────────────────────────────────────────
-// AreaDialog — 추가 / 수정
+// AreaDialog — 추가 / 수정 (조직 선택 없음)
 // ──────────────────────────────────────────────
 interface AreaDialogProps {
   open: boolean
   initial?: TimeclockArea | null
-  organizations: Organization[]
   loading: boolean
   onSubmit: (values: AreaFormValues) => void
   onClose: () => void
 }
 
-function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }: AreaDialogProps) {
+function AreaDialog({ open, initial, loading, onSubmit, onClose }: AreaDialogProps) {
   const { control, handleSubmit, watch, formState: { errors } } = useForm<AreaFormValues>({
     resolver: zodResolver(areaSchema),
     values: {
       name: initial?.name ?? '',
-      organizationId: initial?.organizationId ?? '',
       authMethod: (initial?.authMethod ?? 'gps') as AuthMethod,
       locationLat: initial?.locationLat != null ? String(initial.locationLat) : '',
       locationLng: initial?.locationLng != null ? String(initial.locationLng) : '',
@@ -147,8 +135,6 @@ function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }
   const authMethod = watch('authMethod')
   const showGps = authMethod === 'gps' || authMethod === 'gps_or_wifi' || authMethod === 'gps_and_wifi'
   const showWifi = authMethod === 'wifi' || authMethod === 'gps_or_wifi' || authMethod === 'gps_and_wifi'
-
-  const flatOrgs = flattenTree(organizations)
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -166,30 +152,6 @@ function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }
               fullWidth
               error={!!errors.name}
               helperText={errors.name?.message}
-            />
-          )}
-        />
-
-        {/* 조직 */}
-        <Controller
-          name="organizationId"
-          control={control}
-          render={({ field }) => (
-            <Autocomplete
-              options={flatOrgs}
-              getOptionLabel={(o) => ' '.repeat(o.depth * 4) + o.name}
-              value={flatOrgs.find((o) => o.id === field.value) ?? null}
-              onChange={(_, v) => field.onChange(v?.id ?? '')}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="조직"
-                  required
-                  error={!!errors.organizationId}
-                  helperText={errors.organizationId?.message}
-                />
-              )}
-              isOptionEqualToValue={(a, b) => a.id === b.id}
             />
           )}
         />
@@ -321,7 +283,6 @@ function AreaDialog({ open, initial, organizations, loading, onSubmit, onClose }
 // ──────────────────────────────────────────────
 export default function TimeclockAreasPanel() {
   const { data: areas = [], isLoading } = useTimeclockAreas()
-  const { data: orgs = [] } = useOrganizations()
 
   const createMutation = useCreateTimeclockArea()
   const updateMutation = useUpdateTimeclockArea()
@@ -337,17 +298,6 @@ export default function TimeclockAreasPanel() {
 
   const showSnack = (message: string, severity: 'success' | 'error') =>
     setSnack({ open: true, message, severity })
-
-  // 조직별 그룹핑
-  const flatOrgs = flattenTree(orgs)
-  const grouped = areas.reduce<Record<string, TimeclockArea[]>>((acc, area) => {
-    const key = area.organizationId
-    if (!acc[key]) acc[key] = []
-    acc[key].push(area)
-    return acc
-  }, {})
-
-  const getOrgName = (id: string) => flatOrgs.find((o) => o.id === id)?.name ?? id
 
   const handleCreate = (values: AreaFormValues) => {
     createMutation.mutate(toApiPayload(values), {
@@ -390,8 +340,8 @@ export default function TimeclockAreasPanel() {
       </Box>
 
       <Alert severity="info" sx={{ mb: 2 }}>
-        장소는 소속 <b>조직별로 직원의 출근 모달</b>에 표시됩니다. <b>WiFi 인증이 필요한 장소(WiFi · GPS+WiFi)는 모바일 앱 전용</b>이며,
-        웹 출근에서는 GPS·인증 없음 장소만 선택할 수 있습니다.
+        출퇴근 장소는 회사 단위로 등록하고, <b>조직 연결은 “조직 관리”의 조직 추가/수정에서 다중 선택</b>합니다(한 장소를 여러 조직이 공유 가능).
+        <b> WiFi 인증이 필요한 장소(WiFi · GPS+WiFi)는 모바일 앱 전용</b>이며, 웹 출근에서는 GPS·인증 없음 장소만 선택할 수 있습니다.
       </Alert>
 
       {areas.length === 0 ? (
@@ -404,66 +354,67 @@ export default function TimeclockAreasPanel() {
           }
         />
       ) : (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {Object.entries(grouped).map(([orgId, orgAreas]) => (
-            <Box key={orgId}>
-              <Typography variant="subtitle1" fontWeight={700} mb={1.5} color="text.secondary">
-                {getOrgName(orgId)}
-              </Typography>
-              <Grid container spacing={2}>
-                {orgAreas.map((area) => (
-                  <Grid item xs={12} sm={6} md={4} key={area.id}>
-                    <Card variant="outlined">
-                      <CardContent sx={{ pb: 1 }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <Typography variant="subtitle1" fontWeight={600}>{area.name}</Typography>
-                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                            <Chip
-                              label={AUTH_LABELS[area.authMethod]}
-                              color={AUTH_COLORS[area.authMethod]}
-                              size="small"
-                            />
-                            {(area.authMethod === 'wifi' || area.authMethod === 'gps_and_wifi') && (
-                              <Chip label="앱 전용" color="default" variant="outlined" size="small" />
-                            )}
-                          </Box>
-                        </Box>
-                        {(area.authMethod === 'gps' || area.authMethod === 'gps_or_wifi' || area.authMethod === 'gps_and_wifi') && area.locationLat != null && (
-                          <Typography variant="body2" color="text.secondary" mt={1} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <GpsFixedIcon sx={{ fontSize: 14 }} />
-                            {Number(area.locationLat).toFixed(5)}, {area.locationLng != null ? Number(area.locationLng).toFixed(5) : '—'} · {area.locationRadiusMeters}m
-                          </Typography>
-                        )}
-                        {(area.authMethod === 'wifi' || area.authMethod === 'gps_or_wifi' || area.authMethod === 'gps_and_wifi') && area.wifiSsid && (
-                          <Typography variant="body2" color="text.secondary" mt={0.5} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <WifiIcon sx={{ fontSize: 14 }} />
-                            {area.wifiSsid}
-                          </Typography>
-                        )}
-                      </CardContent>
-                      <Divider />
-                      <CardActions sx={{ justifyContent: 'flex-end', py: 0.5 }}>
-                        <IconButton size="small" onClick={() => setEditTarget(area)}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton size="small" color="error" onClick={() => setDeleteTarget(area)}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </CardActions>
-                    </Card>
-                  </Grid>
-                ))}
-              </Grid>
-            </Box>
+        <Grid container spacing={2}>
+          {areas.map((area) => (
+            <Grid item xs={12} sm={6} md={4} key={area.id}>
+              <Card variant="outlined">
+                <CardContent sx={{ pb: 1 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Typography variant="subtitle1" fontWeight={600}>{area.name}</Typography>
+                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <Chip
+                        label={AUTH_LABELS[area.authMethod]}
+                        color={AUTH_COLORS[area.authMethod]}
+                        size="small"
+                      />
+                      {(area.authMethod === 'wifi' || area.authMethod === 'gps_and_wifi') && (
+                        <Chip label="앱 전용" color="default" variant="outlined" size="small" />
+                      )}
+                    </Box>
+                  </Box>
+                  {(area.authMethod === 'gps' || area.authMethod === 'gps_or_wifi' || area.authMethod === 'gps_and_wifi') && area.locationLat != null && (
+                    <Typography variant="body2" color="text.secondary" mt={1} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <GpsFixedIcon sx={{ fontSize: 14 }} />
+                      {Number(area.locationLat).toFixed(5)}, {area.locationLng != null ? Number(area.locationLng).toFixed(5) : '—'} · {area.locationRadiusMeters}m
+                    </Typography>
+                  )}
+                  {(area.authMethod === 'wifi' || area.authMethod === 'gps_or_wifi' || area.authMethod === 'gps_and_wifi') && area.wifiSsid && (
+                    <Typography variant="body2" color="text.secondary" mt={0.5} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <WifiIcon sx={{ fontSize: 14 }} />
+                      {area.wifiSsid}
+                    </Typography>
+                  )}
+                  {/* 연결된 조직(N:N) */}
+                  <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                    <ApartmentIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                    {area.organizations && area.organizations.length > 0 ? (
+                      area.organizations.map((o) => (
+                        <Chip key={o.organization.id} label={o.organization.name} size="small" variant="outlined" />
+                      ))
+                    ) : (
+                      <Typography variant="caption" color="text.disabled">연결된 조직 없음 (조직 관리에서 연결)</Typography>
+                    )}
+                  </Box>
+                </CardContent>
+                <Divider />
+                <CardActions sx={{ justifyContent: 'flex-end', py: 0.5 }}>
+                  <IconButton size="small" onClick={() => setEditTarget(area)}>
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton size="small" color="error" onClick={() => setDeleteTarget(area)}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </CardActions>
+              </Card>
+            </Grid>
           ))}
-        </Box>
+        </Grid>
       )}
 
       {/* 추가 Dialog */}
       {dialogOpen && (
         <AreaDialog
           open={dialogOpen}
-          organizations={orgs}
           loading={createMutation.isPending}
           onSubmit={handleCreate}
           onClose={() => setDialogOpen(false)}
@@ -475,7 +426,6 @@ export default function TimeclockAreasPanel() {
         <AreaDialog
           open={!!editTarget}
           initial={editTarget}
-          organizations={orgs}
           loading={updateMutation.isPending}
           onSubmit={handleUpdate}
           onClose={() => setEditTarget(null)}

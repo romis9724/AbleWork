@@ -9,13 +9,14 @@ import { Sigil, I, HRI } from './icons'
 import { useAuthStore } from '@/stores/auth.store'
 import { ThemeSwitcher } from './ThemeSwitcher'
 
+// 프로필은 헤더 우측 아바타 아이콘으로 접근하므로 네비에서 제외하고 '출퇴근기록'을 노출
 const ME_NAV = [
   { label: '홈', icon: HRI.home, path: '/me/home' },
   { label: '근무', icon: HRI.schedule, path: '/me/shifts' },
+  { label: '출퇴근', icon: HRI.clock, path: '/me/attendances' },
   { label: '휴가', icon: HRI.leave, path: '/me/leaves' },
   { label: '요청', icon: HRI.request, path: '/me/requests' },
   { label: '결재', icon: HRI.approval, path: '/me/documents' },
-  { label: '프로필', icon: HRI.profile, path: '/me/profile' },
 ]
 
 const ADMIN_ROLES = new Set(['SUPER_ADMIN', 'GENERAL_ADMIN', 'ORG_ADMIN'])

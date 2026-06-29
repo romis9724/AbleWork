@@ -7,14 +7,14 @@ export type AuthMethod = 'gps' | 'wifi' | 'gps_or_wifi' | 'gps_and_wifi' | 'none
 export interface TimeclockArea {
   id: string
   name: string
-  organizationId: string
-  organization?: { id: string; name: string }
   authMethod: AuthMethod
   locationLat?: number | null
   locationLng?: number | null
   locationRadiusMeters?: number | null
   wifiSsid?: string | null
   isActive?: boolean
+  // 연결된 조직(N:N). 조직 연결은 '조직 관리'에서 설정한다.
+  organizations?: { organization: { id: string; name: string } }[]
 }
 
 const QUERY_KEY = ['timeclock-areas']

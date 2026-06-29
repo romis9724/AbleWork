@@ -146,6 +146,54 @@ export class OrganizationsService {
     return this.getDocManagers(companyId, orgId)
   }
 
+  // ── 출퇴근 장소 연결 (조직 ↔ 출퇴근 장소 N:N) ─────────────────────────────────
+
+  /** 조직에 연결된 출퇴근 장소 목록 */
+  async getTimeclockAreas(companyId: string, orgId: string) {
+    await this.findOneOrThrow(orgId, companyId)
+    return this.prisma.organizationTimeclockArea.findMany({
+      where: { organizationId: orgId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        timeclockAreaId: true,
+        timeclockArea: { select: { id: true, name: true, authMethod: true } },
+      },
+    })
+  }
+
+  /**
+   * 조직에 연결된 출퇴근 장소 집합을 areaIds로 교체한다.
+   * 모든 장소가 자사(companyId) 소속·활성인지 검증한 뒤 조인 테이블을 통째로 교체한다.
+   */
+  async setTimeclockAreas(companyId: string, orgId: string, areaIds: string[]) {
+    await this.findOneOrThrow(orgId, companyId)
+
+    const uniqueIds = Array.from(new Set(areaIds))
+    if (uniqueIds.length) {
+      const count = await this.prisma.timeclockArea.count({
+        where: { id: { in: uniqueIds }, companyId, isActive: true },
+      })
+      if (count !== uniqueIds.length) {
+        throw new BadRequestException({
+          code: 'TIMECLOCK_AREA_NOT_FOUND',
+          message: '연결하려는 출퇴근 장소 중 자사 소속이 아니거나 비활성인 장소가 있습니다.',
+        })
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await this.prisma.$transaction(async (tx: any) => {
+      await tx.organizationTimeclockArea.deleteMany({ where: { organizationId: orgId } })
+      if (uniqueIds.length) {
+        await tx.organizationTimeclockArea.createMany({
+          data: uniqueIds.map((timeclockAreaId) => ({ organizationId: orgId, timeclockAreaId })),
+        })
+      }
+    })
+
+    return this.getTimeclockAreas(companyId, orgId)
+  }
+
   async remove(id: string, companyId: string): Promise<void> {
     await this.findOneOrThrow(id, companyId)
 
@@ -173,17 +221,7 @@ export class OrganizationsService {
       })
     }
 
-    // 이 조직의 출퇴근 장소가 있으면 삭제 차단
-    const timeclockAreaCount = await this.prisma.timeclockArea.count({
-      where: { organizationId: id, isActive: true },
-    })
-
-    if (timeclockAreaCount > 0) {
-      throw new ForbiddenException({
-        code: 'ORG_HAS_TIMECLOCK_AREAS',
-        message: '출퇴근 장소가 있어 조직을 삭제할 수 없습니다.',
-      })
-    }
+    // 출퇴근 장소는 회사 소속(N:N)이라 조직 삭제 시 연결만 자동 해제(Cascade)된다 — 별도 차단 불필요.
 
     // 이 조직의 근무일정이 있으면 삭제 차단
     const shiftCount = await this.prisma.shift.count({

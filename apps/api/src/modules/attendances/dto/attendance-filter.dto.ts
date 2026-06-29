@@ -12,6 +12,8 @@ export const AttendanceFilterSchema = z.object({
   // 조회 필터 FK는 형식(uuid) 강제 대신 서비스의 companyId 스코프 존재 검증에 맡긴다.
   organizationId: z.string().min(1).optional(),
   employeeId: z.string().min(1).optional(),
+  // 직원 셀프서비스 '우리 조직' 탭 — 서버가 요청자 소속 조직을 직접 해석해 스코프(클라이언트 조직 ID 신뢰 안 함)
+  scope: z.enum(['mine', 'org']).optional(),
   status: z.string().optional(),
   // 퇴근 누락(clockOutAt null) 기록만 조회 — 쿼리스트링 'true'/'false' 모두 수용
   missingClockOut: z

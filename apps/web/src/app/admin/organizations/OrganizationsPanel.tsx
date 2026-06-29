@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { z } from 'zod'
@@ -30,8 +30,11 @@ import {
   useCreateOrganization,
   useUpdateOrganization,
   useDeleteOrganization,
+  useOrgTimeclockAreas,
+  useSetOrgTimeclockAreas,
   type Organization,
 } from '@/lib/query/organizations'
+import { useTimeclockAreas } from '@/lib/query/timeclock-areas'
 import { useEmployees } from '@/lib/query/employees'
 import { getApiErrorMessage } from '@/lib/api-error'
 
@@ -69,12 +72,14 @@ interface OrgDialogProps {
   initial?: Organization | null
   organizations: Organization[]
   employees: { id: string; name: string }[]
+  areas: { id: string; name: string }[]
+  initialAreaIds: string[]
   loading: boolean
-  onSubmit: (values: OrgFormValues) => void
+  onSubmit: (values: OrgFormValues, areaIds: string[]) => void
   onClose: () => void
 }
 
-function OrgDialog({ open, initial, organizations, employees, loading, onSubmit, onClose }: OrgDialogProps) {
+function OrgDialog({ open, initial, organizations, employees, areas, initialAreaIds, loading, onSubmit, onClose }: OrgDialogProps) {
   const { control, handleSubmit, formState: { errors } } = useForm<OrgFormValues>({
     resolver: zodResolver(orgSchema),
     values: {
@@ -84,6 +89,14 @@ function OrgDialog({ open, initial, organizations, employees, loading, onSubmit,
       address: initial?.address ?? '',
     },
   })
+
+  // 연결할 출퇴근 장소(N:N) — 수정 시 기존 연결로 초기화(로딩 완료 시 동기화)
+  const [areaIds, setAreaIds] = useState<string[]>(initialAreaIds)
+  const initialKey = initialAreaIds.join(',')
+  useEffect(() => {
+    setAreaIds(initialAreaIds)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialKey])
 
   const flatOrgs = flattenTree(organizations)
 
@@ -149,10 +162,23 @@ function OrgDialog({ open, initial, organizations, employees, loading, onSubmit,
             />
           )}
         />
+        {/* 출퇴근 장소 연결 (N:N) — 장소는 '회사 설정 > 출퇴근'에서 등록 */}
+        <Autocomplete
+          multiple
+          options={areas}
+          getOptionLabel={(a) => a.name}
+          value={areas.filter((a) => areaIds.includes(a.id))}
+          onChange={(_, v) => setAreaIds(v.map((a) => a.id))}
+          renderInput={(params) => (
+            <TextField {...params} label="출퇴근 장소 (다중 선택)" placeholder="장소 선택" />
+          )}
+          isOptionEqualToValue={(a, b) => a.id === b.id}
+          noOptionsText="등록된 출퇴근 장소가 없습니다 (회사 설정 > 출퇴근에서 등록)"
+        />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>취소</Button>
-        <Button onClick={handleSubmit(onSubmit)} variant="contained" disabled={loading} data-testid="org-submit-btn">
+        <Button onClick={handleSubmit((values) => onSubmit(values, areaIds))} variant="contained" disabled={loading} data-testid="org-submit-btn">
           {loading ? <CircularProgress size={20} /> : initial ? '수정' : '추가'}
         </Button>
       </DialogActions>
@@ -175,11 +201,20 @@ export default function OrganizationsPanel() {
   const createMutation = useCreateOrganization()
   const updateMutation = useUpdateOrganization()
   const deleteMutation = useDeleteOrganization()
+  const setAreasMutation = useSetOrgTimeclockAreas()
+
+  // 회사 전체 출퇴근 장소(선택 옵션)
+  const { data: allAreas = [] } = useTimeclockAreas()
+  const areaOptions = useMemo(() => allAreas.map((a) => ({ id: a.id, name: a.name })), [allAreas])
 
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Organization | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Organization | null>(null)
+
+  // 수정 대상 조직에 연결된 출퇴근 장소(초기 선택값)
+  const { data: editAreaLinks = [] } = useOrgTimeclockAreas(editTarget?.id ?? null)
+  const editAreaIds = useMemo(() => editAreaLinks.map((l) => l.timeclockAreaId), [editAreaLinks])
 
   // 트리 펼침 상태 — 접은(축소) 노드 id 집합. 비어 있으면 전체 펼침(기본).
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -213,26 +248,37 @@ export default function OrganizationsPanel() {
     [selectedOrg, employees],
   )
 
-  // ── 추가
-  const handleCreate = (values: OrgFormValues) => {
-    // null 값 제거 — 백엔드 Zod UUID 검증이 null을 거부하므로 undefined로 변환
-    createMutation.mutate({
-      ...values,
-      parentId: values.parentId ?? undefined,
-      approverId: values.approverId ?? undefined,
-    }, {
-      onSuccess: () => { setDialogOpen(false); showSnack('조직이 추가되었습니다.', 'success') },
-      onError: () => showSnack('조직 추가에 실패했습니다.', 'error'),
-    })
+  // ── 추가 (조직 생성 후 출퇴근 장소 연결)
+  const handleCreate = async (values: OrgFormValues, areaIds: string[]) => {
+    try {
+      // null 값 제거 — 백엔드 Zod UUID 검증이 null을 거부하므로 undefined로 변환
+      // apiClient 인터셉터가 res.data.data(생성된 조직)를 반환한다 — 타입은 느슨하므로 unknown 경유 캐스트
+      const created = (await createMutation.mutateAsync({
+        ...values,
+        parentId: values.parentId ?? undefined,
+        approverId: values.approverId ?? undefined,
+      })) as unknown as { id: string }
+      if (created?.id) {
+        await setAreasMutation.mutateAsync({ orgId: created.id, areaIds })
+      }
+      setDialogOpen(false)
+      showSnack('조직이 추가되었습니다.', 'success')
+    } catch (e) {
+      showSnack(getApiErrorMessage(e, '조직 추가에 실패했습니다.'), 'error')
+    }
   }
 
-  // ── 수정
-  const handleUpdate = (values: OrgFormValues) => {
+  // ── 수정 (조직 수정 후 출퇴근 장소 연결 교체)
+  const handleUpdate = async (values: OrgFormValues, areaIds: string[]) => {
     if (!editTarget) return
-    updateMutation.mutate({ id: editTarget.id, ...values }, {
-      onSuccess: () => { setEditTarget(null); showSnack('조직이 수정되었습니다.', 'success') },
-      onError: () => showSnack('조직 수정에 실패했습니다.', 'error'),
-    })
+    try {
+      await updateMutation.mutateAsync({ id: editTarget.id, ...values })
+      await setAreasMutation.mutateAsync({ orgId: editTarget.id, areaIds })
+      setEditTarget(null)
+      showSnack('조직이 수정되었습니다.', 'success')
+    } catch (e) {
+      showSnack(getApiErrorMessage(e, '조직 수정에 실패했습니다.'), 'error')
+    }
   }
 
   // ── 삭제
@@ -467,7 +513,9 @@ export default function OrganizationsPanel() {
           open={dialogOpen}
           organizations={orgs}
           employees={employees}
-          loading={createMutation.isPending}
+          areas={areaOptions}
+          initialAreaIds={[]}
+          loading={createMutation.isPending || setAreasMutation.isPending}
           onSubmit={handleCreate}
           onClose={() => setDialogOpen(false)}
         />
@@ -480,7 +528,9 @@ export default function OrganizationsPanel() {
           initial={editTarget}
           organizations={orgs}
           employees={employees}
-          loading={updateMutation.isPending}
+          areas={areaOptions}
+          initialAreaIds={editAreaIds}
+          loading={updateMutation.isPending || setAreasMutation.isPending}
           onSubmit={handleUpdate}
           onClose={() => setEditTarget(null)}
         />

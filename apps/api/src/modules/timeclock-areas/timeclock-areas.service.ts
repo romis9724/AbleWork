@@ -7,6 +7,13 @@ import {
 import { PrismaService } from '../../prisma/prisma.service'
 import { CreateTimeclockAreaDto, UpdateTimeclockAreaDto } from './dto/create-timeclock-area.dto'
 
+/** 장소 조회 시 함께 내려주는 연결 조직 정보 */
+const ORG_INCLUDE = {
+  organizations: {
+    select: { organization: { select: { id: true, name: true } } },
+  },
+} as const
+
 @Injectable()
 export class TimeclockAreasService {
   constructor(private readonly prisma: PrismaService) {}
@@ -22,24 +29,22 @@ export class TimeclockAreasService {
     return this.prisma.timeclockArea.findMany({
       where: {
         isActive: true,
-        organization: { companyId },
-        ...(organizationId && { organizationId }),
+        companyId,
+        // 조직 필터: 해당 조직에 연결된(N:N) 장소만
+        ...(organizationId && { organizations: { some: { organizationId } } }),
       },
       orderBy: { createdAt: 'asc' },
-      include: {
-        organization: { select: { id: true, name: true } },
-      },
+      include: ORG_INCLUDE,
     })
   }
 
   // ── 장소 등록 ───────────────────────────────────────────────────────────────
 
   async create(companyId: string, dto: CreateTimeclockAreaDto) {
-    await this.validateOrganizationBelongsToCompany(companyId, dto.organizationId)
-
+    // 조직 연결은 '조직 관리' 화면에서 별도로 설정한다 (N:N).
     return this.prisma.timeclockArea.create({
       data: {
-        organizationId: dto.organizationId,
+        companyId,
         name: dto.name,
         authMethod: dto.authMethod,
         locationLat: dto.locationLat,
@@ -47,9 +52,7 @@ export class TimeclockAreasService {
         locationRadiusMeters: dto.locationRadiusMeters,
         wifiSsid: dto.wifiSsid,
       },
-      include: {
-        organization: { select: { id: true, name: true } },
-      },
+      include: ORG_INCLUDE,
     })
   }
 
@@ -68,9 +71,7 @@ export class TimeclockAreasService {
         ...(dto.locationRadiusMeters !== undefined && { locationRadiusMeters: dto.locationRadiusMeters }),
         ...(dto.wifiSsid !== undefined && { wifiSsid: dto.wifiSsid }),
       },
-      include: {
-        organization: { select: { id: true, name: true } },
-      },
+      include: ORG_INCLUDE,
     })
   }
 
@@ -100,7 +101,7 @@ export class TimeclockAreasService {
 
   private async assertArea(companyId: string, id: string) {
     const area = await this.prisma.timeclockArea.findFirst({
-      where: { id, isActive: true, organization: { companyId } },
+      where: { id, isActive: true, companyId },
     })
     if (!area) {
       throw new NotFoundException({
