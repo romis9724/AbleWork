@@ -19,7 +19,12 @@ export interface Attendance {
   status: string
   isConfirmed: boolean
   note?: string
-  employee?: { name: string }
+  employee?: {
+    name: string
+    employeeNumber?: string | null
+    organizations?: { organization: { id: string; name: string } }[]
+    positions?: { position: { id: string; name: string } }[]
+  }
   breaks?: AttendanceBreak[]
 }
 

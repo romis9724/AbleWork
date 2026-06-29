@@ -80,7 +80,7 @@ export class AttendancesService {
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
 
   async findAll(companyId: string, filter: AttendanceFilterDto, user: JwtPayload) {
-    const { startDate, endDate, organizationId, employeeId, status, missingClockOut, page, limit } =
+    const { startDate, endDate, organizationId, employeeId, scope, status, missingClockOut, page, limit } =
       filter
     const skip = (page - 1) * limit
 
@@ -90,12 +90,28 @@ export class AttendancesService {
       ACCESS_LEVEL_HIERARCHY[user.accessLevel] >= ACCESS_LEVEL_HIERARCHY[AccessLevel.ORG_ADMIN]
     const scopedEmployeeId = isManager ? employeeId : user.employeeId
 
+    // 직원 셀프서비스 '우리 조직' 탭: 요청자 소속 조직을 서버에서 직접 해석해 그 조직들의 직원만 조회.
+    // (클라이언트가 보낸 조직 ID를 신뢰하지 않으므로 타 조직 열람 불가. EMPLOYEE는 아래 scopedEmployeeId로 본인만.)
+    let scopeOrgFilter: Record<string, unknown> | undefined
+    if (scope === 'org' && isManager) {
+      const myOrgs = await this.prisma.employeeOrganization.findMany({
+        where: { employeeId: user.employeeId },
+        select: { organizationId: true },
+      })
+      const myOrgIds = myOrgs.map((o: { organizationId: string }) => o.organizationId)
+      scopeOrgFilter = {
+        companyId,
+        organizations: { some: { organizationId: { in: myOrgIds } } },
+      }
+    }
+
     const where: Record<string, unknown> = {
-      employee: { companyId },
-      ...(scopedEmployeeId && { employeeId: scopedEmployeeId }),
+      employee: scopeOrgFilter ?? { companyId },
+      // scope=org(매니저)일 때는 본인으로 좁히지 않고 조직 전체를 본다
+      ...(!scopeOrgFilter && scopedEmployeeId && { employeeId: scopedEmployeeId }),
       ...(status && { status }),
       ...(missingClockOut && { clockOutAt: null }),
-      ...(organizationId && {
+      ...(!scopeOrgFilter && organizationId && {
         employee: {
           companyId,
           organizations: { some: { organizationId } },
@@ -119,7 +135,19 @@ export class AttendancesService {
         take: limit,
         orderBy: { clockInAt: 'desc' },
         include: {
-          employee: { select: { id: true, name: true, employeeNumber: true } },
+          employee: {
+            select: {
+              id: true,
+              name: true,
+              employeeNumber: true,
+              // '우리 조직' 탭에서 직원 소속/직무 표기용 (주 소속 조직 + 직무)
+              organizations: {
+                where: { isPrimary: true },
+                select: { organization: { select: { id: true, name: true } } },
+              },
+              positions: { select: { position: { select: { id: true, name: true } } } },
+            },
+          },
           shift: {
             select: {
               id: true,

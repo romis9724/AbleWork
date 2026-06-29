@@ -138,6 +138,40 @@ describe('AttendancesService', () => {
     mockPrisma.position.findFirst.mockResolvedValue({ id: 'pos-1' })
   })
 
+  // ── findAll: scope (직원 셀프서비스 '우리 조직' 탭) ─────────────────────────
+
+  describe('findAll — scope', () => {
+    const baseFilter = { startDate: '2024-06-01', endDate: '2024-06-30', page: 1, limit: 100 }
+
+    beforeEach(() => {
+      mockPrisma.attendance.findMany.mockResolvedValue([])
+      mockPrisma.attendance.count.mockResolvedValue(0)
+    })
+
+    it("scope=org(ORG_ADMIN)면 요청자 소속 조직 직원으로 스코프하고 employeeId로 좁히지 않는다", async () => {
+      const requester = makeRequester(AccessLevel.ORG_ADMIN, 'mgr-1')
+      mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: ORG_ID }])
+
+      await service.findAll(COMPANY_ID, { ...baseFilter, scope: 'org' }, requester)
+
+      const arg = mockPrisma.attendance.findMany.mock.calls[0][0]
+      expect(arg.where.employee).toMatchObject({
+        companyId: COMPANY_ID,
+        organizations: { some: { organizationId: { in: [ORG_ID] } } },
+      })
+      expect(arg.where.employeeId).toBeUndefined()
+    })
+
+    it('scope=org이라도 EMPLOYEE는 본인으로 강제 스코프된다', async () => {
+      const requester = makeRequester(AccessLevel.EMPLOYEE, 'emp-9')
+
+      await service.findAll(COMPANY_ID, { ...baseFilter, scope: 'org' }, requester)
+
+      const arg = mockPrisma.attendance.findMany.mock.calls[0][0]
+      expect(arg.where.employeeId).toBe('emp-9')
+    })
+  })
+
   // ── determineStatus ──────────────────────────────────────────────────────
 
   describe('determineStatus', () => {
