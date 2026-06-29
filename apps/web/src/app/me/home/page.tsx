@@ -7,6 +7,7 @@ import {
 } from '@/lib/query/attendances'
 import { useLeaveBalance } from '@/lib/query/leaves'
 import { useRequests, type Request } from '@/lib/query/requests'
+import { useDocuments } from '@/lib/query/documents'
 import { useAuthStore } from '@/stores/auth.store'
 import { currentEmployeeId } from '@/lib/auth-session'
 import { PageHead, KpiGrid, Kpi, CardBox } from '@/components/ab/Page'
@@ -76,8 +77,11 @@ export default function HomePage() {
 
   const { data: reqRaw } = useRequests()
   const reqItems = unwrap<Request>(reqRaw)
-  const pendingCount = reqItems.filter((r) => r.status === 'PENDING').length
   const recentReqs = reqItems.slice(0, 5)
+
+  // 결재 대기 문서 = 전자결재에서 내가 결재할 차례인 문서(HR 요청 건수와 무관)
+  const { data: pendingDocs } = useDocuments('pending_approval', { limit: 1 })
+  const approvalPendingCount = pendingDocs?.total ?? 0
 
   const busy = isTodayLoading || clockOutMutation.isPending
 
@@ -164,43 +168,44 @@ export default function HomePage() {
         <Kpi label="잔여 연차" value={annual ? annual.remainingDays : 0} unit="일" accent desc="잔여" />
       </KpiGrid>
 
-      {/* 최근 내 요청 요약 */}
-      <CardBox title="최근 요청" more="요청 내역 →" onMore={() => router.push('/me/requests')}>
-        <div className="mini">
-          {recentReqs.length === 0 ? (
-            <div className="mini-row" style={{ justifyContent: 'center', color: 'var(--fg-4)', fontSize: 12 }}>
-              요청 내역이 없습니다
-            </div>
-          ) : (
-            recentReqs.map((req) => {
-              const st = REQ_STATUS[req.status] ?? { label: req.status, kind: 'b-submit' as BadgeKind }
-              return (
-                <div className="mini-row" key={req.id}>
-                  <div className="grow">
-                    <div className="l1">{REQUEST_TYPE_LABEL[req.type] ?? req.type}</div>
-                    <div className="l2">{new Date(req.createdAt).toLocaleDateString('ko-KR')}</div>
+      {/* 최근 요청 + 결재 대기 문서 — 1행 2열 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, alignItems: 'start' }}>
+        <CardBox title="최근 요청" more="요청 내역 →" onMore={() => router.push('/me/requests')}>
+          <div className="mini">
+            {recentReqs.length === 0 ? (
+              <div className="mini-row" style={{ justifyContent: 'center', color: 'var(--fg-4)', fontSize: 12 }}>
+                요청 내역이 없습니다
+              </div>
+            ) : (
+              recentReqs.map((req) => {
+                const st = REQ_STATUS[req.status] ?? { label: req.status, kind: 'b-submit' as BadgeKind }
+                return (
+                  <div className="mini-row" key={req.id}>
+                    <div className="grow">
+                      <div className="l1">{REQUEST_TYPE_LABEL[req.type] ?? req.type}</div>
+                      <div className="l2">{new Date(req.createdAt).toLocaleDateString('ko-KR')}</div>
+                    </div>
+                    <Badge kind={st.kind}>{st.label}</Badge>
                   </div>
-                  <Badge kind={st.kind}>{st.label}</Badge>
-                </div>
-              )
-            })
-          )}
-        </div>
-      </CardBox>
+                )
+              })
+            )}
+          </div>
+        </CardBox>
 
-      {pendingCount > 0 && (
+        {/* 결재 대기 문서 — 전자결재(내 결재 차례) 문서만 (HR 요청 제외) */}
         <CardBox title="결재 대기 문서" more="문서함 →" onMore={() => router.push('/me/documents')}>
           <div className="mini">
             <div className="mini-row">
               <div className="grow">
-                <div className="l1">진행 중인 요청</div>
-                <div className="l2">결재가 진행 중인 내 문서</div>
+                <div className="l1">내 결재 차례</div>
+                <div className="l2">전자결재 대기 문서</div>
               </div>
-              <span className="rt">{pendingCount}건</span>
+              <span className="rt">{approvalPendingCount}건</span>
             </div>
           </div>
         </CardBox>
-      )}
+      </div>
 
       <ClockInModal
         open={clockInOpen}
