@@ -157,8 +157,8 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* 연차 현황 KPI — 관리자모드 '휴가'와 동일(전체/사용/잔여 연차) */}
-      <KpiGrid>
+      {/* 연차 현황 KPI — 관리자모드 '휴가'와 동일(전체/사용/잔여 연차). 1행 3열 고정 */}
+      <KpiGrid cols={3}>
         <Kpi label="전체 연차" value={annual ? annual.accruedDays : 0} unit="일" desc="발생(부여)" />
         <Kpi label="사용 연차" value={annual ? annual.usedDays : 0} unit="일" desc="사용" />
         <Kpi label="잔여 연차" value={annual ? annual.remainingDays : 0} unit="일" accent desc="잔여" />
