@@ -12,7 +12,7 @@ import { ConfirmDialog } from '@/components/ab/Modal'
 import { I } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
 import LineModalNative from '@/components/approval/LineModalNative'
-import { dateText } from '@/components/approval/approval-constants'
+import { dateText, STEP_ROLE_LABEL } from '@/components/approval/approval-constants'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { useEmployees } from '@/lib/query/employees'
 import { useOrganizations, type Organization } from '@/lib/query/organizations'
@@ -193,7 +193,10 @@ export default function SharedApprovalLinesPage() {
                             flow.map((s, i) => (
                               <span key={`${line.id}-${i}`}>
                                 {i > 0 && <span className="arr">{I.arrow({ style: { display: 'inline', verticalAlign: 'middle' } })}</span>}
-                                <b>{stepName(s)}</b>
+                                <b>
+                                  <span style={{ color: 'var(--ab-orange)', marginRight: 2 }}>[{STEP_ROLE_LABEL[s.role]}]</span>
+                                  {stepName(s)}
+                                </b>
                               </span>
                             ))
                           )}

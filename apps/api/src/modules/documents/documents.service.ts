@@ -32,8 +32,10 @@ import {
 import { z } from 'zod'
 import { DocumentFormsService } from './document-forms.service'
 
-/** DRAFT/RECALLED/REJECTED — 기안자가 수정·재상신할 수 있는 상태 */
-const EDITABLE_STATUSES: string[] = [DocStatus.DRAFT, DocStatus.RECALLED, DocStatus.REJECTED]
+/** 기안자가 수정·상신할 수 있는 상태 — 임시저장(DRAFT)만. 회수/반려 문서는 재상신 불가(복사하여 새 기안). */
+const EDITABLE_STATUSES: string[] = [DocStatus.DRAFT]
+/** 기안함(draft 박스) 목록 노출 상태 — 임시저장 + 회수 + 반려(회수/반려는 읽기전용으로 조회·복사) */
+const DRAFT_BOX_STATUSES: string[] = [DocStatus.DRAFT, DocStatus.RECALLED, DocStatus.REJECTED]
 
 type StepRecord = {
   id: string
@@ -130,6 +132,7 @@ export class DocumentsService {
       return tx.document.update({
         where: { id: document.id },
         data: {
+          ...(dto.formId !== undefined && { formId: dto.formId }),
           ...(dto.title !== undefined && { title: dto.title }),
           ...(dto.content !== undefined && { content: dto.content }),
           ...(dto.categoryId !== undefined && { categoryId: dto.categoryId }),
@@ -276,17 +279,11 @@ export class DocumentsService {
     this.assertNotRequestManaged(document)
     this.assertDrafter(document, user)
 
+    // 임시저장(DRAFT)만 상신 가능. 회수/반려 문서는 재상신 불가 — '복사하여 새 기안'으로 재작성.
     if (!EDITABLE_STATUSES.includes(document.status)) {
       throw new BadRequestException({
         code: 'DOCUMENT_ALREADY_SUBMITTED',
-        message: '이미 상신된 문서입니다.',
-      })
-    }
-    // REJECTED 재상신만 allowReDraft 필요 (RECALLED 재상신은 항상 허용)
-    if (document.status === DocStatus.REJECTED && !document.form.allowReDraft) {
-      throw new BadRequestException({
-        code: 'DOCUMENT_REDRAFT_NOT_ALLOWED',
-        message: '이 양식은 반려 문서의 재기안을 허용하지 않습니다.',
+        message: '임시저장 상태의 문서만 상신할 수 있습니다. 회수·반려 문서는 복사하여 새로 작성하세요.',
       })
     }
 
@@ -944,7 +941,7 @@ export class DocumentsService {
     switch (filter.box) {
       case 'draft':
         return {
-          where: { companyId, drafterId: me, status: { in: EDITABLE_STATUSES } },
+          where: { companyId, drafterId: me, status: { in: DRAFT_BOX_STATUSES } },
           myAssigneeIds,
         }
       case 'in_progress':

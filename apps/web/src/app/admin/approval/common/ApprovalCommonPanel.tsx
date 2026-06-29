@@ -5,6 +5,7 @@ import { Radio } from '@/components/ab/atoms'
 import { HelpTip } from '@/components/ab/HelpTip'
 import { useToast } from '@/components/ab/Toast'
 import apiClient from '@/lib/api-client'
+import BodyTemplatesPanel from './BodyTemplatesPanel'
 
 /**
  * 전자결재 공통 관리 본문 패널.
@@ -164,6 +165,9 @@ export default function ApprovalCommonPanel() {
           </div>
         </div>
       </div>
+
+      {/* 기안 본문 템플릿 — 기안양식 기본 본문 채우기용 */}
+      <BodyTemplatesPanel />
 
       {/* 정책 설정 */}
       <div className="set-block">

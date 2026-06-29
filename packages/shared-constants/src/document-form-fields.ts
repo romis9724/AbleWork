@@ -33,6 +33,10 @@ export interface DocumentFieldDef {
 
 export interface DocumentFieldsSchema {
   fields: DocumentFieldDef[]
+  /** 기안 작성 화면에 표시할 양식 도움말 (작성 안내) */
+  helpText?: string
+  /** 기안 본문 기본 내용 (HTML) — 작성 시 본문에 prefill */
+  defaultContent?: string
 }
 
 export const DOCUMENT_FIELD_TYPE_LABEL: Record<DocumentFieldType, string> = {
@@ -61,4 +65,16 @@ export function readFormFields(fieldsSchema: unknown): DocumentFieldDef[] {
     )
   }
   return []
+}
+
+/** fieldsSchema(unknown JSON)에서 양식 도움말(helpText)을 안전하게 추출한다. */
+export function readFormHelpText(fieldsSchema: unknown): string {
+  const s = fieldsSchema as { helpText?: unknown } | null
+  return s && typeof s === 'object' && typeof s.helpText === 'string' ? s.helpText : ''
+}
+
+/** fieldsSchema(unknown JSON)에서 기안 본문 기본 내용(defaultContent, HTML)을 안전하게 추출한다. */
+export function readFormDefaultContent(fieldsSchema: unknown): string {
+  const s = fieldsSchema as { defaultContent?: unknown } | null
+  return s && typeof s === 'object' && typeof s.defaultContent === 'string' ? s.defaultContent : ''
 }

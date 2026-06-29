@@ -8,35 +8,33 @@
  * - 라벨 SSOT: approval-constants 맵 사용(하드코딩 라벨 금지).
  */
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useToast } from '@/components/ab/Toast'
 import { I } from '@/components/ab/icons'
 import { Badge, type BadgeKind } from '@/components/ab/atoms'
 import { useAuthStore } from '@/stores/auth.store'
-import { readFormFields } from '@ablework/shared-constants'
+import { readFormFields, readFormHelpText, readFormDefaultContent } from '@ablework/shared-constants'
+import { getApiErrorMessage } from '@/lib/api-error'
 import {
-  useAddCcSteps,
   useAddDocumentOpinion,
   useCreateDocument,
   useDocument,
   useDocumentCategories,
   useDocumentForms,
   useDocumentStepAction,
-  usePersonalApprovalLines,
   useRecallDocument,
-  useSavePersonalApprovalLine,
   useSharedApprovalLines,
   useSubmitDocument,
   useUpdateDocument,
   type ApprovalStepDetail,
   type ApprovalStepInput,
-  type DocumentDetail,
   type DocumentStatus,
   type StepAction,
   type StepStatus,
 } from '@/lib/query/documents'
 import { useEmployees } from '@/lib/query/employees'
-import ApprovalLineBuilder from './ApprovalLineBuilder'
+import DraftApprovalCards from './DraftApprovalCards'
+import DocApprovalView from './DocApprovalView'
 import DynamicFormFields from './DynamicFormFields'
 import RichTextEditor from './RichTextEditor'
 import RichTextView from './RichTextView'
@@ -44,8 +42,6 @@ import AttachmentPanel from './AttachmentPanel'
 import {
   DOC_STATUS_LABEL,
   HISTORY_ACTION_LABEL,
-  STEP_ROLE_LABEL,
-  STEP_STATUS_LABEL,
   dateTimeText,
   isDeptRole,
 } from './approval-constants'
@@ -81,70 +77,16 @@ const HISTORY_BADGE: Record<string, BadgeKind> = {
   OPINION: 'b-prog',
 }
 
-/** 단계 상태 → 도장 마크(ok/rej/wait) */
-function markFor(status: StepStatus): 'ok' | 'rej' | 'wait' {
-  if (status === 'APPROVED' || status === 'PRE_APPROVED' || status === 'PROXY_APPROVED' || status === 'VIEWED' || status === 'RECEIVED') {
-    return 'ok'
-  }
-  if (status === 'REJECTED' || status === 'RETURNED' || status === 'BOUNCED') return 'rej'
-  return 'wait'
-}
-
-interface StampStep {
-  role: string
-  name: string
-  sub?: string
-  mark: 'ok' | 'rej' | 'wait'
-  markLabel: string
-  date: string
-  draft?: boolean
-}
-
-/** detail.approvalLines[].steps + 기안자 → 결재선 도장 행 */
-function buildStampLine(doc: DocumentDetail): StampStep[] {
-  const steps = (doc.approvalLines?.flatMap((l) => l.steps) ?? [])
-    .slice()
-    .sort((a, b) => a.stepOrder - b.stepOrder)
-  const drafter: StampStep = {
-    role: '기안',
-    name: doc.drafter?.name ?? '—',
-    mark: 'ok',
-    markLabel: '기안',
-    date: dateTimeText(doc.submittedAt),
-    draft: true,
-  }
-  const stamps = steps.map((s: ApprovalStepDetail): StampStep => {
-    const target = isDeptRole(s.role) ? s.organization?.name : s.assignee?.name
-    return {
-      role: STEP_ROLE_LABEL[s.role] ?? s.role,
-      name: target ?? '미지정',
-      sub: s.isProxy && s.proxy?.name ? `대결 ${s.proxy.name}` : undefined,
-      mark: markFor(s.status),
-      markLabel: STEP_STATUS_LABEL[s.status] ?? s.status,
-      date: s.actedAt ? dateTimeText(s.actedAt) : s.status === 'PENDING' ? '결재 대기' : '—',
-    }
-  })
-  return [drafter, ...stamps]
-}
-
-function ApprovalStamp({ s }: { s: StampStep }) {
-  return (
-    <div className={'acol' + (s.draft ? ' draft' : '')}>
-      <div className="acol-role">{s.role}</div>
-      <div className="acol-stamp">
-        <div className={'acol-mark ' + s.mark}>{s.markLabel}</div>
-        <div>
-          <div className="acol-name">{s.name}</div>
-          {s.sub && <div className="acol-sub">{s.sub}</div>}
-        </div>
-      </div>
-      <div className="acol-date">{s.date}</div>
-    </div>
-  )
-}
-
 const ACTED_STATUSES: StepStatus[] = ['APPROVED', 'PRE_APPROVED', 'PROXY_APPROVED', 'REJECTED', 'RETURNED']
 const FLOW_ROLES = ['APPROVER', 'AGREEMENT', 'DEPT_COLLABORATOR']
+
+/** 양식 정보 테이블 라벨 헬퍼 */
+const retainText = (y?: number | null) => (y == null ? '—' : y === 0 ? '영구 보존' : `${y}년 보존`)
+const VISIBILITY_TEXT: Record<string, string> = {
+  PUBLIC: '전체공개',
+  DEPARTMENT: '부서공개',
+  PRIVATE: '비공개',
+}
 
 export default function DocModal({ documentId = null, mode: initialMode, onClose }: Props) {
   const toast = useToast()
@@ -160,7 +102,6 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const { data: forms = [] } = useDocumentForms()
   const { data: docCategories = [] } = useDocumentCategories()
   const { data: sharedLines = [] } = useSharedApprovalLines()
-  const { data: personalLines = [] } = usePersonalApprovalLines()
   const { data: empData } = useEmployees({ isActive: true, limit: 200 })
   const employees = empData?.items ?? []
 
@@ -169,8 +110,6 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const submitMutation = useSubmitDocument()
   const stepAction = useDocumentStepAction()
   const recallMutation = useRecallDocument()
-  const addCcMutation = useAddCcSteps()
-  const savePersonalLine = useSavePersonalApprovalLine()
   const addOpinionMutation = useAddDocumentOpinion()
 
   // ----- 편집/작성 폼 상태 -----
@@ -183,15 +122,9 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const [comment, setComment] = useState('')
   // 결재 종료/진행 후 사후 의견
   const [opinionText, setOpinionText] = useState('')
-  // 공람/참조 사후 추가 picker (C-8) + 공용 결재선 선택 (C-6)
-  const [ccEmpId, setCcEmpId] = useState('')
-  const [ccRole, setCcRole] = useState<'VIEWER' | 'REFERENCE'>('VIEWER')
-  const [sharedLineId, setSharedLineId] = useState('')
-  // 개인 결재선 (빠른 결재선 불러오기 / 저장)
-  const [personalLineId, setPersonalLineId] = useState('')
-  const [savingPersonal, setSavingPersonal] = useState(false)
-  const [personalLineName, setPersonalLineName] = useState('')
   const [initializedFor, setInitializedFor] = useState<string | null>(null)
+  // 작성 중 임시저장으로 생성된 문서 id — 설정되면 모달을 닫지 않고 첨부파일 등록을 활성화한다
+  const [localDocId, setLocalDocId] = useState<string | null>(null)
 
   // 편집 모드 진입 시 원본으로 폼 채우기 (1회)
   useEffect(() => {
@@ -219,8 +152,27 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
 
   // ----- 파생: 권한/액션 (DocumentDetailView 로직 준수) -----
   const detailSteps: ApprovalStepDetail[] = doc?.approvalLines?.flatMap((l) => l.steps) ?? []
-  const selectedForm = forms.find((f) => f.id === (isCreate ? formId : doc?.form?.id)) ?? null
+  // 임시저장(DRAFT) 문서 편집 = 작성(create)과 동일한 화면으로 취급한다(양식정보·결재선 카드·[임시저장][상신]).
+  const isDraftDoc = !isCreate && doc?.status === 'DRAFT'
+  const compose = isCreate || isDraftDoc
+  // 현재 작업 중 문서 id — 작성 모드(신규/복사)는 localDocId, 그 외(edit/view)는 prop
+  const workingDocId = isCreate ? localDocId : documentId ?? localDocId
+  const selectedForm = forms.find((f) => f.id === (compose ? formId : doc?.form?.id)) ?? null
   const dynamicFields = readFormFields(selectedForm?.fieldsSchema)
+  // 양식 도움말 (기안 작성 안내) — 작성/편집 화면 상단에 표시
+  const formHelpText = readFormHelpText(selectedForm?.fieldsSchema)
+
+  // 기안자 본인 정보 (이름·대표 소속 부서) — 양식 정보 테이블·결재선 카드의 기안 칸에 표시
+  const myEmployee = employees.find((e) => e.id === myEmployeeId)
+  const drafterName = myEmployee?.name ?? '기안자'
+  const drafterOrgName =
+    (myEmployee?.organizations?.find((o) => o.isPrimary) ?? myEmployee?.organizations?.[0])?.organization.name
+
+  // 조회(view): 기안자는 본인이 아닐 수 있으므로 문서의 기안자(doc.drafter)로 이름·부서를 해석
+  const viewDrafter = doc?.drafter ? employees.find((e) => e.id === doc.drafter?.id) : undefined
+  const viewDrafterName = doc?.drafter?.name ?? '—'
+  const viewDrafterOrgName =
+    (viewDrafter?.organizations?.find((o) => o.isPrimary) ?? viewDrafter?.organizations?.[0])?.organization.name
   const allowPreApproval = doc?.form?.allowPreApproval ?? false
   const isHrLinked = !!doc?.requestId
   const isDrafter = doc?.drafter?.id ? doc.drafter.id === myEmployeeId : false
@@ -255,29 +207,16 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     !!myPendingStep &&
     detailSteps.some((s) => FLOW_ROLES.includes(s.role) && s.stepOrder < myPendingStep.stepOrder)
   const canRecall = isDrafter && doc?.status === 'PENDING' && !hasActedStep
-  // 기안자 본인이 수정 가능한 상태: DRAFT(임시저장) + RECALLED(회수) + REJECTED(반려)
-  const isEditableMine = isDrafter && ['DRAFT', 'RECALLED', 'REJECTED'].includes(doc?.status ?? '')
-  // 재상신 가능: RECALLED는 항상, REJECTED는 양식의 allowReDraft 허용 시 (BE 정책과 일치)
-  const canReDraft =
-    isDrafter &&
-    (doc?.status === 'RECALLED' ||
-      (doc?.status === 'REJECTED' && (doc?.form?.allowReDraft ?? false)))
-  const isParticipant = detailSteps.some(
-    (s) => FLOW_ROLES.includes(s.role) && s.assignee?.id === myEmployeeId,
-  )
-  const canAddCc =
-    !isHrLinked &&
-    (doc?.status === 'PENDING' || doc?.status === 'APPROVED') &&
-    (isDrafter || isParticipant)
-
-  // 결재 종료/진행 후 사후 의견·첨부 — 상신된 문서의 기안자/결재 관계자(assignee·proxy)
+  // 회수/반려된 기안은 수정·재상신할 수 없다(읽기전용). 다시 올리려면 '복사하여 새 기안'으로 재작성.
+  const canCopyToNew = isDrafter && (doc?.status === 'RECALLED' || doc?.status === 'REJECTED')
+  // 결재 종료/진행 후 사후 의견 — 상신된 문서의 기안자/결재 관계자(assignee·proxy)
   const isAnyParticipant = detailSteps.some(
     (s) => s.assignee?.id === myEmployeeId || s.proxy?.id === myEmployeeId,
   )
   const isSubmittedDoc = !isCreate && !!doc && doc.status !== 'DRAFT'
-  const canPostAttach = isSubmittedDoc && (isDrafter || isAnyParticipant)
-  // 결재 차례가 아닐 때만 사후 의견 입력 노출(결재 차례면 결재 처리 의견으로 전송)
-  const canAddOpinion = canPostAttach && !canApprove && !canConfirmView && !canReceive
+  // 결재 차례가 아닐 때만 사후 의견 입력 노출(첨부는 임시저장에서만 — 상신 후 잠금)
+  const canAddOpinion =
+    isSubmittedDoc && (isDrafter || isAnyParticipant) && !canApprove && !canConfirmView && !canReceive
 
   const busy =
     createMutation.isPending ||
@@ -285,19 +224,10 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     submitMutation.isPending ||
     stepAction.isPending ||
     recallMutation.isPending ||
-    addCcMutation.isPending ||
-    savePersonalLine.isPending ||
     addOpinionMutation.isPending
-
-  const stampLine: StampStep[] = useMemo(() => (doc ? buildStampLine(doc) : []), [doc])
 
   // 결재 의견 타임라인 (comment 있는 이력)
   const comments = (doc?.history ?? []).filter((h) => h.comment)
-
-  // 참조·공람 칩 (view) — REFERENCE/VIEWER step
-  const ccChips = detailSteps
-    .filter((s) => s.role === 'REFERENCE' || s.role === 'VIEWER')
-    .map((s) => ({ label: STEP_ROLE_LABEL[s.role], name: s.assignee?.name ?? s.organization?.name ?? '미지정' }))
 
   // ----- 액션 핸들러 -----
   const runStepAction = async (action: StepAction, requireComment = false, targetStepId?: string) => {
@@ -345,57 +275,100 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
     }
   }
 
-  const handleSave = async () => {
+  /**
+   * 회수/반려 문서를 복사하여 새 기안으로 — 제목·본문·양식·동적항목·결재선을 새 DRAFT로 복제하고,
+   * 모달을 작성 모드로 전환해 이어서 수정·상신할 수 있게 한다 (원본은 그대로 보존).
+   */
+  const handleCopyToNew = async () => {
     if (!doc) return
+    const content = (doc.content ?? {}) as Record<string, unknown>
+    const { body: bodyVal, ...fieldRest } = content
+    const copiedSteps: ApprovalStepInput[] = (doc.approvalLines?.flatMap((l) => l.steps) ?? [])
+      .slice()
+      .sort((a, b) => a.stepOrder - b.stepOrder)
+      .filter((s) => (isDeptRole(s.role) ? !!s.organization?.id : !!s.assignee?.id))
+      .map((s, i) =>
+        isDeptRole(s.role)
+          ? { role: s.role, organizationId: s.organization!.id, stepOrder: i + 1 }
+          : { role: s.role, assigneeId: s.assignee!.id, stepOrder: i + 1 },
+      )
     try {
-      await updateMutation.mutateAsync({
-        id: doc.id,
-        title: title.trim(),
-        content: { body, ...fieldValues },
+      const created = await createMutation.mutateAsync({
+        formId: doc.form?.id ?? '',
+        categoryId: doc.category?.id ?? null,
+        title: doc.title,
+        content,
+        steps: copiedSteps,
       })
-      toast('문서를 수정했습니다')
-      setMode('view')
-    } catch {
-      toast('수정 중 오류가 발생했습니다')
+      // 새 DRAFT를 작성 모드로 전환 (폼 prefill, 모달 유지)
+      setLocalDocId(created.id)
+      setFormId(doc.form?.id ?? '')
+      setCategoryId(doc.category?.id ?? '')
+      setTitle(doc.title)
+      setBody(typeof bodyVal === 'string' ? bodyVal : '')
+      setFieldValues(fieldRest)
+      setSteps(copiedSteps)
+      setInitializedFor('copied') // create 모드라 doc 복원 useEffect는 동작하지 않음
+      setMode('create')
+      toast('복사하여 새 기안을 임시저장했습니다. 이어서 수정·상신할 수 있습니다.')
+    } catch (e) {
+      toast(getApiErrorMessage(e, '복사 중 오류가 발생했습니다'))
     }
   }
 
-  /** 회수/반려 문서 재상신: 수정 내용 저장 후 기존 결재선으로 다시 상신 → PENDING */
-  const handleResubmit = async () => {
-    if (!doc) return
-    if (steps.length === 0 || !steps.some((s) => s.role === 'APPROVER')) {
-      toast('결재(승인) 단계가 없어 재상신할 수 없습니다')
-      return
+  /**
+   * 작성 시 양식 선택 — 양식의 기본 결재선(defaultLineId)을 자동 적용하고,
+   * 본문이 비어 있으면 양식의 기본 본문으로 채운다 (입력 보존).
+   */
+  const handleSelectForm = (id: string) => {
+    setFormId(id)
+    const form = forms.find((x) => x.id === id)
+    // 공용 결재선 자동 설정 — 양식에 기본 결재선이 지정돼 있으면 결재선을 채운다
+    if (form?.defaultLineId) {
+      const line = sharedLines.find((l) => l.id === form.defaultLineId)
+      if (line) setSteps(line.steps.map((s, i) => ({ ...s, stepOrder: i + 1 })))
     }
-    try {
-      await updateMutation.mutateAsync({
-        id: doc.id,
-        title: title.trim(),
-        content: { body, ...fieldValues },
-      })
-      await submitMutation.mutateAsync({
-        id: doc.id,
-        steps: steps.map((s, i) => ({ ...s, stepOrder: i + 1 })),
-      })
-      toast('재상신했습니다')
-      onClose()
-    } catch {
-      toast('재상신 중 오류가 발생했습니다')
-    }
+    const dc = readFormDefaultContent(form?.fieldsSchema)
+    if (dc) setBody((prev) => (prev.trim() ? prev : dc))
   }
 
-  /** 작성: 문서 생성 (id 확보) */
+  /** 미입력 필수 동적 항목의 라벨 목록 (상신 전 검증용) */
+  const findMissingRequired = (): string[] =>
+    dynamicFields
+      .filter((f) => f.required && !String(fieldValues[f.key] ?? '').trim())
+      .map((f) => f.label)
+
+  /**
+   * 작성: 문서 저장(id 확보). 최초엔 생성(localDocId 세팅), 이미 임시저장됐으면 내용만 갱신.
+   * 임시저장 후 모달을 닫지 않고 첨부파일을 등록할 수 있게 localDocId를 유지한다.
+   */
   const createDraft = async (): Promise<string | null> => {
+    // 결재선·수신/참조/공람을 함께 저장해 다시 열 때 복원되게 한다 (DRAFT 보존)
+    const orderedSteps = steps.map((s, i) => ({ ...s, stepOrder: i + 1 }))
     try {
+      if (workingDocId) {
+        // 기존(임시저장본/DRAFT) 갱신 — 양식 변경 포함
+        await updateMutation.mutateAsync({
+          id: workingDocId,
+          formId,
+          categoryId: categoryId || null,
+          title: title.trim(),
+          content: { body, ...fieldValues },
+          steps: orderedSteps,
+        })
+        return workingDocId
+      }
       const created = await createMutation.mutateAsync({
         formId,
         categoryId: categoryId || null,
         title: title.trim(),
         content: { body, ...fieldValues },
+        steps: orderedSteps,
       })
+      setLocalDocId(created.id)
       return created.id
-    } catch {
-      toast('저장 중 오류가 발생했습니다')
+    } catch (e) {
+      toast(getApiErrorMessage(e, '저장 중 오류가 발생했습니다'))
       return null
     }
   }
@@ -406,10 +379,8 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
       return
     }
     const id = await createDraft()
-    if (id) {
-      toast('임시저장했습니다')
-      onClose()
-    }
+    // 모달을 닫지 않고 그대로 유지 — 이어서 첨부파일을 등록할 수 있다
+    if (id) toast('임시저장했습니다. 이제 첨부파일을 등록할 수 있습니다.')
   }
 
   const handleCreateSubmit = async () => {
@@ -423,6 +394,11 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
       toast('결재(승인) 역할 단계가 최소 1개 필요합니다')
       return
     }
+    const missing = findMissingRequired()
+    if (missing.length) {
+      toast(`필수 항목을 입력해 주세요: ${missing.join(', ')}`)
+      return
+    }
     const id = await createDraft()
     if (!id) return
     try {
@@ -432,72 +408,8 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
       })
       toast('기안을 상신했습니다')
       onClose()
-    } catch {
-      toast('상신 중 오류가 발생했습니다')
-    }
-  }
-
-  /** 공람·참조 사후 추가 — 선택한 직원을 지정 역할(공람/참조)로 추가 (C-8) */
-  const handleAddCc = async () => {
-    if (!doc) return
-    const assigneeId = ccEmpId || myEmployeeId
-    if (!assigneeId) {
-      toast('추가할 직원을 선택해 주세요')
-      return
-    }
-    try {
-      await addCcMutation.mutateAsync({
-        documentId: doc.id,
-        steps: [{ role: ccRole, assigneeId }],
-      })
-      toast(`${ccRole === 'REFERENCE' ? '참조' : '공람'} 대상에 추가했습니다`)
-      setCcEmpId('')
-    } catch {
-      toast('추가 중 오류가 발생했습니다')
-    }
-  }
-
-  /** 공용 결재선 선택 → 작성 중 결재선(steps) prefill (C-6) */
-  const applySharedLine = (lineId: string) => {
-    setSharedLineId(lineId)
-    const line = sharedLines.find((l) => l.id === lineId)
-    if (line) setSteps(line.steps.map((s, i) => ({ ...s, stepOrder: i + 1 })))
-  }
-
-  /** 내 결재선 불러오기 → 작성 중 결재선(steps) prefill */
-  const applyPersonalLine = (lineId: string) => {
-    setPersonalLineId(lineId)
-    const line = personalLines.find((l) => l.id === lineId)
-    if (line) setSteps(line.steps.map((s, i) => ({ ...s, stepOrder: i + 1 })))
-  }
-
-  /** 현재 결재선 구성을 내 결재선으로 저장 */
-  const handleSavePersonalLine = async () => {
-    const name = personalLineName.trim()
-    if (!name) {
-      toast('결재선 이름을 입력해 주세요')
-      return
-    }
-    if (steps.length === 0) {
-      toast('저장할 결재 단계가 없습니다')
-      return
-    }
-    const incomplete = (s: ApprovalStepInput) =>
-      isDeptRole(s.role) ? !s.organizationId : !s.assigneeId
-    if (steps.some(incomplete)) {
-      toast('결재선 단계의 담당자(또는 부서)를 모두 지정해 주세요')
-      return
-    }
-    try {
-      await savePersonalLine.mutateAsync({
-        name,
-        steps: steps.map((s, i) => ({ ...s, stepOrder: i + 1 })),
-      })
-      toast('내 결재선으로 저장했습니다')
-      setSavingPersonal(false)
-      setPersonalLineName('')
-    } catch {
-      toast('저장 중 오류가 발생했습니다 (이름이 중복되지 않았는지 확인해 주세요)')
+    } catch (e) {
+      toast(getApiErrorMessage(e, '상신 중 오류가 발생했습니다'))
     }
   }
 
@@ -505,8 +417,6 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
   const eyebrow = isCreate ? 'New Draft' : mode === 'edit' ? 'Edit Document' : 'Approval Document'
   const heading = isCreate ? '기안 등록' : (editable ? title : doc?.title) || '제목 없음'
 
-  // create 결재선 미설정 여부
-  const lineSet = isCreate ? steps.length > 0 : stampLine.length > 1
   const canCreateSubmit = !!formId && !!title.trim() && steps.length > 0
 
   // ----- 푸터 -----
@@ -522,9 +432,9 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
               {I.undo({ style: { marginRight: 7 } })}회수
             </button>
           )}
-          {isEditableMine && (
-            <button className="btn btn-ghost" disabled={busy} onClick={() => setMode('edit')}>
-              {I.edit({ style: { marginRight: 7 } })}수정
+          {canCopyToNew && (
+            <button className="btn btn-ghost" disabled={busy} onClick={handleCopyToNew}>
+              {I.edit({ style: { marginRight: 7 } })}복사하여 새 기안
             </button>
           )}
           {canConfirmView && (
@@ -559,18 +469,7 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
         </>
       )
     }
-    if (mode === 'edit') {
-      return (
-        <>
-          <button className="btn btn-line" style={{ minWidth: 110 }} disabled={busy} onClick={() => setMode('view')}>취소</button>
-          <button className="btn btn-line" style={{ minWidth: 110 }} disabled={busy || !title.trim()} onClick={handleSave}>저장</button>
-          {canReDraft && (
-            <button className="btn btn-primary" style={{ minWidth: 110 }} disabled={busy || !title.trim()} onClick={handleResubmit}>재상신</button>
-          )}
-        </>
-      )
-    }
-    // create
+    // 작성/임시저장 편집(compose): 임시저장 / 상신
     return (
       <>
         <button className="btn btn-line" style={{ minWidth: 110 }} disabled={busy || !formId || !title.trim()} onClick={handleSaveDraft}>임시저장</button>
@@ -600,105 +499,43 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
             </div>
           ) : (
             <>
-              {/* 결재선 */}
+              {/* 양식 정보 (작성: 양식 선택 + 정보 테이블 / 조회: 메타) */}
               <div className="doc-section">
-                <div className="doc-sec-head"><span className="dot" /><span className="t">결재선</span><span className="en">Approval Line</span></div>
-                {isCreate ? (
-                  <>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                      {sharedLines.length > 0 && (
-                        <select
-                          className="sel"
-                          style={{ maxWidth: 240 }}
-                          value={sharedLineId}
-                          onChange={(e) => applySharedLine(e.target.value)}
-                        >
-                          <option value="">공용 결재선 선택</option>
-                          {sharedLines.map((l) => (
-                            <option key={l.id} value={l.id}>{l.name}</option>
-                          ))}
-                        </select>
-                      )}
-                      {personalLines.length > 0 && (
-                        <select
-                          className="sel"
-                          style={{ maxWidth: 240 }}
-                          value={personalLineId}
-                          onChange={(e) => applyPersonalLine(e.target.value)}
-                        >
-                          <option value="">내 결재선 불러오기</option>
-                          {personalLines.map((l) => (
-                            <option key={l.id} value={l.id}>{l.name}</option>
-                          ))}
-                        </select>
-                      )}
-                      {savingPersonal ? (
-                        <>
-                          <input
-                            className="inp-block"
-                            style={{ maxWidth: 180 }}
-                            placeholder="내 결재선 이름"
-                            value={personalLineName}
-                            onChange={(e) => setPersonalLineName(e.target.value)}
-                          />
-                          <button
-                            className="btn btn-primary btn-sm"
-                            disabled={busy || !personalLineName.trim()}
-                            onClick={handleSavePersonalLine}
-                          >
-                            저장
-                          </button>
-                          <button
-                            className="btn btn-line btn-sm"
-                            disabled={busy}
-                            onClick={() => { setSavingPersonal(false); setPersonalLineName('') }}
-                          >
-                            취소
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          className="btn btn-line btn-sm"
-                          disabled={busy || steps.length === 0}
-                          onClick={() => setSavingPersonal(true)}
-                        >
-                          내 결재선으로 저장
-                        </button>
-                      )}
-                    </div>
-                    <ApprovalLineBuilder steps={steps} onChange={setSteps} disabled={busy} />
-                  </>
-                ) : lineSet ? (
-                  <div className="aline">{stampLine.map((s, i) => <ApprovalStamp key={i} s={s} />)}</div>
-                ) : (
-                  <div className="muted" style={{ fontSize: 13 }}>결재선이 없습니다.</div>
-                )}
-              </div>
-
-              {/* 문서 정보 */}
-              <div className="doc-section">
-                <div className="doc-sec-head"><span className="dot" /><span className="t">문서 정보</span><span className="en">Document Info</span></div>
-                {isCreate ? (
+                <div className="doc-sec-head"><span className="dot" /><span className="t">양식 정보</span><span className="en">Form Info</span></div>
+                {compose ? (
                   <>
                     <div className="doc-field">
                       <span className="fk">기안양식<span className="req">*</span></span>
                       <span className="fv">
-                        <select className="sel" value={formId} onChange={(e) => setFormId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
-                          <option value="">양식 선택</option>
+                        <select className="sel" value={formId} onChange={(e) => handleSelectForm(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
+                          <option value="">양식을 선택하세요</option>
                           {forms.filter((f) => f.isActive).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
                         </select>
                       </span>
                     </div>
-                    {docCategories.length > 0 && (
-                      <div className="doc-field">
-                        <span className="fk">문서성격</span>
-                        <span className="fv">
-                          <select className="sel" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
-                            <option value="">선택 안 함</option>
-                            {docCategories.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.abbreviation})</option>)}
-                          </select>
-                        </span>
-                      </div>
+                    {selectedForm ? (
+                      <>
+                        <div className="doc-meta">
+                          <div className="cell"><div className="k">문서번호</div><div className="v num">{selectedForm.abbreviation ? `${selectedForm.abbreviation}-YY-0000` : '상신 시 자동 부여'}</div></div>
+                          <div className="cell"><div className="k">보존연한</div><div className="v">{retainText(selectedForm.retentionYears)}</div></div>
+                          <div className="cell"><div className="k">공개여부</div><div className="v">{VISIBILITY_TEXT[selectedForm.visibilityScope ?? 'PUBLIC'] ?? '—'}</div></div>
+                          <div className="cell"><div className="k">기안자</div><div className="v">{drafterName}</div></div>
+                          <div className="cell"><div className="k">기안부서</div><div className="v">{drafterOrgName ?? '—'}</div></div>
+                        </div>
+                        {docCategories.length > 0 && (
+                          <div className="doc-field">
+                            <span className="fk">문서성격</span>
+                            <span className="fv">
+                              <select className="sel" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ borderBottom: '1px solid var(--warm-500)' }}>
+                                <option value="">선택 안 함</option>
+                                {docCategories.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.abbreviation})</option>)}
+                              </select>
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="muted" style={{ fontSize: 13, paddingTop: 4 }}>기안양식을 먼저 선택하면 결재선과 작성 항목이 표시됩니다.</div>
                     )}
                   </>
                 ) : (
@@ -712,9 +549,51 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
                 )}
               </div>
 
-              {/* 기안 내용 */}
+              {/* 결재선 — 작성/임시저장: 카드 UI(양식 선택 후) / 조회: 도장 */}
+              {(!compose || formId) && (
+                <div className="doc-section">
+                  <div className="doc-sec-head"><span className="dot" /><span className="t">결재선</span><span className="en">Approval Line</span></div>
+                  {compose ? (
+                    <DraftApprovalCards
+                      steps={steps}
+                      onChange={setSteps}
+                      employees={employees}
+                      drafterName={drafterName}
+                      drafterOrgName={drafterOrgName}
+                      disabled={busy}
+                    />
+                  ) : (
+                    <DocApprovalView
+                      steps={detailSteps}
+                      drafterName={viewDrafterName}
+                      drafterOrgName={viewDrafterOrgName}
+                      drafterDate={doc?.submittedAt}
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* 기안 내용 — 작성/임시저장 시 양식 선택 후에만 노출 */}
+              {(!compose || formId) && (
               <div className="doc-section">
                 <div className="doc-sec-head"><span className="dot" /><span className="t">기안 내용</span><span className="en">Content</span></div>
+                {editable && formHelpText.trim() && (
+                  <div
+                    style={{
+                      margin: '0 0 14px',
+                      padding: '12px 14px',
+                      borderRadius: 6,
+                      background: 'color-mix(in srgb, var(--ab-orange) 10%, transparent)',
+                      border: '1px solid color-mix(in srgb, var(--ab-orange) 30%, transparent)',
+                      color: 'var(--fg-2)',
+                      fontSize: 13,
+                      lineHeight: 1.7,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {formHelpText}
+                  </div>
+                )}
                 <div className="doc-field">
                   <span className="fk">제목<span className="req">{editable ? '*' : ''}</span></span>
                   <span className="fv">
@@ -724,44 +603,6 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
                   </span>
                 </div>
 
-                {/* 참조·공람 (view) */}
-                {isView && (
-                  <div className="doc-field">
-                    <span className="fk">참조 · 공람</span>
-                    <span className="fv" style={{ width: '100%' }}>
-                      <div className="chips">
-                        {ccChips.length > 0
-                          ? ccChips.map((c, i) => <span key={i} className="chip">{c.label} · {c.name}</span>)
-                          : <span className="muted">없음</span>}
-                      </div>
-                      {canAddCc && (
-                        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                          <select
-                            className="sel"
-                            style={{ maxWidth: 200 }}
-                            value={ccEmpId}
-                            onChange={(e) => setCcEmpId(e.target.value)}
-                          >
-                            <option value="">직원 선택</option>
-                            {employees.map((emp) => (
-                              <option key={emp.id} value={emp.id}>{emp.name}</option>
-                            ))}
-                          </select>
-                          <select
-                            className="sel"
-                            style={{ maxWidth: 120 }}
-                            value={ccRole}
-                            onChange={(e) => setCcRole(e.target.value as 'VIEWER' | 'REFERENCE')}
-                          >
-                            <option value="VIEWER">공람</option>
-                            <option value="REFERENCE">참조</option>
-                          </select>
-                          <button className="btn btn-line btn-sm" disabled={busy || !ccEmpId} onClick={handleAddCc}>추가</button>
-                        </div>
-                      )}
-                    </span>
-                  </div>
-                )}
 
                 {/* 동적 양식 필드 (편집) */}
                 {editable && dynamicFields.length > 0 && (
@@ -787,28 +628,34 @@ export default function DocModal({ documentId = null, mode: initialMode, onClose
                   </span>
                 </div>
               </div>
+              )}
 
-              {/* 첨부파일 — 저장된 문서에만 (create 미저장 상태는 안내) */}
+              {/* 첨부파일 — 작성/임시저장: 양식 선택 후(임시저장하면 등록 가능) / 조회·편집 시 항상 */}
+              {(!compose || formId) && (
               <div className="doc-section">
                 <div className="doc-sec-head"><span className="dot" /><span className="t">첨부파일</span><span className="en">Attachments</span></div>
-                {isCreate ? (
-                  <div className="muted" style={{ fontSize: 13 }}>첨부파일은 임시저장 후 등록할 수 있습니다.</div>
-                ) : doc ? (
-                  <>
+                {compose ? (
+                  workingDocId ? (
                     <AttachmentPanel
-                      documentId={doc.id}
-                      editable={mode === 'edit' || canPostAttach}
-                      allowZipUpload={doc.form?.allowZipUpload}
+                      documentId={workingDocId}
+                      editable
+                      allowZipUpload={selectedForm?.allowZipUpload}
                       onError={(m) => toast(m)}
                     />
-                    {isView && canPostAttach && (
-                      <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-                        결재 완료 후에도 최종 날인본 등 첨부파일을 추가할 수 있습니다.
-                      </div>
-                    )}
-                  </>
+                  ) : (
+                    <div className="muted" style={{ fontSize: 13 }}>제목을 입력하고 임시저장하면 첨부파일을 등록할 수 있습니다.</div>
+                  )
+                ) : doc ? (
+                  // 상신 이후(진행 중·완료·회수·반려)에는 첨부 읽기전용 — 추가/수정 불가
+                  <AttachmentPanel
+                    documentId={doc.id}
+                    editable={false}
+                    allowZipUpload={doc.form?.allowZipUpload}
+                    onError={(m) => toast(m)}
+                  />
                 ) : null}
               </div>
+              )}
 
               {/* 결재 의견 (view) */}
               {isView && (

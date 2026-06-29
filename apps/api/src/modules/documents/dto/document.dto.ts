@@ -55,6 +55,8 @@ export const CreateDocumentSchema = z.object({
 
 export const UpdateDocumentSchema = z
   .object({
+    // 임시저장(DRAFT) 문서의 양식 변경 허용 (AP-02 임시저장 재편집)
+    formId: z.string().min(1).optional(),
     categoryId: z.string().min(1).nullable().optional(),
     title: z.string().min(1).max(200).optional(),
     content: z.record(z.unknown()).optional(),

@@ -18,8 +18,8 @@ export const MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024
 /** 문서당 최대 첨부 개수 */
 export const MAX_ATTACHMENTS_PER_DOC = 10
 
-/** 기안자가 첨부를 추가/삭제할 수 있는 상태 (작성/수정 가능 상태) */
-const EDITABLE_STATUSES: string[] = [DocStatus.DRAFT, DocStatus.RECALLED, DocStatus.REJECTED]
+/** 기안자가 첨부를 추가/삭제할 수 있는 상태 — 임시저장(DRAFT)에서만 */
+const EDITABLE_STATUSES: string[] = [DocStatus.DRAFT]
 
 const ZIP_CONTENT_TYPES = ['application/zip', 'application/x-zip-compressed', 'multipart/x-zip']
 
@@ -134,11 +134,11 @@ export class AttachmentsService {
     if (!document) {
       throw new NotFoundException({ code: 'DOCUMENT_NOT_FOUND', message: '문서를 찾을 수 없습니다.' })
     }
-    // 완료(APPROVED) 문서의 첨부는 보존 — 최종 결재된 근거 자료 삭제 차단
-    if (document.status === DocStatus.APPROVED) {
+    // 임시저장(DRAFT) 상태에서만 첨부 삭제 — 상신 이후엔 잠금
+    if (!EDITABLE_STATUSES.includes(document.status)) {
       throw new ForbiddenException({
-        code: 'ATTACHMENT_DELETE_LOCKED',
-        message: '완료된 문서의 첨부파일은 삭제할 수 없습니다.',
+        code: 'ATTACHMENT_LOCKED',
+        message: '임시저장 상태에서만 첨부파일을 변경할 수 있습니다.',
       })
     }
 
@@ -152,14 +152,11 @@ export class AttachmentsService {
       })
     }
 
-    // 삭제 권한: 업로더 본인 / 작성 가능 상태의 기안자 / 관리자
-    const isUploader = attachment.uploaderId === user.employeeId
-    const isDrafterEditable =
-      document.drafterId === user.employeeId && EDITABLE_STATUSES.includes(document.status)
-    if (!isUploader && !isDrafterEditable && !this.isCompanyAdmin(user)) {
+    // 삭제 권한: 기안자 본인 또는 업로더 본인
+    if (document.drafterId !== user.employeeId && attachment.uploaderId !== user.employeeId) {
       throw new ForbiddenException({
         code: 'ATTACHMENT_DELETE_FORBIDDEN',
-        message: '본인이 올린 첨부파일만 삭제할 수 있습니다.',
+        message: '기안자 본인만 첨부를 삭제할 수 있습니다.',
       })
     }
 
@@ -182,45 +179,30 @@ export class AttachmentsService {
   }
 
   /**
-   * 첨부 업로드 가능 문서 로드.
-   * - 작성 가능 상태(DRAFT/RECALLED/REJECTED): 기안자 본인만.
-   * - 상신 후(PENDING/APPROVED 등): 기안자 + 결재 관계자(assignee/proxy) + 관리자.
-   *   계약 기안 완료 후 최종날인 스캔본 등 사후 첨부를 허용한다(본문·결재선은 잠금 유지).
+   * 첨부 업로드 가능 문서 로드 — 임시저장(DRAFT) 상태의 기안자 본인만.
+   * 상신 이후(진행 중·완료·회수·반려)에는 첨부를 추가/수정할 수 없다.
    */
   private async loadUploadableDocument(companyId: string, documentId: string, user: JwtPayload) {
     const document = await this.prisma.document.findFirst({
       where: { id: documentId, companyId },
       include: {
         form: { select: { allowZipUpload: true } },
-        approvalLines: { select: { steps: { select: { assigneeId: true, proxyId: true } } } },
       },
     })
     if (!document) {
       throw new NotFoundException({ code: 'DOCUMENT_NOT_FOUND', message: '문서를 찾을 수 없습니다.' })
     }
 
-    const isDrafter = document.drafterId === user.employeeId
-
-    // 작성 가능 상태 — 기안자만
-    if (EDITABLE_STATUSES.includes(document.status)) {
-      if (!isDrafter) {
-        throw new ForbiddenException({
-          code: 'DOCUMENT_NOT_DRAFTER',
-          message: '기안자 본인만 첨부를 변경할 수 있습니다.',
-        })
-      }
-      return document
-    }
-
-    // 상신 후 — 기안자/관리자/결재 관계자
-    if (isDrafter || this.isCompanyAdmin(user)) return document
-    const isParticipant = document.approvalLines
-      .flatMap((line: { steps: Array<{ assigneeId: string; proxyId: string | null }> }) => line.steps)
-      .some((s) => s.assigneeId === user.employeeId || s.proxyId === user.employeeId)
-    if (!isParticipant) {
+    if (!EDITABLE_STATUSES.includes(document.status)) {
       throw new ForbiddenException({
-        code: 'DOCUMENT_ACCESS_FORBIDDEN',
-        message: '첨부파일을 추가할 권한이 없습니다.',
+        code: 'ATTACHMENT_LOCKED',
+        message: '임시저장 상태에서만 첨부파일을 추가/수정할 수 있습니다.',
+      })
+    }
+    if (document.drafterId !== user.employeeId) {
+      throw new ForbiddenException({
+        code: 'DOCUMENT_NOT_DRAFTER',
+        message: '기안자 본인만 첨부를 변경할 수 있습니다.',
       })
     }
     return document

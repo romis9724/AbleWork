@@ -171,6 +171,46 @@ describe('SharedApprovalLinesService', () => {
 
   // ── create ───────────────────────────────────────────────────────────────────
 
+  describe('checkNameDuplicate', () => {
+    it('같은 회사·COMPANY 범위에 동일 이름이 있으면 duplicate=true', async () => {
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue({ id: 'dup' })
+
+      const result = await service.checkNameDuplicate(COMPANY_ID, '표준 결재선')
+
+      expect(result).toEqual({ duplicate: true })
+      expect(mockPrisma.sharedApprovalLine.findFirst).toHaveBeenCalledWith({
+        where: { companyId: COMPANY_ID, scope: 'COMPANY', name: '표준 결재선' },
+        select: { id: true },
+      })
+    })
+
+    it('동일 이름이 없으면 duplicate=false', async () => {
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(null)
+
+      const result = await service.checkNameDuplicate(COMPANY_ID, '신규 결재선')
+
+      expect(result).toEqual({ duplicate: false })
+    })
+
+    it('수정 시 excludeId(자기 자신)는 중복에서 제외한다', async () => {
+      mockPrisma.sharedApprovalLine.findFirst.mockResolvedValue(null)
+
+      await service.checkNameDuplicate(COMPANY_ID, '표준 결재선', 'line-1')
+
+      expect(mockPrisma.sharedApprovalLine.findFirst).toHaveBeenCalledWith({
+        where: { companyId: COMPANY_ID, scope: 'COMPANY', name: '표준 결재선', id: { not: 'line-1' } },
+        select: { id: true },
+      })
+    })
+
+    it('빈 이름이면 DB 조회 없이 duplicate=false', async () => {
+      const result = await service.checkNameDuplicate(COMPANY_ID, '   ')
+
+      expect(result).toEqual({ duplicate: false })
+      expect(mockPrisma.sharedApprovalLine.findFirst).not.toHaveBeenCalled()
+    })
+  })
+
   describe('create', () => {
     const dto: CreateSharedLineDto = { name: '표준 결재선', steps: baseSteps }
 

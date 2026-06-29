@@ -90,6 +90,26 @@ export class SharedApprovalLinesService {
     return { createdAt }
   }
 
+  /**
+   * 공용 결재선명 사전 중복 확인 — 등록/수정 모달의 [중복체크] 버튼용.
+   * 같은 회사·COMPANY 범위에서 동일 이름이 있으면 duplicate=true (수정 시 excludeId 자기 자신 제외).
+   */
+  async checkNameDuplicate(companyId: string, name: string, excludeId?: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return { duplicate: false }
+
+    const existing = await this.prisma.sharedApprovalLine.findFirst({
+      where: {
+        companyId,
+        scope: LINE_SCOPE.COMPANY,
+        name: trimmed,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    })
+    return { duplicate: Boolean(existing) }
+  }
+
   async create(companyId: string, dto: CreateSharedLineDto, createdById: string) {
     await this.assertAssigneesInCompany(companyId, dto.steps)
     this.assertNoFinalApproverConflict(dto.steps)

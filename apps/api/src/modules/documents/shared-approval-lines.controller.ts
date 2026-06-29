@@ -38,6 +38,20 @@ import {
 export class SharedApprovalLinesController {
   constructor(private readonly sharedApprovalLinesService: SharedApprovalLinesService) {}
 
+  // AP-01-08b 공용 결재선명 중복 확인 — 등록/수정 모달 [중복체크] 버튼 (정적 경로 우선)
+  @Get('check-name')
+  @Roles(AccessLevel.GENERAL_ADMIN)
+  @ApiOperation({ summary: '공용 결재선명 중복 확인 (GENERAL_ADMIN)' })
+  @ApiQuery({ name: 'name', required: true, type: String, description: '확인할 결재선명' })
+  @ApiQuery({ name: 'excludeId', required: false, type: String, description: '수정 시 제외할 결재선 id' })
+  checkName(
+    @CompanyId() companyId: string,
+    @Query('name') name: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    return this.sharedApprovalLinesService.checkNameDuplicate(companyId, name ?? '', excludeId)
+  }
+
   // AP-01-07 공용 결재선 목록 (전 직원) — 결재선명·작성자·결재자·작성일 필터 (C-9b)
   @Get()
   @ApiOperation({ summary: '공용 결재선 목록 조회 (결재선명·작성자·결재자·작성일 필터)' })

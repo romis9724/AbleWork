@@ -95,6 +95,15 @@ export interface FormCategory {
   isActive: boolean
 }
 
+/** 기안 본문 템플릿 — 기안양식 "기본 본문" 채우기용 회사 공용 템플릿 (content=HTML) */
+export interface BodyTemplate {
+  id: string
+  name: string
+  content: string
+  sortOrder: number
+  isActive: boolean
+}
+
 /** AP 문서성격(채번 대분류) — 사업관리/일반관리/인사관리/LABL CHINA 등 */
 export interface DocumentCategory {
   id: string
@@ -304,6 +313,43 @@ export const useDeleteFormCategory = () => {
   })
 }
 
+// ---------- 기안 본문 템플릿 (회사설정 > 전자결재) ----------
+
+const BODY_TEMPLATES_KEY = ['body-templates']
+
+export const useBodyTemplates = () =>
+  useQuery({
+    queryKey: BODY_TEMPLATES_KEY,
+    queryFn: () => apiClient.get('/body-templates') as Promise<BodyTemplate[]>,
+    staleTime: 60_000,
+  })
+
+export const useCreateBodyTemplate = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { name: string; content: string; sortOrder?: number }) =>
+      apiClient.post('/body-templates', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: BODY_TEMPLATES_KEY }),
+  })
+}
+
+export const useUpdateBodyTemplate = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; name?: string; content?: string; sortOrder?: number; isActive?: boolean }) =>
+      apiClient.patch(`/body-templates/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: BODY_TEMPLATES_KEY }),
+  })
+}
+
+export const useDeleteBodyTemplate = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/body-templates/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: BODY_TEMPLATES_KEY }),
+  })
+}
+
 // AP 문서성격(채번 대분류) CRUD
 const DOC_CATEGORIES_KEY = ['document-categories']
 
@@ -444,6 +490,15 @@ export const useUpdateSharedApprovalLine = () => {
   })
 }
 
+/** 공용 결재선명 사전 중복 확인 — 등록/수정 모달 [중복체크] 버튼 */
+export const useCheckSharedLineName = () =>
+  useMutation({
+    mutationFn: ({ name, excludeId }: { name: string; excludeId?: string }) =>
+      apiClient.get('/shared-approval-lines/check-name', {
+        params: { name, ...(excludeId ? { excludeId } : {}) },
+      }) as Promise<{ duplicate: boolean }>,
+  })
+
 export const useDeleteSharedApprovalLine = () => {
   const qc = useQueryClient()
   return useMutation({
@@ -527,6 +582,8 @@ export const useCreateDocument = () => {
       categoryId?: string | null
       title: string
       content: DocumentContent
+      /** 임시저장 시 결재선·수신/참조/공람 보존 (DRAFT) */
+      steps?: ApprovalStepInput[]
     }) => apiClient.post('/documents', data) as Promise<DocumentDetail>,
     onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
   })
@@ -540,9 +597,13 @@ export const useUpdateDocument = () => {
       ...data
     }: {
       id: string
+      /** 임시저장(DRAFT) 문서의 양식 변경 */
+      formId?: string
       categoryId?: string | null
       title?: string
       content?: DocumentContent
+      /** 임시저장 결재선·수신/참조/공람 교체 (DRAFT) */
+      steps?: ApprovalStepInput[]
     }) => apiClient.patch(`/documents/${id}`, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: DOCS_KEY }),
   })

@@ -70,6 +70,7 @@ model Company {
   employeeCustomFields EmployeeCustomField[]
   documentAttachments  DocumentAttachment[]
   formCategories       FormCategory[]
+  bodyTemplates        BodyTemplate[]
   documentCategories   DocumentCategory[]
   auditLogs            AuditLog[]
   messengerAccounts    MessengerAccount[]
@@ -803,6 +804,24 @@ model FormCategory {
 
   @@index([companyId, isActive])
   @@map("form_categories")
+}
+
+// AP — 기안 본문 템플릿. 기안양식의 "기본 본문"을 빠르게 채우기 위한 회사 공용 템플릿.
+// 양식 등록 시 template select로 내용을 복사해 defaultContent에 넣는다(양식과 독립 — 삭제해도 양식 영향 없음).
+model BodyTemplate {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String   @db.VarChar(100)
+  content   String   @default("") @db.Text
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, isActive])
+  @@map("body_templates")
 }
 
 // AP — 문서성격(채번 대분류). 예: 사업관리/일반관리/인사관리/LABL CHINA.

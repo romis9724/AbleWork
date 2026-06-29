@@ -67,6 +67,27 @@ export const UpdateFormCategorySchema = z
 export type CreateFormCategoryDto = z.infer<typeof CreateFormCategorySchema>
 export type UpdateFormCategoryDto = z.infer<typeof UpdateFormCategorySchema>
 
+// AP 기안 본문 템플릿 CRUD — 기안양식 "기본 본문"을 빠르게 채우기 위한 회사 공용 템플릿(content=HTML)
+export const CreateBodyTemplateSchema = z.object({
+  name: z.string().min(1, '템플릿명을 입력하세요.').max(100),
+  content: z.string().default(''),
+  sortOrder: z.number().int().min(0).default(0),
+})
+
+export const UpdateBodyTemplateSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    content: z.string().optional(),
+    sortOrder: z.number().int().min(0).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: '수정할 항목을 하나 이상 입력하세요.',
+  })
+
+export type CreateBodyTemplateDto = z.infer<typeof CreateBodyTemplateSchema>
+export type UpdateBodyTemplateDto = z.infer<typeof UpdateBodyTemplateSchema>
+
 // AP 문서성격(채번 대분류) CRUD — 사업관리/일반관리/인사관리/LABL CHINA 등. abbreviation은 문서번호 {CATEGORY} 토큰.
 export const CreateDocumentCategorySchema = z.object({
   name: z.string().min(1, '문서성격명을 입력하세요.').max(100),

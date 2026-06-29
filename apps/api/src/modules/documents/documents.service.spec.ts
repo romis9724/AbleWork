@@ -384,34 +384,22 @@ describe('DocumentsService', () => {
       expect(mockPrisma.documentCategory.findFirst).not.toHaveBeenCalled()
     })
 
-    it('REJECTED 재상신은 form.allowReDraft가 false면 거부한다', async () => {
+    it('REJECTED(반려) 문서는 재상신할 수 없다 — 복사하여 새 기안', async () => {
       mockPrisma.document.findFirst.mockResolvedValue(
-        makeDocument({ status: 'REJECTED', form: { id: FORM_ID, allowReDraft: false } }),
+        makeDocument({ status: 'REJECTED', form: { id: FORM_ID, allowReDraft: true } }),
       )
 
       await expect(
         service.submit(COMPANY_ID, DOCUMENT_ID, { steps: APPROVER_STEPS }, makeUser()),
-      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_REDRAFT_NOT_ALLOWED' } })
+      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_ALREADY_SUBMITTED' } })
     })
 
-    it('RECALLED 재상신은 allowReDraft와 무관하게 허용한다', async () => {
-      mockPrisma.document.findFirst.mockResolvedValue(
-        makeDocument({ status: 'RECALLED', docNumber: 'HR-2026-0001' }),
-      )
+    it('RECALLED(회수) 문서도 재상신할 수 없다 — 복사하여 새 기안', async () => {
+      mockPrisma.document.findFirst.mockResolvedValue(makeDocument({ status: 'RECALLED' }))
 
-      const result = await service.submit(
-        COMPANY_ID,
-        DOCUMENT_ID,
-        { steps: APPROVER_STEPS },
-        makeUser(),
-      )
-
-      // 재상신 시 기존 docNumber 유지 (재채번 없음)
-      expect(result.docNumber).toBe('HR-2026-0001')
-      expect(mockPrisma.documentNumberRule.findFirst).not.toHaveBeenCalled()
-      expect(mockPrisma.approvalLine.deleteMany).toHaveBeenCalledWith({
-        where: { documentId: DOCUMENT_ID },
-      })
+      await expect(
+        service.submit(COMPANY_ID, DOCUMENT_ID, { steps: APPROVER_STEPS }, makeUser()),
+      ).rejects.toMatchObject({ response: { code: 'DOCUMENT_ALREADY_SUBMITTED' } })
     })
 
     it('이미 PENDING이면 DOCUMENT_ALREADY_SUBMITTED 400', async () => {

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
+import { AccessLevel, hasLevel } from '@ablework/shared-constants'
 import { PrismaService } from '../../prisma/prisma.service'
 import {
   CreateDocumentFormDto,
@@ -113,8 +114,11 @@ export class DocumentFormsService {
   async assertCanUseForm(
     companyId: string,
     formId: string,
-    user: { employeeId: string },
+    user: { employeeId: string; accessLevel?: AccessLevel },
   ): Promise<void> {
+    // 관리자(GENERAL_ADMIN 이상)는 공개범위·접근규칙과 무관하게 모든 양식을 작성할 수 있다 (회사 전체 관리 권한)
+    if (hasLevel(user.accessLevel ?? null, AccessLevel.GENERAL_ADMIN)) return
+
     const rules = await this.prisma.formAccessRule.findMany({ where: { formId } })
     if (rules.length === 0) {
       // 규칙 없음: 공개(PUBLIC)면 전체 허용(기존 동작), 부서공개/비공개면 양식 담당자만 작성 가능
