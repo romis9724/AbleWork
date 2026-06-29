@@ -2,7 +2,7 @@
 
 > 다른 세션·다른 사람이 AWS에 접속해 운영/배포를 이어갈 수 있도록 정리한 실전 가이드.
 > 인프라 생성 스크립트는 `deploy/aws/`(멱등 aws cli), 설계 배경은 승인 계획서 참조.
-> **이 문서의 리소스 ID·엔드포인트는 2026-06-22 기준 라이브 상태에서 검증됨.**
+> **이 문서의 리소스 ID·엔드포인트는 2026-06-22 기준 라이브 상태에서 검증됨**(운영 디버깅·CI 러너·배포 검증 런북은 2026-06-29 검증분 추가).
 
 ---
 
@@ -15,7 +15,7 @@
 | 서비스 도메인 | https://work.abmwc.net |
 | 로컬 운영 프로파일 | `ablework` (IAM User `ablework`) |
 | 배포 방식 | `main` 푸시 → GitHub Actions(OIDC) → ECR → SSM로 EC2 재배포 |
-| 컴퓨트 | EC2 1대(Graviton, Docker로 web+api 컨테이너) |
+| 컴퓨트 | 앱 EC2 1대(Graviton, Docker로 web+api 컨테이너) + CI 빌드 러너 EC2 1대 |
 | 데이터 | RDS PostgreSQL · ElastiCache Redis · S3(첨부) |
 | 비밀 | SSM Parameter Store `/ablework/api/prod/*` |
 | 예상 비용 | 월 ~$50–65 (NAT 미사용으로 절감) |
@@ -72,7 +72,8 @@ brew install --cask session-manager-plugin
 ### 컴퓨트·엣지
 | 리소스 | 값 |
 |---|---|
-| EC2 | `i-016c7b5ada07cdc9c` · t4g.small · 2a · public IP `43.203.169.225`(SG로 잠김) |
+| 앱 EC2 | `i-016c7b5ada07cdc9c` · t4g.small · 2a · public IP `43.203.169.225`(SG로 잠김) · 컨테이너 `ablework-api-1` · `ablework-web-1` |
+| CI 빌드 러너 | `ablework-ci-build` · `i-05a7153e5318c5098` · t4g.medium · GitLab 셸 러너(arm64 네이티브 빌드) |
 | EC2 IAM 프로파일 | `ablework-prod-ec2-profile` |
 | ALB DNS | `ablework-prod-alb-1511242728.ap-northeast-2.elb.amazonaws.com` |
 | TG | web `ablework-prod-tg-web` · api `ablework-prod-tg-api` (둘 다 healthy) |
@@ -130,6 +131,25 @@ cd /opt/ablework && bash deploy.sh
 ### 3-4. 롤백
 이미지에 커밋 SHA 태그가 같이 푸시되므로, 특정 SHA로 되돌리려면 EC2에서 compose 이미지 태그를 `:<sha>`로 바꿔 pull/up 하거나, 해당 SHA로 `git revert` 후 main에 푸시(권장 — 파이프라인 일관성).
 
+### 3-5. 배포 검증 (프론트 특성 주의)
+**web 이미지(Next build)는 api보다 빌드·교체가 느리다.** 배포가 실제 반영됐는지 두 가지를 확인한다.
+
+```bash
+# 1) ECR 최신 태그가 방금 배포한 커밋 SHA인지 (web이 가장 늦게 올라옴)
+aws ecr describe-images --profile ablework --region ap-northeast-2 \
+  --repository-name ablework-web \
+  --query 'reverse(sort_by(imageDetails,&imagePushedAt))[0].imageTags'
+# api도 동일하게: --repository-name ablework-api
+
+# 2) web 컨테이너가 실제로 재생성됐는지 (uptime 리셋 확인)
+aws ssm start-session --target i-016c7b5ada07cdc9c --profile ablework
+#   안에서: docker compose -f /opt/ablework/docker-compose.aws.yml ps
+#   ablework-web-1 의 STATUS(Up <짧은 시간>) 가 리셋됐는지 본다
+```
+
+- **마이그레이션**은 api 컨테이너 부팅 시 `prisma migrate deploy`로 자동 적용된다(3-2 참조). 별도 수동 단계 불필요.
+- web만 안 바뀐 것처럼 보이면 ECR `ablework-web`의 최신 SHA 태그 유무를 먼저 본 뒤 컨테이너 재생성 여부를 확인한다.
+
 ---
 
 ## 4. 비밀·설정 (SSM Parameter Store)
@@ -186,6 +206,42 @@ aws ssm start-session --target i-016c7b5ada07cdc9c --profile ablework \
 # 다른 터미널: psql 'postgresql://<user>:<pw>@localhost:15432/<db>'  (자격은 SSM DATABASE_URL 참조)
 ```
 
+### 운영 DB/컨테이너 디버깅 (SSM send-command — 로컬 플러그인 불필요)
+`session-manager-plugin`이 없어도 `aws ssm send-command`로 컨테이너 안에서 Prisma 스크립트를 실행해 운영 데이터를 즉석 조회할 수 있다. **알림 도달 여부 등은 로그가 아니라 DB로 확인**한다(2026-06-29 검증).
+
+흐름: ① 조회용 JS를 작성·base64 인코딩 → ② `send-command`로 `ablework-api-1` 컨테이너에서 디코드·실행 → ③ `get-command-invocation`으로 `StandardOutputContent` 회수.
+
+```bash
+# 1) 조회 스크립트 작성 → 단일 라인 base64 (개행 제거 필수)
+B64=$(base64 < query.js | tr -d '\n')
+
+# 2) params.json (commands에 위 B64를 끼워 넣음)
+#    주의: cwd는 반드시 /app/apps/api (거기서 @prisma/client 가 해석됨)
+cat > params.json <<JSON
+{ "commands": [
+  "docker exec ablework-api-1 sh -c 'cd /app/apps/api && echo ${B64} | base64 -d > /tmp/x.js && node /tmp/x.js'"
+] }
+JSON
+
+# 3) 실행 (문서명은 AWS-RunShellScript — AWS-RunShellCommand 아님)
+CMD_ID=$(aws ssm send-command --profile ablework --region ap-northeast-2 \
+  --instance-ids i-016c7b5ada07cdc9c \
+  --document-name AWS-RunShellScript \
+  --parameters file://params.json \
+  --query 'Command.CommandId' --output text)
+
+# 4) 결과 회수
+aws ssm get-command-invocation --profile ablework --region ap-northeast-2 \
+  --command-id "$CMD_ID" --instance-id i-016c7b5ada07cdc9c \
+  --query 'StandardOutputContent' --output text
+```
+
+주의사항:
+- **문서명은 `AWS-RunShellScript`**(`AWS-RunShellCommand`가 아님).
+- **컨테이너 cwd는 반드시 `/app/apps/api`** — 그래야 `@prisma/client`가 정상 해석된다.
+- base64는 **단일 라인**으로(`base64 | tr -d '\n'`). 개행이 섞이면 디코드가 깨진다.
+- 페이로드가 크면 한 번에 보내지 말고 **여러 번의 `send-command`로 청크 적재** 후 마지막에 실행한다(운영 환경에서 S3 직접 쓰기는 차단됨).
+
 ### 헬스·상태
 ```bash
 curl -sI https://work.abmwc.net | head -1                       # 200 기대
@@ -228,7 +284,36 @@ aws elbv2 describe-target-health --profile ablework \
 | 시드 재실행 필요 | EC2에서 `/opt/ablework/.seeded` 삭제 후 `bash deploy.sh` (⚠ 운영 데이터 주의) |
 | 설정 변경 미반영 | SSM 변경만으론 부족 — 재배포 필요(`.env.*` 재생성) |
 | 인증서/DNS | ACM은 us-east-1, Route53 `work.abmwc.net` ALIAS→CloudFront |
+| CI 빌드 행·ECR에 신규 SHA 없음 | CI 빌드 러너 행 의심 → 7-1 참조 |
 | 에러 자동분석 | API 에러는 AI 분석 후 이메일+Discord+DB(`error_analysis_logs`) 적재. **404·401은 의도적으로 제외**(노이즈, `ErrorAnalysisService.IGNORED_STATUSES`). 관리자 화면: 부가기능 > AI 에러 분석 |
+
+### 7-1. CI 빌드 러너 행(hang) 복구
+빌드/배포가 멈추고 **ECR에 신규 커밋 SHA 이미지가 올라오지 않을 때**, CI 빌드 러너 `ablework-ci-build`(`i-05a7153e5318c5098`, t4g.medium, GitLab 셸 러너)가 행 상태일 수 있다. arm64 + Next 빌드의 메모리 부담으로 러너가 멈추는 사례가 있다(2026-06-29 검증).
+
+진단:
+```bash
+# EC2 인스턴스 헬스 (ok로 보여도 러너 프로세스는 행일 수 있음)
+aws ec2 describe-instance-status --profile ablework --region ap-northeast-2 \
+  --instance-ids i-05a7153e5318c5098
+
+# SSM 핑 상태 — PingStatus=ConnectionLost / LastPingDateTime 정체면 행 신호
+aws ssm describe-instance-information --profile ablework --region ap-northeast-2 \
+  --filters "Key=InstanceIds,Values=i-05a7153e5318c5098" \
+  --query 'InstanceInformationList[0].{Ping:PingStatus,LastPing:LastPingDateTime}'
+
+# ECR에 방금 커밋 SHA 태그가 있는지 (없으면 빌드가 못 끝낸 것)
+aws ecr describe-images --profile ablework --region ap-northeast-2 \
+  --repository-name ablework-web \
+  --query 'reverse(sort_by(imageDetails,&imagePushedAt))[0].imageTags'
+```
+
+복구 (**인스턴스 reboot은 사용자 승인 필요 작업**):
+```bash
+aws ec2 reboot-instances --profile ablework --region ap-northeast-2 \
+  --instance-ids i-05a7153e5318c5098
+# 수십 초 내 SSM 재접속(Online) → 멈춘 빌드 재개
+```
+재부팅 후 `describe-instance-information`의 `PingStatus`가 `Online`으로 돌아오면 정상. 멈췄던 빌드/배포가 다시 진행된다.
 
 ---
 
