@@ -73,12 +73,20 @@ export default function LeaveStatusPanel() {
   // Grant (manual accrual) modal
   const [grantOpen, setGrantOpen] = useState(false)
   const [form, setForm] = useState<AccrualForm>(defaultAccrualForm)
+  // 휴가 유형 2단계 선택 — 1) 그룹 2) 유형
+  const [grantGroupId, setGrantGroupId] = useState('')
+  const activeTypes = (leaveTypes as LeaveType[]).filter((t) => t.isActive)
+  const grantGroups = Array.from(
+    new Map(activeTypes.filter((t) => t.group).map((t) => [t.group!.id, t.group!])).values(),
+  )
+  const grantTypesInGroup = activeTypes.filter((t) => t.group?.id === grantGroupId)
 
   // 공용 휴가 추가 다이얼로그
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false)
 
   function openGrant() {
     setForm(defaultAccrualForm)
+    setGrantGroupId('')
     setGrantOpen(true)
   }
 
@@ -352,17 +360,40 @@ export default function LeaveStatusPanel() {
 
           <div className="doc-field">
             <span className="fk">
+              휴가 그룹<span className="req">*</span>
+            </span>
+            <span className="fv">
+              <select
+                className="sel"
+                value={grantGroupId}
+                onChange={(e) => {
+                  setGrantGroupId(e.target.value)
+                  setForm((f) => ({ ...f, leaveTypeId: '' })) // 그룹 변경 시 유형 초기화
+                }}
+                style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 200 }}
+              >
+                <option value="">선택</option>
+                {grantGroups.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </span>
+          </div>
+
+          <div className="doc-field">
+            <span className="fk">
               휴가 유형<span className="req">*</span>
             </span>
             <span className="fv">
               <select
                 className="sel"
                 value={form.leaveTypeId}
+                disabled={!grantGroupId}
                 onChange={(e) => setForm((f) => ({ ...f, leaveTypeId: e.target.value }))}
                 style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 200 }}
               >
-                <option value="">선택</option>
-                {(leaveTypes as LeaveType[]).map((t) => (
+                <option value="">{grantGroupId ? '선택' : '그룹 먼저 선택'}</option>
+                {grantTypesInGroup.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.displayName ?? t.name}
                   </option>

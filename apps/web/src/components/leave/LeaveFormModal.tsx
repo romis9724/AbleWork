@@ -59,6 +59,7 @@ export function LeaveFormModal({ open, mode, employeeId, onClose, onSuccess }: L
   const approvedLeaves = (leaveList?.items ?? []).filter((l) => l.status === 'APPROVED')
 
   const [leaveId, setLeaveId] = useState('')
+  const [leaveGroupId, setLeaveGroupId] = useState('')
   const [leaveTypeId, setLeaveTypeId] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -69,6 +70,7 @@ export function LeaveFormModal({ open, mode, employeeId, onClose, onSuccess }: L
   useEffect(() => {
     if (!open) {
       setLeaveId('')
+      setLeaveGroupId('')
       setLeaveTypeId('')
       setStartDate('')
       setEndDate('')
@@ -77,6 +79,13 @@ export function LeaveFormModal({ open, mode, employeeId, onClose, onSuccess }: L
       setReason('')
     }
   }, [open])
+
+  // 휴가 유형 선택 2단계 — 1) 휴가 그룹 2) 그 그룹의 휴가 유형
+  const activeTypes = leaveTypes.filter((lt) => lt.isActive)
+  const groups = Array.from(
+    new Map(activeTypes.filter((t) => t.group).map((t) => [t.group!.id, t.group!])).values(),
+  )
+  const typesInGroup = activeTypes.filter((t) => t.group?.id === leaveGroupId)
 
   const selectedLeave = approvedLeaves.find((l) => l.id === leaveId)
   const createType = leaveTypes.find((lt) => lt.id === leaveTypeId)
@@ -176,14 +185,36 @@ export function LeaveFormModal({ open, mode, employeeId, onClose, onSuccess }: L
             )}
           </Field>
         ) : (
-          <Field label="휴가 유형">
-            <select className="sel" value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)}>
-              <option value="">선택</option>
-              {leaveTypes.filter((lt) => lt.isActive).map((lt) => (
-                <option key={lt.id} value={lt.id}>{lt.displayName ?? lt.name}</option>
-              ))}
-            </select>
-          </Field>
+          <>
+            <Field label="휴가 그룹">
+              <select
+                className="sel"
+                value={leaveGroupId}
+                onChange={(e) => {
+                  setLeaveGroupId(e.target.value)
+                  setLeaveTypeId('') // 그룹 변경 시 유형 초기화
+                }}
+              >
+                <option value="">선택</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="휴가 유형">
+              <select
+                className="sel"
+                value={leaveTypeId}
+                disabled={!leaveGroupId}
+                onChange={(e) => setLeaveTypeId(e.target.value)}
+              >
+                <option value="">{leaveGroupId ? '선택' : '휴가 그룹을 먼저 선택하세요'}</option>
+                {typesInGroup.map((lt) => (
+                  <option key={lt.id} value={lt.id}>{lt.displayName ?? lt.name}</option>
+                ))}
+              </select>
+            </Field>
+          </>
         )}
 
         {mode === 'create' && selectedBalance && (
