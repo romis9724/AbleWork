@@ -104,7 +104,7 @@ deploy:
         - deploy/**/*
         - pnpm-lock.yaml
         - package.json
-  resource_group: deploy-prod # GHA concurrency: group=deploy-prod 대응
+  resource_group: prod-deploy # 동시 운영배포 방지(직렬화). GHA concurrency 대응
   variables:
     AWS_REGION: ap-northeast-2
     PROJECT: ablework
