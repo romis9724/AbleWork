@@ -3,7 +3,6 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   useClockOut,
-  useBreakEnd,
   useMyTodayAttendance,
 } from '@/lib/query/attendances'
 import { useLeaveBalance } from '@/lib/query/leaves'
@@ -15,6 +14,7 @@ import { Badge, type BadgeKind } from '@/components/ab/atoms'
 import { HRI } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
 import { ClockInModal } from '@/components/attendance/ClockInModal'
+import { NewRequestModal } from '@/app/me/requests/NewRequestModal'
 
 const REQUEST_TYPE_LABEL: Record<string, string> = {
   LEAVE_CREATE: '휴가 신청',
@@ -63,8 +63,8 @@ export default function HomePage() {
   const onBreak = !!today?.openBreak
 
   const [clockInOpen, setClockInOpen] = useState(false)
+  const [reqOpen, setReqOpen] = useState(false)
   const clockOutMutation = useClockOut()
-  const breakEndMutation = useBreakEnd()
 
   const { data: balances = [] } = useLeaveBalance(employeeId)
   // 연차 잔액 = 연차휴가 그룹(대표 유형 '연차전일'). 유형명이 '연차'로 시작하는 잔액으로 식별.
@@ -79,10 +79,7 @@ export default function HomePage() {
   const pendingCount = reqItems.filter((r) => r.status === 'PENDING').length
   const recentReqs = reqItems.slice(0, 5)
 
-  const busy =
-    isTodayLoading ||
-    clockOutMutation.isPending ||
-    breakEndMutation.isPending
+  const busy = isTodayLoading || clockOutMutation.isPending
 
   const withGeolocation = async (): Promise<{ lat: number; lng: number } | null> => {
     if (!navigator.geolocation) {
@@ -108,15 +105,6 @@ export default function HomePage() {
       toast('퇴근 기록이 완료됐습니다')
     } catch (err) {
       toast(err instanceof Error ? err.message : '퇴근 처리 중 오류가 발생했습니다')
-    }
-  }
-
-  const handleBreakEnd = async () => {
-    try {
-      await breakEndMutation.mutateAsync()
-      toast('휴게 시간이 종료됐습니다')
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '휴게 종료 처리 중 오류가 발생했습니다')
     }
   }
 
@@ -154,26 +142,16 @@ export default function HomePage() {
             </button>
           )}
 
-          {clockedIn && !onBreak && (
+          {clockedIn && (
             <button data-testid="me-clock-out-btn" className="btn btn-primary btn-lg" disabled={busy} onClick={handleClockOut}>
               {clockOutMutation.isPending ? '처리 중…' : '퇴근하기'}
             </button>
           )}
 
-          {clockedIn && onBreak && (
-            <button data-testid="me-break-end-btn" className="btn btn-primary btn-lg" disabled={busy} onClick={handleBreakEnd}>
-              {breakEndMutation.isPending ? '처리 중…' : '휴게 종료'}
-            </button>
-          )}
-
           {clockedOut && <div className="me-clock-done">오늘 근무가 마감됐습니다</div>}
 
-          {/* 요청 — '요청 > 새 요청' 레이어팝업으로 이동(자동 오픈) */}
-          <button
-            data-testid="me-request-btn"
-            className="btn btn-line btn-lg"
-            onClick={() => router.push('/me/requests?new=1')}
-          >
+          {/* 요청 — 홈에서 바로 새 요청(요청 유형 선택) 팝업 */}
+          <button data-testid="me-request-btn" className="btn btn-line btn-lg" onClick={() => setReqOpen(true)}>
             요청
           </button>
         </div>
@@ -228,6 +206,12 @@ export default function HomePage() {
         open={clockInOpen}
         employeeId={employeeId}
         onClose={() => setClockInOpen(false)}
+      />
+
+      <NewRequestModal
+        open={reqOpen}
+        employeeId={employeeId}
+        onClose={() => setReqOpen(false)}
       />
     </>
   )
