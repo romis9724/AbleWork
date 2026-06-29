@@ -36,7 +36,10 @@ FROM deps AS web
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 COPY apps/web ./apps/web
-RUN pnpm --filter web build
+# .next/cache를 BuildKit 캐시 마운트로 빌드 간 보존 → next build 증분화(영속 빌더에서 큰 효과).
+# web 소스가 바뀌어도 변경분만 재컴파일되어 "No build cache found" 전체 빌드를 피한다.
+RUN --mount=type=cache,target=/app/apps/web/.next/cache,sharing=locked \
+    pnpm --filter web build
 ENV NODE_ENV=production
 WORKDIR /app/apps/web
 EXPOSE 3000
