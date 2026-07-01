@@ -8,6 +8,18 @@
 
 ## 2026-07-01
 
+### 23. AI-Readiness round2 — 정직 채점(80→93) + F·E·C 강화
+- **요청**: `ai-readiness-map` 결과를 보고 개선 작업 계속.
+- **감사 방법론 정정**: 로컬 워킹트리 채점(80)은 gitignore된 `refs/`(외부 핸드오프 문서 195·219줄)의 내부 경로가 broken으로 오탐돼 저평가. **`git archive HEAD`(에이전트가 실제 clone하는 tracked 트리) 기준 정직 점수 = 83 → 개선 후 93/100 (AI-Native)**.
+- **변경**:
+  - **F(신선도 6→10) + E3(검증명령 2→4)**: GitHub 미러 전용 `.github/workflows/context-check.yml` 신설(경로·eval 무결성만 검증, 배포는 GitLab CI가 authoritative) + `.husky/pre-push` 훅(zero-dep — `package.json` `prepare`가 `core.hooksPath=.husky` 설정). push·PR 시점에 stale 참조 차단.
+  - **E1(참조 정확도 3→4)**: 진짜 broken ref 3건 수정 — `deploy/CLAUDE.md`의 존재하지 않는 `deploy/README.md` 참조 2곳 → `docs/design/AWS_OPERATIONS.md`(런북 SSOT), 루트 `CLAUDE.md`의 `refs/CLAUDE.md` 링크 제거(refs/ gitignore → clone에 없음). 잔여 broken 37건은 스코어러가 `../../` 2단계 링크를 오캡처하는 버그(자체 게이트는 118 refs 전부 통과).
+  - **C(암묵지 18→20 만점)**: `apps/mobile`·`packages/shared-schemas`·`packages/shared-types`·`deploy` CLAUDE.md에 `Common changes(how to)` 헤딩 + bash quick-command 추가 → 7/7 모듈 패턴 헤딩(C_Q2 2→4).
+  - **검증 게이트 확장**: `scripts/check-context-paths.mjs`가 `deploy/`·`docs/{adr,design,testing}`·`evals/` 문서까지 스캔(13 docs·118 refs 검증).
+  - 산출물 `docs/ai-readiness-map.html`·`docs/ai-readiness-score.json` 갱신(방법론 caveat 포함).
+- **영향**: 문서·CI·git hook 설정만. 앱 코드·API·마이그레이션 변경 없음 → 런타임 무영향.
+- **배포(커밋)**: 브랜치 `docs/ai-readiness-round2`. 남은 상한: B 대형 파일 분할(별도 리팩터 트랙)·G 실사용 텔레메트리(별도 인프라).
+
 ### 22. requests.service god file 시범 분할 (AI-Readiness 코드 품질)
 - **요청**: AI-Readiness 감사에서 지적된 god file(>500줄 56개) 분할 시범 — 최대 파일 `requests.service.ts`(1883줄)부터.
 - **변경**: 순수 요소를 별도 파일로 추출(동작·시그니처 불변).

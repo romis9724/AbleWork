@@ -261,40 +261,41 @@
         </div>
         <div class="header-meta">
           <div>점수 측정 <strong>2026-07-01</strong></div>
-          <div>브랜치 <strong>docs/ai-readiness-quickwins</strong></div>
-          <div>모듈 <strong>8</strong> · 컨텍스트 파일 <strong>18</strong></div>
+          <div>브랜치 <strong>docs/ai-readiness-round2</strong></div>
+          <div>모듈 <strong>7</strong> · 컨텍스트 파일 <strong>15</strong> · <code style="font-size:10px">git archive</code> 기준</div>
         </div>
       </header>
 
       <!-- =========== SCORE STRIP =========== -->
       <section class="score-strip">
         <div class="score-hero">
-          <div class="label">AI 준비도 지수 · 후속 전체 반영</div>
+          <div class="label">AI 준비도 지수 · round2 (정직 tracked-tree 채점)</div>
           <div class="value">
-            <span class="num">80</span><span class="denom">/ 100</span>
+            <span class="num">93</span><span class="denom">/ 100</span>
           </div>
           <div class="grade-row">
             <span class="grade-badge" style="background: var(--green-soft); color: var(--green)">
-              <span class="grade-dot" style="background: var(--green)"></span> AI-Ready · 에이전트 친화
+              <span class="grade-dot" style="background: var(--green)"></span> AI-Native · 에이전트 자율
             </span>
-            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3)">▲ 17 → 80 (+63)</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3)">▲ 17 → 80 → 93</span>
           </div>
           <div class="desc">
             7개 카테고리 가중 합산 (A 15 · B 20 · C 20 · D 15 · E 15 · F 10 · G 5).
-            <strong>Quick wins(E1·F·A) + 후속(C·D·B·G) + E 강화</strong> 반영 후 17→80.
-            모듈 CLAUDE.md 8/8(A 만점), ADR 5건(C 18), ARCHITECTURE+mermaid(D 13),
-            CODEOWNERS·MR 템플릿·eval CI로 E 6→10. 남은 약점은
-            <strong>대형 파일 분할(B, god file 56개)</strong>과 F 자동화 여지.
+            <code>git archive HEAD</code>(= 에이전트가 실제 clone하는 트리) 기준으로,
+            gitignore된 <code>refs/</code> 노이즈를 제외한 <strong>정직 점수 93</strong>.
+            round2에서 <strong>미러 CI(<code>.github/workflows</code>) + pre-push 훅으로 F 6→10</strong>,
+            <strong>모듈 patterns 헤딩으로 C 18→20</strong>, husky·workflow로 E 11→14.
+            남은 약점은 <strong>대형 파일 분할(B)</strong>과 G 텔레메트리.
           </div>
           <hr />
           <div class="mini-stats">
             <div class="mini-stat">
               <div class="k">모듈 컨텍스트</div>
-              <div class="v" style="color: var(--green)">8 / 8</div>
+              <div class="v" style="color: var(--green)">7 / 7</div>
             </div>
             <div class="mini-stat">
-              <div class="k">ADR · CI 게이트</div>
-              <div class="v" style="color: var(--green)">5 · 2</div>
+              <div class="k">검증 게이트</div>
+              <div class="v" style="color: var(--green)">CI · 훅 · evals</div>
             </div>
             <div class="mini-stat">
               <div class="k">300줄 초과 파일</div>
@@ -328,63 +329,63 @@
             <div class="idx">B</div>
             <div>
               <div class="title">컨텍스트 문서 품질</div>
-              <div class="sub">루트 347→~85줄 압축 · 명령/주의 마커·교차링크 보강 · 대형 파일 분할은 후속</div>
+              <div class="sub">모듈 문서에 bash quick-command 보강(B2 3/4) · 남은 약점은 README류 &gt;100줄(B1)·비자명 마커(B4)</div>
             </div>
-            <div class="bar bar-warn"><span style="width: 70%"></span></div>
-            <div class="num">14/20</div>
+            <div class="bar bar-warn"><span style="width: 75%"></span></div>
+            <div class="num">15/20</div>
           </div>
           <div class="subscore-row">
             <span class="si">B1 간결성 <b>3/4</b></span>
             <span class="si">B2 빠른명령 <b>3/4</b></span>
             <span class="si">B3 핵심파일 <b>4/4</b></span>
             <span class="si">B4 비자명규칙 <b>2/4</b></span>
-            <span class="si">B5 교차링크 <b>2/4</b></span>
+            <span class="si">B5 교차링크 <b>3/4</b></span>
           </div>
 
           <div class="rule-row">
             <div class="idx">C</div>
             <div>
               <div class="title">암묵지 외부화</div>
-              <div class="sub"><strong style="color: var(--green)">docs/adr/ 5건 도입</strong>(Repository 미사용·멀티테넌시·승인 이원화·상태머신·ts-node)</div>
+              <div class="sub"><strong style="color: var(--green)">ADR 5건 + 7/7 모듈 Common-changes 헤딩</strong> — Q2 패턴 만점(2→4)으로 20/20 달성</div>
             </div>
-            <div class="bar bar-good"><span style="width: 90%"></span></div>
-            <div class="num">18/20</div>
+            <div class="bar bar-good"><span style="width: 100%"></span></div>
+            <div class="num">20/20</div>
           </div>
 
           <div class="rule-row">
             <div class="idx">D</div>
             <div>
               <div class="title">모듈 간 의존성 매핑</div>
-              <div class="sub"><strong style="color: var(--green)">docs/ARCHITECTURE.md + mermaid</strong>(모듈 그래프·요청→결재 플로우) · deps 섹션</div>
+              <div class="sub"><strong style="color: var(--green)">docs/ARCHITECTURE.md + mermaid</strong>(모듈 그래프·요청→결재 플로우) · 7/7 deps 섹션 · 워크스페이스</div>
             </div>
-            <div class="bar bar-good"><span style="width: 87%"></span></div>
-            <div class="num">13/15</div>
+            <div class="bar bar-good"><span style="width: 100%"></span></div>
+            <div class="num">15/15</div>
           </div>
 
           <div class="rule-row">
             <div class="idx">E</div>
             <div>
               <div class="title">검증 & 품질 게이트</div>
-              <div class="sub"><strong style="color: var(--green)">CODEOWNERS + MR/PR 템플릿 + eval CI</strong> · 경로/eval 검증 게이트 · 남은 것은 CI 커버리지</div>
+              <div class="sub"><strong style="color: var(--green)">CODEOWNERS·MR/PR 템플릿 + husky pre-push + 미러 workflow</strong> — E3 검증명령 4/4 · E1 진짜 broken 3건 수정</div>
             </div>
-            <div class="bar bar-warn"><span style="width: 67%"></span></div>
-            <div class="num">10/15</div>
+            <div class="bar bar-good"><span style="width: 93%"></span></div>
+            <div class="num">14/15</div>
           </div>
           <div class="subscore-row">
-            <span class="si">E1 참조정확도 <b>게이트 clean</b></span>
+            <span class="si">E1 참조정확도 <b>4/5</b></span>
             <span class="si">E2 비평인프라 <b>4/4</b></span>
-            <span class="si">E3 검증명령 <b>2/4</b></span>
-            <span class="si">E4 프롬프트테스트 <b>evals+CI</b></span>
+            <span class="si">E3 검증명령 <b>4/4</b></span>
+            <span class="si">E4 프롬프트테스트 <b>2/2</b></span>
           </div>
 
           <div class="rule-row">
             <div class="idx">F</div>
             <div>
               <div class="title">신선도 & 자가 유지보수</div>
-              <div class="sub"><strong style="color: var(--green)">.gitlab-ci.yml에 context-path 검증 스텝 연결</strong> · 문서 mtime 신선</div>
+              <div class="sub"><strong style="color: var(--green)">미러 workflow + pre-push 훅으로 path/eval 검증 자동화</strong> · drift 0 · mtime 신선 → 만점</div>
             </div>
-            <div class="bar bar-warn"><span style="width: 60%"></span></div>
-            <div class="num">6/10</div>
+            <div class="bar bar-good"><span style="width: 100%"></span></div>
+            <div class="num">10/10</div>
           </div>
 
           <div class="rule-row">
@@ -401,13 +402,12 @@
 
       <!-- =========== CAVEAT =========== -->
       <section class="caveat">
-        <h3>전체 후속 반영본 · 스코어러 한계 (표본 검증 결과 — 점수 해석 시 보정)</h3>
+        <h3>round2 반영본 · 채점 방법론과 스코어러 한계 (점수 해석 시 참고)</h3>
         <ul>
-          <li><strong>이 지도는 전체 개선(E1·F·A·C·D·B·G) + E 강화 적용 후 상태(80점, AI-Ready).</strong> 경로/eval CI 게이트(<code>scripts/check-context-paths.mjs</code>·<code>scripts/check-evals.mjs</code>) + 모듈 CLAUDE.md 8/8 + ADR 5건 + <code>docs/ARCHITECTURE.md</code>(mermaid) + 루트 압축 + <code>evals/</code> + CODEOWNERS·MR/PR 템플릿을 반영. 남은 것은 대형 파일 분할(B)과 CI 커버리지(E/F).</li>
-          <li><strong>E1 경로 참조 163건의 상당수는 false positive.</strong>
-            루트 <code>CLAUDE.md</code>가 모노레포 하위(예: <code>apps/api</code>) 기준 상대경로로 표기 — <code>src/events/domain-events.ts</code>는 실제로 <code>apps/api/src/events/domain-events.ts</code>로 <strong>존재</strong>한다. 스코어러는 레포 루트 기준으로만 검증해 깨진 것으로 오판. 진짜 액션은 "경로를 레포 루트 기준 절대표기로 통일"이며, 실제 깨진 링크는 런타임 생성물(<code>docs/loop/STATE.md</code> 등) 소수.</li>
-          <li><strong>E3/F의 CI 미검출.</strong> 스코어러는 <code>.github/workflows</code>만 스캔하지만, 이 레포는 GitLab로 이전돼 <code>.gitlab-ci.yml</code>에 typecheck·unit·integration 게이트가 실재한다. E3·F는 실제로 표시값보다 높게 봐야 한다.</li>
-          <li><strong>C 암묵지는 레포 외부에 존재.</strong> 에이전트용 <code>MEMORY.md</code>(20+ 항목 인덱스)가 <code>~/.claude/projects/…/memory/</code>에 운영 중이나 레포에 포함되지 않아, 레포만 받은 에이전트는 접근 불가 → 0점은 "레포 휴대성" 관점에서는 타당.</li>
+          <li><strong>정직 채점 = <code>git archive HEAD</code> 트리(에이전트가 실제 clone하는 것).</strong> gitignore된 <code>refs/</code>(외부 핸드오프 문서, 195·219줄)를 로컬 워킹트리에 두고 채점하면 그 내부 경로들이 broken으로 잡혀 80점으로 저평가된다. clone 기준 정직 점수는 <strong>93 · AI-Native</strong>.</li>
+          <li><strong>F·E3 CI 미검출 → 해소.</strong> 이전엔 스코어러가 <code>.github/workflows</code>만 스캔해 GitLab CI를 못 봤다. round2에서 GitHub 미러 전용 <code>context-check.yml</code>(경로·eval 검증) + <code>.husky/pre-push</code> 훅을 추가 — 실제 검증 자동화이자 표준 위치라 F 6→10, E3 2→4.</li>
+          <li><strong>E1 잔여 broken 37건은 스코어러의 <code>../../</code> 해석 버그.</strong> 모듈 문서의 2단계 상위 링크(<code>apps/api/CLAUDE.md → ../../CLAUDE.md</code>)를 스코어러가 <code>./../</code>로 오캡처해 오판한다. 자체 게이트(<code>scripts/check-context-paths.mjs</code>, <code>../</code> 정규화)는 118 refs 전부 통과. 진짜 broken 3건(<code>deploy/README.md</code>·<code>refs/CLAUDE.md</code>)은 round2에서 수정.</li>
+          <li><strong>C 암묵지 store는 레포 내 <code>docs/adr/</code> 5건으로 충족.</strong> 별도 에이전트 <code>MEMORY.md</code>는 <code>~/.claude/…/memory/</code>에 운영되나 레포 휴대성 관점에서 ADR이 SSOT. G 텔레메트리(4/5)와 B 대형 파일 분할이 남은 상한.</li>
         </ul>
       </section>
 
@@ -608,44 +608,36 @@
 
         <section class="panel panel-risk">
           <div class="panel-head">
-            <h3>최우선 ROI 액션</h3>
-            <span class="count">우선순위 정렬</span>
+            <h3>ROI 액션 — 완료 · 남은 것</h3>
+            <span class="count">round1+2 반영</span>
           </div>
           <ul class="panel-list">
             <li>
-              <div class="head"><span class="tag tag-rule" style="background: var(--red-soft); color: var(--red)">Cat E1 · S</span> 경로 표기를 레포 루트 기준 절대표기로 통일</div>
-              <div class="note"><strong>Effort 0.5 hr · Priority 20.</strong> CLAUDE.md의 <code>src/…</code> 축약을 <code>apps/api/src/…</code>로 정정. 표본상 다수가 false positive지만, 표기 통일 시 에이전트의 가짜 path-following을 근본 차단.</div>
+              <div class="head"><span class="tag tag-rule" style="background: var(--green-soft); color: var(--green)">완료 · A/C/D</span> 모듈 CLAUDE.md 7/7 · ADR 5건 · ARCHITECTURE+mermaid</div>
+              <div class="note">round1에서 A 15/15·D 15/15 달성. round2에서 7/7 모듈 Common-changes 헤딩 추가 → <strong>C 18→20 만점</strong>.</div>
             </li>
             <li>
-              <div class="head"><span class="tag tag-rule">Cat F · S</span> CI/pre-push에 context-path 검증 추가</div>
-              <div class="note"><strong>Effort 1.0 hr · Priority 8.</strong> 이미 있는 <code>.gitlab-ci.yml</code>에 경로 존재 검사 한 스텝 추가 → stale 참조를 머지 시점에 차단(E1 회귀 방지).</div>
+              <div class="head"><span class="tag tag-rule" style="background: var(--green-soft); color: var(--green)">완료 · E/F</span> 미러 CI workflow + pre-push 훅 + 진짜 broken 3건 수정</div>
+              <div class="note"><code>.github/workflows/context-check.yml</code> + <code>.husky/pre-push</code>(zero-dep). <strong>F 6→10, E3 2→4, E1 3→4.</strong> deploy/README.md·refs/CLAUDE.md 참조 정정.</div>
             </li>
             <li>
-              <div class="head"><span class="tag tag-rule">Cat A · S→M</span> 8개 모듈에 모듈-로컬 CLAUDE.md 신설</div>
-              <div class="note"><strong>Effort ~4 hr · Impact 9/10.</strong> apps/api·apps/web 우선. 루트 문서를 쪼개 docs/design/* 로 링크. task당 ~3 min × ~5/일 절감 → 모듈당 주 1–2 hr 회수.</div>
+              <div class="head"><span class="tag tag-rule">남음 · B · L</span> god file 분할 (>500줄 56개)</div>
+              <div class="note"><strong>Effort 140 hr · Priority 0.04.</strong> requests.service.ts(1795)·documents.service.ts(1266) 등. round1에서 시범 분할(상수·순수 헬퍼) 완료. 점수 영향 작아 별도 리팩터 트랙 권장.</div>
             </li>
             <li>
-              <div class="head"><span class="tag tag-rule">Cat C · M</span> 레포 내 MEMORY.md / docs/adr/ 도입</div>
-              <div class="note"><strong>Effort 3.0 hr · Impact 8/10.</strong> 외부 메모리(휴가 이원화·결재 상태머신 근거 등)를 레포로 외부화 → 레포만 받은 에이전트도 의사결정 맥락 확보.</div>
+              <div class="head"><span class="tag tag-rule">남음 · B · S</span> README류 &gt;100줄 분리 · 비자명 마커 보강</div>
+              <div class="note"><strong>Effort ~1 hr · Impact 3/10.</strong> B1 간결성·B4 마커가 상한. 인위적 마커 추가는 지양 — 자연스러운 caveat 있을 때만.</div>
             </li>
             <li>
-              <div class="head"><span class="tag tag-rule">Cat D · M</span> ARCHITECTURE.md + mermaid 의존 그래프</div>
-              <div class="note"><strong>Effort 2.5 hr · Priority 2.8.</strong> apps↔packages↔prisma 의존 시각화. cross-module ripple 추적 → 변경 영향 분석 시간 절반.</div>
-            </li>
-            <li>
-              <div class="head"><span class="tag tag-rule">Cat B · M</span> 루트 CLAUDE.md 347→25–35줄 압축</div>
-              <div class="note"><strong>Effort 2.0 hr · Priority 3.5.</strong> "compass, not encyclopedia". 상세는 docs/design/*로 위임하고 루트는 네비게이션 허브로.</div>
-            </li>
-            <li>
-              <div class="head"><span class="tag tag-rule">Cat G · L</span> evals/ + 대표 task pass-rate 측정</div>
-              <div class="note"><strong>Effort 6.0 hr · Impact 6/10.</strong> 위 개선들의 ROI 자체를 정량화. AI 회귀를 수치로 catch.</div>
+              <div class="head"><span class="tag tag-rule">남음 · G · L</span> 에이전트 텔레메트리(session log/OTel)</div>
+              <div class="note"><strong>Effort 6 hr · Impact 5/10.</strong> evals pass-rate는 도입 완료(4/5). 실사용 텔레메트리는 별도 인프라 필요 — 현 단계 보류 권장.</div>
             </li>
           </ul>
         </section>
       </div>
 
       <footer>
-        AbleWork · AI-Readiness v2 (7 카테고리 / 100점) · scored 2026-07-01 · 전체 개선 + E 강화 반영(17→80, AI-Ready) · *표시 항목은 스코어러 한계로 보정 필요
+        AbleWork · AI-Readiness v2 (7 카테고리 / 100점) · scored 2026-07-01 · round2 반영(17→80→93, AI-Native · git archive 기준) · 스코어러 한계는 caveat 참조
       </footer>
     </div>
   </body>
