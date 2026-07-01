@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { DocumentsService } from './documents.service'
+import { DocumentQueryService } from './document-query.service'
+import { DocumentStepsService } from './document-steps.service'
 import { DocumentFormsService } from './document-forms.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
@@ -119,6 +121,8 @@ describe('DocumentsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DocumentsService,
+        DocumentQueryService,
+        DocumentStepsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
         { provide: DocumentFormsService, useValue: mockDocumentForms },
