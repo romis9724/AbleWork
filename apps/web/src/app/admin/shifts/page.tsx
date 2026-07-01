@@ -1,11 +1,12 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { PageHead } from '@/components/ab/Page'
-import { Emp, DateInput } from '@/components/ab/atoms'
-import { Modal, ConfirmDialog } from '@/components/ab/Modal'
+import { Emp } from '@/components/ab/atoms'
+import { ConfirmDialog } from '@/components/ab/Modal'
 import { I, HRI } from '@/components/ab/icons'
 import { useToast } from '@/components/ab/Toast'
 import BulkCreateDialog from './BulkCreateDialog'
+import ShiftFormModal from './ShiftFormModal'
 import {
   useShifts,
   useShiftTypes,
@@ -23,94 +24,22 @@ import { usePositions } from '@/lib/query/positions'
 import { useOrganizations, type Organization } from '@/lib/query/organizations'
 import { useAuthStore } from '@/stores/auth.store'
 import { ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
-
-// ── 날짜 유틸 (로컬 기준) ─────────────────────────────────────────────────────
-const DOW = ['월', '화', '수', '목', '금', '토', '일'] as const
-const DAYS_PER_WEEK = 7
-const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/
-
-function toLocalDateStr(date: Date): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-function addDays(date: Date, days: number): Date {
-  const next = new Date(date)
-  next.setDate(next.getDate() + days)
-  return next
-}
-/** 해당 날짜가 속한 주의 월요일 */
-function getMonday(date: Date): Date {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  const day = d.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  return addDays(d, diff)
-}
-function toHHMM(value: string): string {
-  // 이미 HH:mm 이면 그대로, ISO/datetime 이면 로컬 시각으로 변환.
-  if (TIME_REGEX.test(value)) return value
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-function weekLabel(weekStart: Date): string {
-  const end = addDays(weekStart, DAYS_PER_WEEK - 1)
-  const fmt = (d: Date) => `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
-  const fmtShort = (d: Date) => `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
-  return `${fmt(weekStart)} – ${fmtShort(end)}`
-}
-
-/** 조직 트리를 깊이순 평탄화 (하위 부서까지 select에 노출) */
-function flattenOrgs(orgs: Organization[]): Organization[] {
-  return orgs.flatMap((o) => [o, ...flattenOrgs(o.children ?? [])])
-}
-
-/** 근무유형 카테고리 → 로스터 칩 클래스(.day/.night/.remote/.leave) */
-function shiftCellClass(type?: ShiftType): string {
-  const cat = (type?.category ?? '').toLowerCase()
-  const name = (type?.name ?? '').toLowerCase()
-  if (cat.includes('night') || name.includes('야간')) return 'night'
-  if (cat.includes('remote') || name.includes('재택')) return 'remote'
-  if (cat.includes('leave') || name.includes('휴') || name.includes('연차') || name.includes('반차')) return 'leave'
-  return 'day'
-}
-
-// ── 폼 상태 ───────────────────────────────────────────────────────────────────
-interface ShiftForm {
-  employeeId: string
-  organizationId: string
-  positionId: string
-  date: string
-  templateId: string
-  startTime: string
-  endTime: string
-  shiftTypeId: string
-}
-
-type AddTab = '템플릿 기준' | '조직 기준' | '직위 기준' | '직원 기준'
-
-const today = toLocalDateStr(new Date())
-
-function emptyForm(): ShiftForm {
-  return {
-    employeeId: '',
-    organizationId: '',
-    positionId: '',
-    date: today,
-    templateId: '',
-    startTime: '',
-    endTime: '',
-    shiftTypeId: '',
-  }
-}
-
-/** Employee.positionId 는 타입 선언에 없을 수 있어 안전하게 읽는다 */
-function readEmployeePositionId(emp: Employee): string | undefined {
-  const value = (emp as Employee & { positionId?: string }).positionId
-  return typeof value === 'string' ? value : undefined
-}
+import {
+  DOW,
+  DAYS_PER_WEEK,
+  TIME_REGEX,
+  toLocalDateStr,
+  addDays,
+  getMonday,
+  toHHMM,
+  weekLabel,
+  flattenOrgs,
+  shiftCellClass,
+  emptyForm,
+  readEmployeePositionId,
+  type ShiftForm,
+  type AddTab,
+} from './shifts.helpers'
 
 export default function ShiftsPage() {
   const toast = useToast()
@@ -610,267 +539,28 @@ export default function ShiftsPage() {
       </div>
 
       {/* 근무일정 추가/수정 모달 */}
-      <Modal
+      <ShiftFormModal
         open={modalOpen}
         onClose={closeModal}
-        eyebrow={editing ? 'Edit Shift' : 'New Shift'}
-        title={editing ? '근무일정 수정' : '근무일정 추가'}
-        maxWidth={820}
-        footer={
-          <>
-            {editing && editing.status !== 'confirmed' && (
-              <button
-                className="btn btn-line"
-                style={{ minWidth: 110, color: 'var(--err)', borderColor: 'rgba(255,127,127,0.4)', marginRight: 'auto' }}
-                disabled={isSaving || deleteMutation.isPending}
-                onClick={() => setDeleteTarget(editing)}
-              >
-                삭제
-              </button>
-            )}
-            <button className="btn btn-line" style={{ minWidth: 110 }} onClick={closeModal}>
-              {editing ? '취소' : '닫기'}
-            </button>
-            <button
-              className="btn btn-primary"
-              style={{ minWidth: 110 }}
-              disabled={!formValid || isSaving}
-              onClick={handleSave}
-            >
-              {editing ? '수정' : '추가하기'}
-            </button>
-          </>
-        }
-      >
-        {!editing && (
-          <div className="tabs">
-            {(['템플릿 기준', '조직 기준', '직위 기준', '직원 기준'] as AddTab[]).map((t) => (
-              <button key={t} className={'tab' + (addTab === t ? ' on' : '')} onClick={() => setAddTab(t)}>
-                {t}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="doc-section">
-          <div
-            style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap', marginBottom: 22 }}
-          >
-            {/* 대상 선택 — 편집 모드는 조직+직원, 생성 모드는 탭에 따라 분기 */}
-            {editing ? (
-              <>
-                <div
-                  className="doc-field"
-                  style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
-                >
-                  <span className="fk" style={{ paddingTop: 7 }}>조직</span>
-                  <span className="fv">
-                    <select
-                      className="sel"
-                      value={form.organizationId}
-                      onChange={(e) => patch({ organizationId: e.target.value })}
-                      style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 160 }}
-                    >
-                      <option value="">선택</option>
-                      {flatOrgs.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {'　'.repeat(o.depth)}
-                          {o.name}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
-                </div>
-                <span className="cell-arrow">{I.arrow()}</span>
-                <div
-                  className="doc-field"
-                  style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
-                >
-                  <span className="fk" style={{ paddingTop: 7 }}>직원</span>
-                  <span className="fv">
-                    <select
-                      className="sel"
-                      value={form.employeeId}
-                      onChange={(e) => pickEmployee(e.target.value)}
-                      style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 160 }}
-                    >
-                      <option value="">선택</option>
-                      {employees.map((e) => (
-                        <option key={e.id} value={e.id}>
-                          {e.name}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
-                </div>
-              </>
-            ) : addTab === '조직 기준' ? (
-              <div
-                className="doc-field"
-                style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
-              >
-                <span className="fk" style={{ paddingTop: 7 }}>조직</span>
-                <span className="fv" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <select
-                    className="sel"
-                    value={form.organizationId}
-                    onChange={(e) => patch({ organizationId: e.target.value })}
-                    style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 160 }}
-                  >
-                    <option value="">선택</option>
-                    {flatOrgs.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {'　'.repeat(o.depth)}
-                        {o.name}
-                      </option>
-                    ))}
-                  </select>
-                  {form.organizationId && (
-                    <span style={{ fontSize: 13, color: 'var(--fg-4)' }}>
-                      {targetEmployees.length}명에게 생성
-                    </span>
-                  )}
-                </span>
-              </div>
-            ) : addTab === '직위 기준' ? (
-              <div
-                className="doc-field"
-                style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
-              >
-                <span className="fk" style={{ paddingTop: 7 }}>직위</span>
-                <span className="fv" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <select
-                    className="sel"
-                    value={form.positionId}
-                    onChange={(e) => patch({ positionId: e.target.value })}
-                    style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 160 }}
-                  >
-                    <option value="">선택</option>
-                    {positions.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                  {form.positionId && (
-                    <span style={{ fontSize: 13, color: 'var(--fg-4)' }}>
-                      {targetEmployees.length}명에게 생성
-                    </span>
-                  )}
-                </span>
-              </div>
-            ) : (
-              /* 직원 기준 / 템플릿 기준 — 단일 직원 */
-              <div
-                className="doc-field"
-                style={{ border: 'none', padding: 0, gridTemplateColumns: 'auto auto', gap: 12 }}
-              >
-                <span className="fk" style={{ paddingTop: 7 }}>직원</span>
-                <span className="fv">
-                  <select
-                    className="sel"
-                    value={form.employeeId}
-                    onChange={(e) => pickEmployee(e.target.value)}
-                    style={{ borderBottom: '1px solid var(--warm-500)', minWidth: 160 }}
-                  >
-                    <option value="">선택</option>
-                    {employees.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.name}
-                      </option>
-                    ))}
-                  </select>
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* 템플릿 — 템플릿 기준 탭에서는 필수, 그 외 선택 */}
-          {(() => {
-            const templateRequired = !editing && addTab === '템플릿 기준'
-            return (
-              <div className="doc-sec-head">
-                <span className="dot" />
-                <span className="t">근무 템플릿 {templateRequired ? '(필수)' : '(선택)'}</span>
-                <span className="en">Template</span>
-              </div>
-            )
-          })()}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-            {!(!editing && addTab === '템플릿 기준') && (
-              <button
-                className={'shift ' + (form.templateId === '' ? 'day' : 'off')}
-                style={{ display: 'inline-block', padding: '11px 16px', minWidth: 120, opacity: 1 }}
-                onClick={() => patch({ templateId: '' })}
-              >
-                직접 입력
-              </button>
-            )}
-            {templates.map((t) => (
-              <button
-                key={t.id}
-                className={'shift ' + (form.templateId === t.id ? 'day' : 'off')}
-                style={{ display: 'inline-block', padding: '11px 16px', minWidth: 130, opacity: 1 }}
-                onClick={() => applyTemplate(t.id)}
-              >
-                {t.name}
-                <span className="tm">
-                  {t.startTime} – {t.endTime}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {/* 근무 유형 + 직접 시간 */}
-          <div className="doc-sec-head">
-            <span className="dot" />
-            <span className="t">근무 유형 선택</span>
-            <span className="en">Shift Types</span>
-          </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
-            {(shiftTypes as ShiftType[]).map((st) => (
-              <button
-                key={st.id}
-                className={'shift ' + (form.shiftTypeId === st.id ? shiftCellClass(st) : 'off')}
-                style={{ display: 'inline-block', padding: '11px 16px', minWidth: 120, opacity: 1 }}
-                onClick={() => patch({ shiftTypeId: st.id })}
-              >
-                {st.name}
-              </button>
-            ))}
-          </div>
-
-          <div className="fld-range" style={{ marginBottom: 4 }}>
-            <input
-              className="inp-block"
-              placeholder="시작 09:00"
-              value={form.startTime}
-              disabled={!!form.templateId}
-              onChange={(e) => patch({ startTime: e.target.value })}
-              style={{ maxWidth: 140, fontFamily: 'var(--font-display)' }}
-            />
-            <span className="dash">~</span>
-            <input
-              className="inp-block"
-              placeholder="종료 18:00"
-              value={form.endTime}
-              disabled={!!form.templateId}
-              onChange={(e) => patch({ endTime: e.target.value })}
-              style={{ maxWidth: 140, fontFamily: 'var(--font-display)' }}
-            />
-          </div>
-        </div>
-
-        {/* 적용 일자 */}
-        <div className="doc-section">
-          <div className="doc-sec-head">
-            <span className="dot" />
-            <span className="t">적용 일자</span>
-            <span className="en">Date</span>
-          </div>
-          <DateInput value={form.date} onChange={(v) => patch({ date: v })} />
-        </div>
-      </Modal>
+        editing={editing}
+        form={form}
+        patch={patch}
+        addTab={addTab}
+        setAddTab={setAddTab}
+        templates={templates}
+        shiftTypes={shiftTypes as ShiftType[]}
+        flatOrgs={flatOrgs}
+        positions={positions}
+        employees={employees}
+        targetCount={targetEmployees.length}
+        formValid={formValid}
+        isSaving={isSaving}
+        deletePending={deleteMutation.isPending}
+        applyTemplate={applyTemplate}
+        pickEmployee={pickEmployee}
+        onSave={handleSave}
+        onRequestDelete={setDeleteTarget}
+      />
 
       <ConfirmDialog
         open={!!confirmTarget}
