@@ -6,114 +6,107 @@
     "git_branch": "docs/ai-readiness-quickwins",
     "rubric_version": "v2-100pt",
     "modules_total": 8,
-    "context_files_total": 12,
+    "context_files_total": 18,
     "large_files_300plus": 109
   },
-  "total": 42,
-  "grade": "AI-Fragile",
-  "grade_color": "amber",
+  "total": 76,
+  "grade": "AI-Ready",
+  "grade_color": "green",
   "categories": {
     "A": {
       "name": "AI Navigation & Coverage",
-      "score": 8,
+      "score": 15,
       "max": 15,
       "evidence": {
         "core_modules": 8,
-        "covered_modules": 4,
-        "coverage_ratio": 0.5,
+        "covered_modules": 8,
+        "coverage_ratio": 1.0,
         "root_claude": "CLAUDE.md"
       },
       "sub_scores": {},
-      "findings": [
-        "context 미보유 핵심 module 4개: deploy, refs, packages/shared-schemas, packages/shared-types"
-      ]
+      "findings": []
     },
     "B": {
       "name": "Context Document Quality",
-      "score": 13,
+      "score": 14,
       "max": 20,
       "evidence": {
-        "context_files": 12,
-        "max_lines": 347,
-        "min_lines": 32
+        "context_files": 18,
+        "max_lines": 219,
+        "min_lines": 20
       },
       "sub_scores": {
-        "B1_Conciseness": 2,
+        "B1_Conciseness": 3,
         "B2_QuickCommands": 2,
         "B3_KeyFiles": 4,
         "B4_NonObvious": 2,
         "B5_CrossRefs": 3
       },
       "findings": [
-        "conciseness 초과(>100 lines) context 5건: README.md (169), CLAUDE.md (347), refs/hr/README.md (195), refs/design_handoff_ab_workforce/README.md (219)",
+        "conciseness 초과(>100 lines) context 4건: README.md (169), refs/hr/README.md (195), refs/design_handoff_ab_workforce/README.md (219), apps/web/e2e/screenshots/fullcheck/README.md (139)",
         "bash 코드블록이 부족 — quick command 보강 필요",
         "Why/Note/Gotcha 같은 hidden rule 마커 부족"
       ]
     },
     "C": {
       "name": "Tribal Knowledge Externalization",
-      "score": 8,
+      "score": 18,
       "max": 20,
       "evidence": {
         "memory_md": false,
-        "adr": false,
+        "adr": true,
         "modules_total": 8,
-        "q1_owns": 4,
+        "q1_owns": 8,
         "q2_patterns": 3,
-        "q3_nonobvious": 4,
-        "q4_deps": 4
+        "q3_nonobvious": 8,
+        "q4_deps": 7
       },
       "sub_scores": {
-        "C_Q1_Owns": 2,
+        "C_Q1_Owns": 4,
         "C_Q2_Patterns": 2,
-        "C_Q3_NonObvious": 2,
-        "C_Q4_Dependencies": 2,
-        "C_Q5_TribalStore": 0
+        "C_Q3_NonObvious": 4,
+        "C_Q4_Dependencies": 4,
+        "C_Q5_TribalStore": 4
       },
       "findings": [
-        "MEMORY.md / ADR / docs/decisions 부재 — tribal knowledge 외부화 store 없음",
         "Common modification patterns 섹션 누락"
       ]
     },
     "D": {
       "name": "Cross-Module Dependency Mapping",
-      "score": 4,
+      "score": 13,
       "max": 15,
       "evidence": {
-        "architecture_doc": false,
-        "mermaid_diagrams": false,
-        "context_with_deps_section": 4,
+        "architecture_doc": true,
+        "mermaid_diagrams": true,
+        "context_with_deps_section": 7,
         "monorepo_workspace": true
       },
       "sub_scores": {},
-      "findings": [
-        "ARCHITECTURE.md / dependency map 부재",
-        "mermaid 다이어그램 없음 — 시각적 의존도 표현 부재"
-      ]
+      "findings": []
     },
     "E": {
       "name": "Verification & Quality Gates",
-      "score": 3,
+      "score": 6,
       "max": 15,
       "evidence": {
-        "ref_total": 241,
-        "ref_broken": 181,
+        "ref_total": 287,
+        "ref_broken": 194,
         "codeowners": false,
         "pr_template": false,
         "ci_workflows": false,
         "husky": false,
-        "evals_dir": false
+        "evals_dir": true
       },
       "sub_scores": {
-        "E1_RefAccuracy": 1,
+        "E1_RefAccuracy": 2,
         "E2_CriticReview": 0,
         "E3_TaskValidation": 2,
-        "E4_PromptTests": 0
+        "E4_PromptTests": 2
       },
       "findings": [
-        "hallucinated path 181건 (총 241 참조 중) — 예: README.md: dist/apps/api/src/main.js, README.md: src/main.ts, deploy/aws/README.md: ./../docs/design/AWS_OPERATIONS.md, docs/design/README.md: ./../CLAUDE.md",
-        "CODEOWNERS / PR template 없음 — independent critic infra 부재",
-        "agent eval / prompt test 디렉터리 없음 — AI 회귀 catch 없음"
+        "hallucinated path 194건 (총 287 참조 중) — 예: README.md: src/main.ts, README.md: dist/apps/api/src/main.js, deploy/CLAUDE.md: deploy/README.md, deploy/aws/README.md: ./../docs/design/AWS_OPERATIONS.md",
+        "CODEOWNERS / PR template 없음 — independent critic infra 부재"
       ]
     },
     "F": {
@@ -122,7 +115,7 @@
       "max": 10,
       "evidence": {
         "drifted_modules": 0,
-        "measurable_modules": 4,
+        "measurable_modules": 8,
         "drift_ratio": 0.0,
         "ctx_validation_workflow": false,
         "hook_validates_paths": false
@@ -135,29 +128,32 @@
     },
     "G": {
       "name": "Agent Performance Outcomes",
-      "score": 0,
+      "score": 4,
       "max": 5,
       "evidence": {
-        "eval_dirs": [],
-        "metric_files": [],
+        "eval_dirs": [
+          "evals"
+        ],
+        "metric_files": [
+          "evals/agent-results.json"
+        ],
         "telemetry_hint": false
       },
       "sub_scores": {},
       "findings": [
-        "agent eval / benchmark 디렉터리·결과 파일 부재 — 성능 측정 인프라 없음",
         "AI usage telemetry 단서 없음 (session log / OpenTelemetry)"
       ]
     }
   },
   "insights": [
-    "총점 42/100 · 등급 AI-Fragile",
-    "가장 낮은 카테고리: G Agent Performance Outcomes 0/5",
-    "가장 낮은 카테고리: E Verification & Quality Gates 3/15",
-    "⚠️  context에 hallucinated path 181건 — Meta 기준으로는 0이어야 함"
+    "총점 76/100 · 등급 AI-Ready",
+    "가장 낮은 카테고리: E Verification & Quality Gates 6/15",
+    "가장 낮은 카테고리: F Freshness & Self-Maintenance 6/10",
+    "⚠️  context에 hallucinated path 194건 — Meta 기준으로는 0이어야 함"
   ],
   "actions": [
     {
-      "title": "context의 hallucinated path 181건 수정 (referential trust)",
+      "title": "context의 hallucinated path 194건 수정 (referential trust)",
       "category": "E",
       "effort": "S",
       "effort_hours": 0.5,
@@ -175,15 +171,6 @@
       "priority": 8.0
     },
     {
-      "title": "4개 핵심 module에 CLAUDE.md 신설 (deploy, refs, packages/shared-schemas…)",
-      "category": "A",
-      "effort": "S",
-      "effort_hours": 2.0,
-      "impact": "task당 ~3 min × ~5 task/일 절감 → 모듈 1개당 주 1-2 hr 회수",
-      "impact_score": 9,
-      "priority": 4.5
-    },
-    {
       "title": "과도한 CLAUDE.md를 25-35 lines로 압축 (compass-not-encyclopedia)",
       "category": "B",
       "effort": "M",
@@ -191,33 +178,6 @@
       "impact": "agent context 로드 시간 단축 + 핵심 정보 가시성 ↑",
       "impact_score": 7,
       "priority": 3.5
-    },
-    {
-      "title": "ARCHITECTURE.md 또는 mermaid dependency 다이어그램 추가",
-      "category": "D",
-      "effort": "M",
-      "effort_hours": 2.5,
-      "impact": "cross-module ripple 추적 → 변경 영향 분석 시간 절반",
-      "impact_score": 7,
-      "priority": 2.8
-    },
-    {
-      "title": "MEMORY.md 또는 docs/adr/ 도입으로 tribal knowledge 외부화",
-      "category": "C",
-      "effort": "M",
-      "effort_hours": 3.0,
-      "impact": "senior 의존 의사결정 외부화 → 신규 agent run 시 오류 ↓",
-      "impact_score": 8,
-      "priority": 2.6666666666666665
-    },
-    {
-      "title": "evals/ 디렉터리 + 대표 task pass-rate 측정 도입",
-      "category": "G",
-      "effort": "L",
-      "effort_hours": 6.0,
-      "impact": "AI 회귀 측정 가능 — 개선 ROI 자체를 정량화",
-      "impact_score": 6,
-      "priority": 1.0
     },
     {
       "title": "god file 56개 분할 (>500 lines): apps/api/src/modules/requests/requests.service.ts (1883), apps/api/src/modules/requests/requests.service.spec.ts (1279), apps/api/src/modules/documents/documents.service.ts (1266)",
@@ -235,17 +195,17 @@
         "path": "/Users/user/Workspace/AbleWork/deploy",
         "rel": "deploy",
         "code_files": 2,
-        "has_context": false,
-        "context_file": null,
-        "context_kind": ""
+        "has_context": true,
+        "context_file": "/Users/user/Workspace/AbleWork/deploy/CLAUDE.md",
+        "context_kind": "CLAUDE.md"
       },
       {
         "path": "/Users/user/Workspace/AbleWork/refs",
         "rel": "refs",
         "code_files": 13,
-        "has_context": false,
-        "context_file": null,
-        "context_kind": ""
+        "has_context": true,
+        "context_file": "/Users/user/Workspace/AbleWork/refs/CLAUDE.md",
+        "context_kind": "CLAUDE.md"
       },
       {
         "path": "/Users/user/Workspace/AbleWork/apps/api",
@@ -283,17 +243,17 @@
         "path": "/Users/user/Workspace/AbleWork/packages/shared-schemas",
         "rel": "packages/shared-schemas",
         "code_files": 1,
-        "has_context": false,
-        "context_file": null,
-        "context_kind": ""
+        "has_context": true,
+        "context_file": "/Users/user/Workspace/AbleWork/packages/shared-schemas/CLAUDE.md",
+        "context_kind": "CLAUDE.md"
       },
       {
         "path": "/Users/user/Workspace/AbleWork/packages/shared-types",
         "rel": "packages/shared-types",
         "code_files": 1,
-        "has_context": false,
-        "context_file": null,
-        "context_kind": ""
+        "has_context": true,
+        "context_file": "/Users/user/Workspace/AbleWork/packages/shared-types/CLAUDE.md",
+        "context_kind": "CLAUDE.md"
       }
     ],
     "large_files": [

@@ -262,39 +262,39 @@
         <div class="header-meta">
           <div>점수 측정 <strong>2026-07-01</strong></div>
           <div>브랜치 <strong>docs/ai-readiness-quickwins</strong></div>
-          <div>모듈 <strong>8</strong> · 컨텍스트 파일 <strong>12</strong></div>
+          <div>모듈 <strong>8</strong> · 컨텍스트 파일 <strong>18</strong></div>
         </div>
       </header>
 
       <!-- =========== SCORE STRIP =========== -->
       <section class="score-strip">
         <div class="score-hero">
-          <div class="label">AI 준비도 지수 · Quick wins 반영</div>
+          <div class="label">AI 준비도 지수 · 후속 전체 반영</div>
           <div class="value">
-            <span class="num">42</span><span class="denom">/ 100</span>
+            <span class="num">76</span><span class="denom">/ 100</span>
           </div>
           <div class="grade-row">
-            <span class="grade-badge" style="background: var(--amber-soft); color: var(--amber)">
-              <span class="grade-dot" style="background: var(--amber)"></span> AI-Fragile · 취약
+            <span class="grade-badge" style="background: var(--green-soft); color: var(--green)">
+              <span class="grade-dot" style="background: var(--green)"></span> AI-Ready · 에이전트 친화
             </span>
-            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3)">▲ 17 → 42 (+25)</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3)">▲ 17 → 76 (+59)</span>
           </div>
           <div class="desc">
             7개 카테고리 가중 합산 (A 15 · B 20 · C 20 · D 15 · E 15 · F 10 · G 5).
-            <strong>Quick wins(E1·F·A)</strong> 반영 후 17→42. 모듈-로컬
-            <code>CLAUDE.md</code> 4개 신설로 A 0→8·C 0→8·D 2→4,
-            CI 경로 검증 게이트로 F 0→6. 남은 약점은 <strong>E 검증(3/15)</strong>과
-            <strong>G 성과측정(0/5)</strong>, 그리고 레포 내 의사결정 store(C 후속).
+            <strong>Quick wins(E1·F·A) + 후속(C·D·B·G)</strong> 전체 반영 후 17→76,
+            <strong>Meta AI-Ready 기준(75+) 도달</strong>. 모듈 CLAUDE.md 8/8(A 만점),
+            ADR 5건으로 C 18, ARCHITECTURE+mermaid로 D 13. 남은 약점은
+            <strong>E 검증(6/15 — CODEOWNERS/eval 자동화)</strong>과 대형 파일 분할(B).
           </div>
           <hr />
           <div class="mini-stats">
             <div class="mini-stat">
               <div class="k">모듈 컨텍스트</div>
-              <div class="v" style="color: var(--amber)">4 / 8</div>
+              <div class="v" style="color: var(--green)">8 / 8</div>
             </div>
             <div class="mini-stat">
-              <div class="k">CI 경로 게이트</div>
-              <div class="v" style="color: var(--green)">ON</div>
+              <div class="k">ADR · CI 게이트</div>
+              <div class="v" style="color: var(--green)">5 · ON</div>
             </div>
             <div class="mini-stat">
               <div class="k">300줄 초과 파일</div>
@@ -318,23 +318,23 @@
             <div class="idx">A</div>
             <div>
               <div class="title">AI 탐색 & 커버리지</div>
-              <div class="sub">모듈-로컬 CLAUDE.md 4개 신설(api·web·shared-constants·mobile) · 나머지 4개 후속</div>
+              <div class="sub"><strong style="color: var(--green)">8/8 모듈에 CLAUDE.md 완비</strong> · 루트는 네비게이션 허브</div>
             </div>
-            <div class="bar bar-warn"><span style="width: 53%"></span></div>
-            <div class="num">8/15</div>
+            <div class="bar bar-good"><span style="width: 100%"></span></div>
+            <div class="num">15/15</div>
           </div>
 
           <div class="rule-row">
             <div class="idx">B</div>
             <div>
               <div class="title">컨텍스트 문서 품질</div>
-              <div class="sub">모듈 문서에 명령/주의 마커·교차링크 보강 · 루트 압축은 후속(B)</div>
+              <div class="sub">루트 347→~85줄 압축 · 명령/주의 마커·교차링크 보강 · 대형 파일 분할은 후속</div>
             </div>
-            <div class="bar bar-warn"><span style="width: 65%"></span></div>
-            <div class="num">13/20</div>
+            <div class="bar bar-warn"><span style="width: 70%"></span></div>
+            <div class="num">14/20</div>
           </div>
           <div class="subscore-row">
-            <span class="si">B1 간결성 <b>2/4</b></span>
+            <span class="si">B1 간결성 <b>3/4</b></span>
             <span class="si">B2 빠른명령 <b>3/4</b></span>
             <span class="si">B3 핵심파일 <b>4/4</b></span>
             <span class="si">B4 비자명규칙 <b>2/4</b></span>
@@ -345,36 +345,36 @@
             <div class="idx">C</div>
             <div>
               <div class="title">암묵지 외부화</div>
-              <div class="sub">모듈 CLAUDE.md의 Purpose/Pattern/Why/Deps 헤딩으로 부분 충족 · 레포 내 MEMORY/ADR은 후속</div>
+              <div class="sub"><strong style="color: var(--green)">docs/adr/ 5건 도입</strong>(Repository 미사용·멀티테넌시·승인 이원화·상태머신·ts-node)</div>
             </div>
-            <div class="bar bar-bad"><span style="width: 40%"></span></div>
-            <div class="num">8/20</div>
+            <div class="bar bar-good"><span style="width: 90%"></span></div>
+            <div class="num">18/20</div>
           </div>
 
           <div class="rule-row">
             <div class="idx">D</div>
             <div>
               <div class="title">모듈 간 의존성 매핑</div>
-              <div class="sub">모듈 문서에 Dependencies 섹션 추가 · ARCHITECTURE.md+mermaid는 후속(D)</div>
+              <div class="sub"><strong style="color: var(--green)">docs/ARCHITECTURE.md + mermaid</strong>(모듈 그래프·요청→결재 플로우) · deps 섹션</div>
             </div>
-            <div class="bar bar-bad"><span style="width: 27%"></span></div>
-            <div class="num">4/15</div>
+            <div class="bar bar-good"><span style="width: 87%"></span></div>
+            <div class="num">13/15</div>
           </div>
 
           <div class="rule-row">
             <div class="idx">E</div>
             <div>
               <div class="title">검증 & 품질 게이트</div>
-              <div class="sub"><strong style="color: var(--green)">CI 경로 검증 게이트 신설</strong> · CODEOWNERS/PR template/evals는 후속</div>
+              <div class="sub">CI 경로 검증 게이트 + 경로 정정 반영 · CODEOWNERS/eval 자동화는 후속</div>
             </div>
-            <div class="bar bar-bad"><span style="width: 20%"></span></div>
-            <div class="num">3/15</div>
+            <div class="bar bar-warn"><span style="width: 40%"></span></div>
+            <div class="num">6/15</div>
           </div>
           <div class="subscore-row">
-            <span class="si">E1 참조정확도 <b>1/6*</b></span>
+            <span class="si">E1 참조정확도 <b>↑</b></span>
             <span class="si">E2 비평인프라 <b>0/3</b></span>
-            <span class="si">E3 검증명령 <b>2/3*</b></span>
-            <span class="si">E4 프롬프트테스트 <b>0/3</b></span>
+            <span class="si">E3 검증명령 <b>2/3</b></span>
+            <span class="si">E4 프롬프트테스트 <b>evals/ 도입</b></span>
           </div>
 
           <div class="rule-row">
@@ -391,19 +391,19 @@
             <div class="idx">G</div>
             <div>
               <div class="title">에이전트 성과 측정</div>
-              <div class="sub">evals/ · benchmarks/ 부재 · telemetry 단서 없음</div>
+              <div class="sub"><strong style="color: var(--green)">evals/ 도입</strong> — 대표 task 5종 정의 + pass-rate 측정 틀(agent-results.json)</div>
             </div>
-            <div class="bar bar-bad"><span style="width: 0%"></span></div>
-            <div class="num">0/5</div>
+            <div class="bar bar-good"><span style="width: 80%"></span></div>
+            <div class="num">4/5</div>
           </div>
         </div>
       </section>
 
       <!-- =========== CAVEAT =========== -->
       <section class="caveat">
-        <h3>Quick wins 반영본 · 스코어러 한계 (표본 검증 결과 — 점수 해석 시 보정)</h3>
+        <h3>전체 후속 반영본 · 스코어러 한계 (표본 검증 결과 — 점수 해석 시 보정)</h3>
         <ul>
-          <li><strong>이 지도는 Quick wins(E1·F·A) 적용 후 상태(42점).</strong> E1 경로 정정 + <code>scripts/check-context-paths.mjs</code> CI 게이트 + 모듈 CLAUDE.md 4개 신설을 반영했다. C(레포 내 MEMORY/ADR)·D(ARCHITECTURE+mermaid)·B(루트 압축)·G(evals)는 후속 예정.</li>
+          <li><strong>이 지도는 Quick wins(E1·F·A) + 후속(C·D·B·G) 전체 적용 후 상태(76점, AI-Ready).</strong> 경로 정정 + <code>scripts/check-context-paths.mjs</code> CI 게이트 + 모듈 CLAUDE.md 8/8 + ADR 5건 + <code>docs/ARCHITECTURE.md</code>(mermaid) + 루트 압축 + <code>evals/</code>를 반영. 남은 E(CODEOWNERS/eval 자동화)와 대형 파일 분할(B)은 다음 단계.</li>
           <li><strong>E1 경로 참조 163건의 상당수는 false positive.</strong>
             루트 <code>CLAUDE.md</code>가 모노레포 하위(예: <code>apps/api</code>) 기준 상대경로로 표기 — <code>src/events/domain-events.ts</code>는 실제로 <code>apps/api/src/events/domain-events.ts</code>로 <strong>존재</strong>한다. 스코어러는 레포 루트 기준으로만 검증해 깨진 것으로 오판. 진짜 액션은 "경로를 레포 루트 기준 절대표기로 통일"이며, 실제 깨진 링크는 런타임 생성물(<code>docs/loop/STATE.md</code> 등) 소수.</li>
           <li><strong>E3/F의 CI 미검출.</strong> 스코어러는 <code>.github/workflows</code>만 스캔하지만, 이 레포는 GitLab로 이전돼 <code>.gitlab-ci.yml</code>에 typecheck·unit·integration 게이트가 실재한다. E3·F는 실제로 표시값보다 높게 봐야 한다.</li>
@@ -451,12 +451,12 @@
 
             <!-- ===== apps/web column ===== -->
             <g transform="translate(56,150)">
-              <rect class="node-card miss" width="280" height="58" rx="8" />
-              <circle cx="20" cy="20" r="11" class="miss-ring" />
-              <circle cx="20" cy="20" r="5" class="miss-dot" />
+              <rect class="node-card accent" width="280" height="58" rx="8" />
+              <circle cx="20" cy="20" r="11" class="claude-ring" />
+              <circle cx="20" cy="20" r="5" class="claude-dot" />
               <text x="40" y="18" class="node-title">apps/web</text>
               <text x="40" y="34" class="node-meta">Next.js 15 App Router · MUI · TanStack Query</text>
-              <text x="40" y="48" class="node-meta" style="fill: var(--red)">모듈 CLAUDE.md 없음</text>
+              <text x="40" y="48" class="node-meta" style="fill: var(--green)">CLAUDE.md ✓</text>
               <text x="264" y="20" text-anchor="end" class="node-kpi" style="fill: var(--text-2)">215 files</text>
             </g>
             <g transform="translate(56,232)">
@@ -487,12 +487,12 @@
 
             <!-- ===== apps/api column ===== -->
             <g transform="translate(450,150)">
-              <rect class="node-card miss" width="280" height="58" rx="8" />
-              <circle cx="20" cy="20" r="11" class="miss-ring" />
-              <circle cx="20" cy="20" r="5" class="miss-dot" />
+              <rect class="node-card accent" width="280" height="58" rx="8" />
+              <circle cx="20" cy="20" r="11" class="claude-ring" />
+              <circle cx="20" cy="20" r="5" class="claude-dot" />
               <text x="40" y="18" class="node-title">apps/api</text>
               <text x="40" y="34" class="node-meta">NestJS 11 · Prisma 6 · Zod DTO</text>
-              <text x="40" y="48" class="node-meta" style="fill: var(--red)">모듈 CLAUDE.md 없음</text>
+              <text x="40" y="48" class="node-meta" style="fill: var(--green)">CLAUDE.md ✓</text>
               <text x="264" y="20" text-anchor="end" class="node-kpi" style="fill: var(--text-2)">259 files</text>
             </g>
             <g transform="translate(450,232)">
@@ -529,12 +529,12 @@
 
             <!-- ===== shared/packages column ===== -->
             <g transform="translate(844,150)">
-              <rect class="node-card miss" width="280" height="58" rx="8" />
-              <circle cx="20" cy="20" r="11" class="miss-ring" />
-              <circle cx="20" cy="20" r="5" class="miss-dot" />
+              <rect class="node-card accent" width="280" height="58" rx="8" />
+              <circle cx="20" cy="20" r="11" class="claude-ring" />
+              <circle cx="20" cy="20" r="5" class="claude-dot" />
               <text x="40" y="18" class="node-title">packages/shared-*</text>
               <text x="40" y="34" class="node-meta">constants · schemas · types (FE/BE 공유 Zod)</text>
-              <text x="40" y="48" class="node-meta" style="fill: var(--red)">컨텍스트 없음 · 의존 허브</text>
+              <text x="40" y="48" class="node-meta" style="fill: var(--green)">CLAUDE.md ✓ · 의존 허브</text>
               <text x="264" y="20" text-anchor="end" class="node-kpi" style="fill: var(--text-2)">11 files</text>
             </g>
             <g transform="translate(844,232)">
@@ -544,12 +544,12 @@
               <text x="264" y="22" text-anchor="end" class="node-kpi" style="fill: var(--accent)">9 files</text>
             </g>
             <g transform="translate(844,312)">
-              <rect class="node-card miss" width="280" height="58" rx="8" />
-              <circle cx="20" cy="20" r="11" class="miss-ring" />
-              <circle cx="20" cy="20" r="5" class="miss-dot" />
+              <rect class="node-card accent" width="280" height="58" rx="8" />
+              <circle cx="20" cy="20" r="11" class="claude-ring" />
+              <circle cx="20" cy="20" r="5" class="claude-dot" />
               <text x="40" y="18" class="node-title">apps/mobile · refs · deploy</text>
               <text x="40" y="34" class="node-meta">RN(20) · 디자인 핸드오프(13) · 배포(2)</text>
-              <text x="40" y="48" class="node-meta" style="fill: var(--red)">컨텍스트 없음</text>
+              <text x="40" y="48" class="node-meta" style="fill: var(--green)">CLAUDE.md ✓</text>
             </g>
             <g transform="translate(844,392)">
               <rect class="node-card accent" width="280" height="62" rx="8" />
@@ -645,7 +645,7 @@
       </div>
 
       <footer>
-        AbleWork · AI-Readiness v2 (7 카테고리 / 100점) · scored 2026-07-01 · Quick wins 반영(17→42) · *표시 항목은 스코어러 한계로 보정 필요
+        AbleWork · AI-Readiness v2 (7 카테고리 / 100점) · scored 2026-07-01 · Quick wins + 후속 반영(17→76, AI-Ready) · *표시 항목은 스코어러 한계로 보정 필요
       </footer>
     </div>
   </body>

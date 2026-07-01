@@ -8,16 +8,20 @@
 
 ## 2026-07-01
 
-### 20. AI-Readiness 감사 + Quick wins (E1·F·A)
-- **요청**: AI-Readiness Cartography 스킬로 레포 감사 → 산출된 ROI 액션 중 Quick wins 3종 실행(브랜치 커밋까지, 배포 안 함).
-- **감사**: 자동 채점 17/100(AI-Hostile) → Quick wins 후 **42/100(AI-Fragile)**. 산출물 `docs/ai-readiness-map.html`·`docs/ai-readiness-score.json`.
+### 20. AI-Readiness 감사 + 개선 (E1·F·A·C·D·B·G)
+- **요청**: AI-Readiness Cartography 스킬로 레포 감사 → 산출된 ROI 액션을 Quick wins(E1·F·A)부터 후속(C·D·B·G)까지 실행(브랜치 커밋까지, 배포 안 함).
+- **감사**: 자동 채점 **17/100(AI-Hostile) → 76/100(AI-Ready)**, Meta 기준(75+) 도달. 산출물 `docs/ai-readiness-map.html`·`docs/ai-readiness-score.json`.
   - 스코어러 한계 보정: E1 broken 163건 중 156건은 `refs/`(카카오워크 헬프 인덱스·디자인 핸드오프) 외부 자료 오탐, 실제 우리 컨텍스트 broken은 4건. CI 미검출은 `.github`만 스캔한 탓(실제 `.gitlab-ci.yml` 존재).
 - **변경**:
   - **E1(경로 정정)**: 루트 `CLAUDE.md`의 `src/events/domain-events.ts` → `apps/api/src/events/domain-events.ts`, `docs/loop/STATE.md`(런타임 생성물) 표기 조정.
   - **F(회귀 방지 게이트)**: `scripts/check-context-paths.mjs` 신설 — 컨텍스트 문서 산문 속 코드경로 존재 검증(`refs/`·코드펜스·빌드산출물 제외, `../` 상대링크 지원). `package.json` `check:context-paths` 스크립트 + `.gitlab-ci.yml` `typecheck-lint` 스텝 연결.
-  - **A(모듈 네비게이션)**: 모듈-로컬 `CLAUDE.md` 4개 신설 — `apps/api`·`apps/web`·`packages/shared-constants`·`apps/mobile`(Overview/Quick commands/Common patterns/Non-obvious/Dependencies 구성, docs/design/* 링크).
+  - **A(모듈 네비게이션, 15/15)**: 모듈-로컬 `CLAUDE.md` 신설 — 커밋 추적 7개 모듈 전부(`apps/api`·`apps/web`·`apps/mobile`·`packages/shared-constants`·`packages/shared-schemas`·`packages/shared-types`·`deploy`). Overview/Quick commands/Common patterns/Non-obvious/Dependencies 구성. (`refs/`는 gitignore된 로컬 참조 아카이브라 커밋 제외 — 로컬 안내용 `refs/CLAUDE.md`만 존재.)
+  - **C(암묵지 외부화, 18/20)**: `docs/adr/` 신설 + ADR 5건 — Repository 미사용(0001)·멀티테넌시 companyId(0002)·승인 이원화(0003)·전자결재 상태머신/첨부정책(0004)·ts-node 런타임(0005).
+  - **D(의존성 매핑, 13/15)**: `docs/ARCHITECTURE.md` 신설 — 모듈 의존 그래프·요청→결재 플로우 mermaid + 레이어/배포 개요.
+  - **B(문서 품질, 14/20)**: 루트 `CLAUDE.md` 347→~85줄 compass화 — 상세를 모듈 CLAUDE.md·ADR·docs로 위임, NEVER·멀티테넌시 등 안전 규칙 보존 + mermaid 그래프.
+  - **G(성과 측정, 4/5)**: `evals/` 신설 — 대표 task 5종(`tasks.json`) + pass-rate 측정 틀(`agent-results.json`) + 방법론(README).
 - **영향**: 문서·CI 설정만. 앱 코드·API·마이그레이션 변경 없음 → 런타임 무영향.
-- **배포(커밋)**: 브랜치 `docs/ai-readiness-quickwins`. C(레포 내 MEMORY/ADR)·D(ARCHITECTURE+mermaid)·B(루트 압축)·G(evals)는 후속.
+- **배포(커밋)**: 브랜치 `docs/ai-readiness-quickwins`. 남은 개선: E(CODEOWNERS/eval 자동화)·대형 파일 분할(B, god file 56개).
 
 ---
 

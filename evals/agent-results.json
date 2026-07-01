@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "description": "대표 task 실행 결과 기록. 각 run 은 날짜·모델·task별 pass/fail. pass_rate 로 개선 전후 비교.",
+  "runs": [
+    {
+      "date": "2026-07-01",
+      "label": "baseline (AI-Readiness Quick wins + 후속 반영 직후)",
+      "model": "unmeasured",
+      "note": "스캐폴드 초기 커밋. 실제 측정은 다음 run 부터 기록한다. 아래 results 는 미측정(null) 플레이스홀더.",
+      "results": [
+        { "task": "T1", "pass": null },
+        { "task": "T2", "pass": null },
+        { "task": "T3", "pass": null },
+        { "task": "T4", "pass": null },
+        { "task": "T5", "pass": null }
+      ],
+      "pass_rate": null
+    }
+  ]
+}
