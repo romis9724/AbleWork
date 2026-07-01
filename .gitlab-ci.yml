@@ -42,6 +42,8 @@ typecheck-lint:
   extends: .node_base
   stage: test
   script:
+    - node scripts/check-context-paths.mjs # AI-Readiness E1: 컨텍스트 문서 경로 참조 검증(stale/hallucinated 차단)
+    - node scripts/check-evals.mjs # AI-Readiness G/E4: eval 하네스(tasks/results) 구조 무결성 검증
     - DATABASE_URL='postgresql://ablework:test@localhost:5432/ablework' pnpm --filter api prisma generate
     - pnpm --filter api exec tsc --noEmit
     - pnpm --filter api exec eslint 'src/**/*.ts' --max-warnings=0 || true
