@@ -38,7 +38,7 @@ graph LR
 | 프런트엔드 | [`apps/web/CLAUDE.md`](apps/web/CLAUDE.md) |
 | 모바일 | [`apps/mobile/CLAUDE.md`](apps/mobile/CLAUDE.md) |
 | 공유 계약 | [`packages/shared-constants/CLAUDE.md`](packages/shared-constants/CLAUDE.md) · [`packages/shared-schemas/CLAUDE.md`](packages/shared-schemas/CLAUDE.md) · [`packages/shared-types/CLAUDE.md`](packages/shared-types/CLAUDE.md) |
-| 배포 | [`deploy/CLAUDE.md`](deploy/CLAUDE.md) · [`refs/CLAUDE.md`](refs/CLAUDE.md)(참조자료) |
+| 배포 | [`deploy/CLAUDE.md`](deploy/CLAUDE.md) |
 
 ## 4. 반드시 지킬 규칙 (안전·정합)
 

@@ -21,6 +21,11 @@
 pnpm --filter mobile exec tsc --noEmit   # 타입체크
 ```
 
+## Common changes — 자주 하는 변경 (how to)
+
+- **화면 추가**: `apps/mobile/app/`에 Expo Router 파일 생성 → API는 [`apps/api`](../api/CLAUDE.md) 계약 재사용.
+- **출퇴근 로직 수정**: `clockIn` 호출부는 `channel: 'app'` 유지 필수(웹과 분기). 근태 룰은 [`docs/design/SYSTEM_DESIGN.md`](../../docs/design/SYSTEM_DESIGN.md).
+
 ## Non-obvious rules
 
 - **Note:** 출퇴근 `clockIn`은 앱에서 `channel: 'app'`으로 호출한다. WiFi 장소 인증은 앱 전용(웹은 GPS만).

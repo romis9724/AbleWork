@@ -16,7 +16,8 @@
     "db:migrate": "pnpm --filter api prisma migrate dev",
     "db:seed": "pnpm --filter api prisma db seed",
     "db:studio": "pnpm --filter api prisma studio",
-    "db:generate": "pnpm --filter api prisma generate"
+    "db:generate": "pnpm --filter api prisma generate",
+    "prepare": "git config core.hooksPath .husky || true"
   },
   "devDependencies": {
     "turbo": "^2.5.4",
