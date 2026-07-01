@@ -8,6 +8,31 @@
 
 ## 2026-07-01
 
+### 24. god file 본격 분할 — documents·requests 서비스 (deep-interview 확정)
+- **요청**: AI-Readiness에서 지적된 god file(>500줄) 분할을 인터뷰로 스코프 확정 후 진행. **목표=유지보수성·편집 정확도(점수 무관)**, 범위=최대 2개(`requests`·`documents`), 방식=**서비스 합성**(ADR-0001 준수, Repository 미도입), 완료기준=각 파일 <800줄·public API 불변·기존 단위테스트 통과.
+- **documents.service.ts (1266 → 557)**:
+  - `documents.helpers.ts`(순수 헬퍼·공유 타입·상태 상수), `document-query.service.ts`(문서함 목록·상세·box where), `document-steps.service.ts`(결재선 구성·상신 트랜잭션·문서번호 채번) 신설.
+  - main은 CRUD·상신·회수·공람·의견 public 유지, 조회/스텝은 위임(findAll/findOne facade).
+- **requests.service.ts (1795 → 627)**:
+  - `request-effects.service.ts`(휴가/근무/근태 승인 효과 적용 + 사전 검증, 733줄), `request-approval.service.ts`(승인/거절/강제/일괄 + M-of-N 라운드, 399줄), `approval-rules.service.ts`(승인 규칙 CRUD, 105줄) 신설.
+  - 공유 검증 헬퍼(`assertRequestPending`·`loadRequestInCompany`·`getEmployeeOrgIds`)를 `requests.helpers.ts`로 이동(prisma 인자화 — main·approval 공용).
+  - main은 목록/취소/수정/생성 + 부서 승인자 해석 유지, 결재·규칙은 위임(facade).
+- **attendances.service.ts (1093 → 692)**:
+  - `attendance-clockin.service.ts`(출근 판정·출퇴근 장소 지오/채널·무일정 정책 검증, 330줄), `attendance-query.service.ts`(목록·오늘 내 출퇴근, 127줄) 신설.
+  - main은 clockIn/clockOut/createManual/update/휴게/확정 등 유지, 조회·판정·지오 검증은 위임(findAll/getMyToday/determineStatus facade).
+- **employees.service.ts (1027 → 713)**:
+  - `employee-permission.service.ts`(수정 권한·ORG_ADMIN 관리 권한·조직 경계 가드, 194줄), `employee-wage.service.ts`(근로정보 이력 CRUD, 102줄), `employee-query.service.ts`(목록·상세, 118줄) 신설.
+  - main은 create/update/재입사/deactivate/activate/remove/디바이스·비번 초기화 유지, 조회·근로정보·권한 스코프는 위임(findAll/findOne/wage/guardOrgScope facade).
+- **leaves.service.ts (879 → 609)**:
+  - `leave-accrual.service.ts`(연차 발생 엔진 — 규칙 실행·근속/월할/유효기간 계산·대상 직원별 부여, 292줄) 신설.
+  - main은 그룹/유형/규칙 CRUD·잔액·수동발생·휴가 생성·검증 유지, 발생 규칙 실행은 위임(runAccrualRule facade).
+- **approval-actions.service.ts (833 → 703)**:
+  - `approval-support.service.ts`(결재 처리 지원층 — 대상 로드·대리인 해석·상태/역할 검증 + 공유 타입 StepRecord/DocumentRecord/ActorContext, 157줄) 신설.
+  - main은 승인/반려/전결/전단계반려/결재취소/협조/확인/수신 액션 유지, 로드·검증은 위임.
+- **결과**: 6개 god file 분할로 **>800줄 도메인 서비스 0개** 달성(최대였던 requests 1795·documents 1266 포함 전부 <800). 신규 서브서비스 14개, 전 과정 단위테스트 874 불변.
+- **영향**: 순수 구조 리팩터(로직·시그니처·엔드포인트 불변). **api 단위테스트 874 전부 통과**, typecheck·lint 통과. 마이그레이션·동작 변경 없음. 각 서브서비스는 module·spec providers에 등록(동일 mock으로 위임).
+- **배포(커밋)**: 브랜치 `refactor/god-file-split-round3`. 나머지 god file(employees·leaves·approval-actions 서비스, 웹 페이지 등)은 이 패턴으로 점진 적용 대상.
+
 ### 23. AI-Readiness round2 — 정직 채점(80→96) + F·E·C·B·G 강화
 - **요청**: `ai-readiness-map` 결과를 보고 개선 작업 계속 → B·G까지 마무리.
 - **감사 방법론 정정**: 로컬 워킹트리 채점(80)은 gitignore된 `refs/`(외부 핸드오프 문서 195·219줄)의 내부 경로가 broken으로 오탐돼 저평가. **`git archive HEAD`(에이전트가 실제 clone하는 tracked 트리) 기준 정직 점수 = 83 → 개선 후 96/100 (AI-Native)**.

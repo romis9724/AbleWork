@@ -8,6 +8,8 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { AccessLevel } from '@ablework/shared-constants'
 import { AttendancesService } from './attendances.service'
+import { AttendanceClockInService } from './attendance-clockin.service'
+import { AttendanceQueryService } from './attendance-query.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
 import { AuditService } from '../audit/audit.service'
@@ -111,6 +113,8 @@ describe('AttendancesService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AttendancesService,
+        AttendanceClockInService,
+        AttendanceQueryService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
         { provide: CompanySettingsService, useValue: mockSettings },
@@ -148,7 +152,7 @@ describe('AttendancesService', () => {
       mockPrisma.attendance.count.mockResolvedValue(0)
     })
 
-    it("scope=org(ORG_ADMIN)면 요청자 소속 조직 직원으로 스코프하고 employeeId로 좁히지 않는다", async () => {
+    it('scope=org(ORG_ADMIN)면 요청자 소속 조직 직원으로 스코프하고 employeeId로 좁히지 않는다', async () => {
       const requester = makeRequester(AccessLevel.ORG_ADMIN, 'mgr-1')
       mockPrisma.employeeOrganization.findMany.mockResolvedValue([{ organizationId: ORG_ID }])
 

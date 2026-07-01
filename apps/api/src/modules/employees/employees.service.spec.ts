@@ -6,6 +6,9 @@ import {
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { EmployeesService } from './employees.service'
+import { EmployeePermissionService } from './employee-permission.service'
+import { EmployeeWageService } from './employee-wage.service'
+import { EmployeeQueryService } from './employee-query.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
 import { AuditService } from '../audit/audit.service'
@@ -151,6 +154,9 @@ describe('EmployeesService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EmployeesService,
+        EmployeePermissionService,
+        EmployeeWageService,
+        EmployeeQueryService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
         { provide: CompanySettingsService, useValue: mockSettings },

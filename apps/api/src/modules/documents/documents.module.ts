@@ -4,7 +4,10 @@ import { AuditModule } from '../audit/audit.module'
 import { ApprovalEnabledGuard } from '../../common/guards/approval-enabled.guard'
 import { DocumentsController } from './documents.controller'
 import { DocumentsService } from './documents.service'
+import { DocumentQueryService } from './document-query.service'
+import { DocumentStepsService } from './document-steps.service'
 import { ApprovalActionsService } from './approval-actions.service'
+import { ApprovalSupportService } from './approval-support.service'
 import { DocumentFormsController } from './document-forms.controller'
 import { DocumentFormsService } from './document-forms.service'
 import { SharedApprovalLinesController } from './shared-approval-lines.controller'
@@ -43,7 +46,10 @@ import { BodyTemplatesService } from './body-templates.service'
   ],
   providers: [
     DocumentsService,
+    DocumentQueryService,
+    DocumentStepsService,
     ApprovalActionsService,
+    ApprovalSupportService,
     DocumentFormsService,
     FormCategoriesService,
     DocumentCategoriesService,

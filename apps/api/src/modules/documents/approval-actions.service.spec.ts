@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { ApprovalActionsService } from './approval-actions.service'
+import { ApprovalSupportService } from './approval-support.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
 import { AuditService } from '../audit/audit.service'
@@ -97,6 +98,7 @@ describe('ApprovalActionsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ApprovalActionsService,
+        ApprovalSupportService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
         { provide: CompanySettingsService, useValue: mockSettings },

@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  ForbiddenException,
-} from '@nestjs/common'
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CompanySettingsService } from '../companies/company-settings.service'
@@ -17,41 +12,17 @@ import {
   APPROVAL_FLOW_ROLES,
   RECEIVER_ROLES,
   CANCEL_ON_REJECT_ROLES,
-  DEPT_ROLES,
   HistoryAction,
 } from './documents.constants'
 import { ApprovalCommentDto } from './dto/document.dto'
-
-type StepRecord = {
-  id: string
-  lineId: string
-  role: string
-  assigneeId: string
-  organizationId: string | null
-  stepOrder: number
-  status: string
-  isProxy: boolean
-  proxyId: string | null
-}
-
-type DocumentRecord = {
-  id: string
-  companyId: string
-  requestId: string | null
-  status: string
-  drafterId: string
-  title: string
-  form: { allowPreApproval: boolean }
-  approvalLines: Array<{ id: string; steps: StepRecord[] }>
-}
-
-type ActorContext = { isProxy: boolean }
+import { ApprovalSupportService, StepRecord, DocumentRecord } from './approval-support.service'
 
 /**
  * AP — 결재 처리: 승인/반려/전결/전단계반려/결재취소/협조/확인/수신 (Goal 13, 14)
  *
  * HR 요청(requestId 연결) 문서는 /requests 승인 플로우에서만 처리한다 —
  * 여기서는 400 DOCUMENT_MANAGED_BY_REQUEST로 거부 (이중 처리 방지).
+ * 대상 로드·대리인 해석·상태/역할 검증은 ApprovalSupportService에 위임. (god file 분할 · 항목 24)
  */
 @Injectable()
 export class ApprovalActionsService {
@@ -60,6 +31,7 @@ export class ApprovalActionsService {
     private readonly events: EventEmitter2,
     private readonly settings: CompanySettingsService,
     private readonly audit: AuditService,
+    private readonly support: ApprovalSupportService,
   ) {}
 
   // ── AP-03-01 승인 ────────────────────────────────────────────────────────────
@@ -113,11 +85,11 @@ export class ApprovalActionsService {
     actor: JwtPayload,
     expectedRole: string,
   ) {
-    const { document, step, steps } = await this.loadActionTarget(companyId, documentId, stepId)
-    this.assertDocumentPending(document)
-    this.assertStepRole(step, [expectedRole])
-    this.assertStepPending(step)
-    const ctx = await this.resolveActor(step, actor)
+    const { document, step, steps } = await this.support.loadActionTarget(companyId, documentId, stepId)
+    this.support.assertDocumentPending(document)
+    this.support.assertStepRole(step, [expectedRole])
+    this.support.assertStepPending(step)
+    const ctx = await this.support.resolveActor(step, actor)
 
     const stepStatus = ctx.isProxy ? StepStatus.PROXY_APPROVED : StepStatus.APPROVED
     const action = ctx.isProxy
@@ -179,11 +151,11 @@ export class ApprovalActionsService {
     dto: ApprovalCommentDto,
     actor: JwtPayload,
   ) {
-    const { document, step } = await this.loadActionTarget(companyId, documentId, stepId)
-    this.assertDocumentPending(document)
-    this.assertStepRole(step, APPROVAL_FLOW_ROLES)
-    this.assertStepPending(step)
-    const ctx = await this.resolveActor(step, actor)
+    const { document, step } = await this.support.loadActionTarget(companyId, documentId, stepId)
+    this.support.assertDocumentPending(document)
+    this.support.assertStepRole(step, APPROVAL_FLOW_ROLES)
+    this.support.assertStepPending(step)
+    const ctx = await this.support.resolveActor(step, actor)
 
     const updated = await this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
@@ -255,10 +227,10 @@ export class ApprovalActionsService {
     dto: ApprovalCommentDto,
     actor: JwtPayload,
   ) {
-    const { document, step } = await this.loadActionTarget(companyId, documentId, stepId)
-    this.assertDocumentPending(document)
-    this.assertStepRole(step, [StepRole.APPROVER])
-    this.assertStepPending(step)
+    const { document, step } = await this.support.loadActionTarget(companyId, documentId, stepId)
+    this.support.assertDocumentPending(document)
+    this.support.assertStepRole(step, [StepRole.APPROVER])
+    this.support.assertStepPending(step)
 
     if (!document.form.allowPreApproval) {
       throw new BadRequestException({
@@ -266,7 +238,7 @@ export class ApprovalActionsService {
         message: '이 양식은 전결을 허용하지 않습니다.',
       })
     }
-    const ctx = await this.resolveActor(step, actor)
+    const ctx = await this.support.resolveActor(step, actor)
 
     const updated = await this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
@@ -325,11 +297,11 @@ export class ApprovalActionsService {
     dto: ApprovalCommentDto,
     actor: JwtPayload,
   ) {
-    const { document, step, steps } = await this.loadActionTarget(companyId, documentId, stepId)
-    this.assertDocumentPending(document)
-    this.assertStepRole(step, APPROVAL_FLOW_ROLES)
-    this.assertStepPending(step)
-    await this.resolveActor(step, actor)
+    const { document, step, steps } = await this.support.loadActionTarget(companyId, documentId, stepId)
+    this.support.assertDocumentPending(document)
+    this.support.assertStepRole(step, APPROVAL_FLOW_ROLES)
+    this.support.assertStepPending(step)
+    await this.support.resolveActor(step, actor)
 
     // AP 정책: 회사 설정에서 전단계 반려를 비활성화하면 차단
     const allowed = await this.settings.get<boolean>(
@@ -411,7 +383,7 @@ export class ApprovalActionsService {
     dto: ApprovalCommentDto,
     actor: JwtPayload,
   ) {
-    const { document, step, steps } = await this.loadActionTarget(companyId, documentId, stepId)
+    const { document, step, steps } = await this.support.loadActionTarget(companyId, documentId, stepId)
 
     if (document.status !== DocStatus.PENDING) {
       throw new BadRequestException({
@@ -498,10 +470,10 @@ export class ApprovalActionsService {
     dto: ApprovalCommentDto,
     actor: JwtPayload,
   ) {
-    const { document, step } = await this.loadActionTarget(companyId, documentId, stepId)
-    this.assertStepRole(step, [StepRole.REFERENCE, StepRole.VIEWER])
-    this.assertStepPending(step)
-    const ctx = await this.resolveActor(step, actor)
+    const { document, step } = await this.support.loadActionTarget(companyId, documentId, stepId)
+    this.support.assertStepRole(step, [StepRole.REFERENCE, StepRole.VIEWER])
+    this.support.assertStepPending(step)
+    const ctx = await this.support.resolveActor(step, actor)
 
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
@@ -537,8 +509,8 @@ export class ApprovalActionsService {
     dto: ApprovalCommentDto,
     actor: JwtPayload,
   ) {
-    const { document, step } = await this.loadActionTarget(companyId, documentId, stepId)
-    this.assertStepRole(step, RECEIVER_ROLES) // RECEIVER + 부서수신(DEPT_RECEIVER)
+    const { document, step } = await this.support.loadActionTarget(companyId, documentId, stepId)
+    this.support.assertStepRole(step, RECEIVER_ROLES) // RECEIVER + 부서수신(DEPT_RECEIVER)
 
     if (document.status !== DocStatus.APPROVED) {
       throw new BadRequestException({
@@ -546,8 +518,8 @@ export class ApprovalActionsService {
         message: '결재 완료된 문서만 수신 처리할 수 있습니다.',
       })
     }
-    this.assertStepPending(step)
-    const ctx = await this.resolveActor(step, actor)
+    this.support.assertStepPending(step)
+    const ctx = await this.support.resolveActor(step, actor)
 
     return this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
@@ -584,8 +556,8 @@ export class ApprovalActionsService {
     dto: ApprovalCommentDto,
     actor: JwtPayload,
   ) {
-    const { document, step } = await this.loadActionTarget(companyId, documentId, stepId)
-    this.assertStepRole(step, [StepRole.DEPT_RECEIVER])
+    const { document, step } = await this.support.loadActionTarget(companyId, documentId, stepId)
+    this.support.assertStepRole(step, [StepRole.DEPT_RECEIVER])
 
     if (document.status !== DocStatus.APPROVED) {
       throw new BadRequestException({
@@ -593,8 +565,8 @@ export class ApprovalActionsService {
         message: '결재 완료된 문서만 반송할 수 있습니다.',
       })
     }
-    this.assertStepPending(step)
-    const ctx = await this.resolveActor(step, actor)
+    this.support.assertStepPending(step)
+    const ctx = await this.support.resolveActor(step, actor)
 
     const updated = await this.prisma.$transaction(// eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (tx: any) => {
@@ -717,117 +689,4 @@ export class ApprovalActionsService {
 
   // ── 내부: 대상 로드 / 권한 / 상태 검증 ───────────────────────────────────────
 
-  private async loadActionTarget(
-    companyId: string,
-    documentId: string,
-    stepId: string,
-  ): Promise<{ document: DocumentRecord; step: StepRecord; steps: StepRecord[] }> {
-    const document = (await this.prisma.document.findFirst({
-      where: { id: documentId, companyId },
-      include: {
-        form: true,
-        approvalLines: { include: { steps: { orderBy: { stepOrder: 'asc' } } } },
-      },
-    })) as DocumentRecord | null
-
-    if (!document) {
-      throw new NotFoundException({
-        code: 'DOCUMENT_NOT_FOUND',
-        message: '문서를 찾을 수 없습니다.',
-      })
-    }
-    // HR 요청 문서는 /requests 승인 플로우 사용 — 이중 처리 방지
-    if (document.requestId) {
-      throw new BadRequestException({
-        code: 'DOCUMENT_MANAGED_BY_REQUEST',
-        message: 'HR 요청과 연동된 문서는 요청 관리에서 처리해 주세요.',
-      })
-    }
-
-    const steps = document.approvalLines.flatMap((line) => line.steps)
-    const step = steps.find((s) => s.id === stepId)
-    if (!step) {
-      throw new NotFoundException({
-        code: 'APPROVAL_STEP_NOT_FOUND',
-        message: '결재 단계를 찾을 수 없습니다.',
-      })
-    }
-
-    return { document, step, steps }
-  }
-
-  /**
-   * 행위자 권한: 해당 step의 assignee 본인이거나,
-   * 유효한 ProxySettings(principal=assignee, 오늘이 기간 내, isActive)를 보유한 대리인.
-   */
-  private async resolveActor(step: StepRecord, actor: JwtPayload): Promise<ActorContext> {
-    if (step.assigneeId === actor.employeeId) {
-      return { isProxy: false }
-    }
-
-    // 부서 step(부서협조/부서수신): 해당 부서 문서담당자(다중) 누구나 처리 가능
-    if (DEPT_ROLES.includes(step.role) && step.organizationId) {
-      const isManager = await this.prisma.organizationDocManager.findFirst({
-        where: { organizationId: step.organizationId, employeeId: actor.employeeId },
-        select: { id: true },
-      })
-      if (isManager) {
-        return { isProxy: false }
-      }
-    }
-
-    const setting = await this.prisma.proxySettings.findFirst({
-      where: { principalId: step.assigneeId, proxyId: actor.employeeId, isActive: true },
-      orderBy: { createdAt: 'desc' },
-    })
-    if (!setting) {
-      throw new ForbiddenException({
-        code: 'APPROVAL_STEP_NOT_ASSIGNEE',
-        message: '해당 결재 단계의 처리 권한이 없습니다.',
-      })
-    }
-
-    const today = this.todayDateOnly()
-    if (setting.startDate > today || setting.endDate < today) {
-      throw new ForbiddenException({
-        code: 'APPROVAL_PROXY_EXPIRED',
-        message: '대리결재 기간이 아닙니다.',
-      })
-    }
-
-    return { isProxy: true }
-  }
-
-  private assertDocumentPending(document: DocumentRecord) {
-    if (document.status !== DocStatus.PENDING) {
-      throw new BadRequestException({
-        code: 'DOCUMENT_NOT_PENDING',
-        message: '진행중인 문서만 결재 처리할 수 있습니다.',
-      })
-    }
-  }
-
-  private assertStepPending(step: StepRecord) {
-    if (step.status !== StepStatus.PENDING) {
-      throw new BadRequestException({
-        code: 'APPROVAL_STEP_NOT_CURRENT',
-        message: '현재 처리 차례인 결재 단계가 아닙니다.',
-      })
-    }
-  }
-
-  private assertStepRole(step: StepRecord, roles: string[]) {
-    if (!roles.includes(step.role)) {
-      throw new BadRequestException({
-        code: 'APPROVAL_STEP_ROLE_MISMATCH',
-        message: '해당 결재 단계에서 수행할 수 없는 작업입니다.',
-      })
-    }
-  }
-
-  /** @db.Date 비교용 — 오늘 00:00 UTC */
-  private todayDateOnly(): Date {
-    const now = new Date()
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-  }
 }

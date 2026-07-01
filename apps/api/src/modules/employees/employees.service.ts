@@ -1,7 +1,6 @@
 import {
   Injectable,
   Logger,
-  NotFoundException,
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common'
@@ -13,13 +12,16 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { CompanySettingsService } from '../companies/company-settings.service'
 import { MailService } from '../mail/mail.service'
-import { AccessLevel, ACCESS_LEVEL_HIERARCHY } from '@ablework/shared-constants'
+import { AccessLevel } from '@ablework/shared-constants'
 import { CreateEmployeeDto, type BulkCreateEmployeeDto } from './dto/create-employee.dto'
 import { UpdateEmployeeDto } from './dto/update-employee.dto'
 import { EmployeeFilterDto } from './dto/employee-filter.dto'
 import { CreateWageInfoDto } from '../wage-info/dto/create-wage-info.dto'
 import { EVENTS } from '../../events/domain-events'
 import { AuditService } from '../audit/audit.service'
+import { EmployeePermissionService } from './employee-permission.service'
+import { EmployeeWageService } from './employee-wage.service'
+import { EmployeeQueryService } from './employee-query.service'
 
 // 계정 설정(초대) 토큰 유효기간 — 대량 등록 직원이 메일을 늦게 열어도 되도록 7일
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -35,116 +37,58 @@ export class EmployeesService {
     private readonly settingsService: CompanySettingsService,
     private readonly audit: AuditService,
     private readonly mail: MailService,
+    private readonly permission: EmployeePermissionService,
+    private readonly wage: EmployeeWageService,
+    private readonly queryService: EmployeeQueryService,
   ) {}
 
+  // ── 조회(EmployeeQueryService) · 근로정보(EmployeeWageService) · 권한(EmployeePermissionService) 위임 ──
+
+  findAll(companyId: string, filter: EmployeeFilterDto, requester: JwtPayload) {
+    return this.queryService.findAll(companyId, filter, requester)
+  }
+
+  findOne(companyId: string, id: string, requester: JwtPayload) {
+    return this.queryService.findOne(companyId, id, requester)
+  }
+
+  findWageInfos(companyId: string, employeeId: string, requester: JwtPayload) {
+    return this.wage.findWageInfos(companyId, employeeId, requester)
+  }
+
+  createWageInfo(companyId: string, employeeId: string, dto: CreateWageInfoDto, requester: JwtPayload) {
+    return this.wage.createWageInfo(companyId, employeeId, dto, requester)
+  }
+
+  updateWageInfo(
+    companyId: string,
+    employeeId: string,
+    wageId: string,
+    dto: CreateWageInfoDto,
+    requester: JwtPayload,
+  ) {
+    return this.wage.updateWageInfo(companyId, employeeId, wageId, dto, requester)
+  }
+
+  deleteWageInfo(companyId: string, employeeId: string, wageId: string, requester: JwtPayload) {
+    return this.wage.deleteWageInfo(companyId, employeeId, wageId, requester)
+  }
+
+  guardOrgScope(
+    requester: JwtPayload,
+    employee: { id: string; organizations: { organizationId: string }[] },
+  ) {
+    return this.permission.guardOrgScope(requester, employee)
+  }
+
   // ── 목록 조회 ───────────────────────────────────────────────────────────────
-
-  async findAll(companyId: string, filter: EmployeeFilterDto, requester: JwtPayload) {
-    const {
-      search,
-      organizationId,
-      positionId,
-      organizationIds,
-      positionIds,
-      excludeSuperAdmin,
-      isActive,
-      page,
-      limit,
-    } = filter
-    const skip = (page - 1) * limit
-
-    // ORG_ADMIN은 자신의 조직 소속 직원만 볼 수 있다
-    const orgScope = await this.resolveOrgScope(requester)
-
-    // 조직/직위 조건은 모두 organizations/positions 관계를 참조하므로
-    // 단일 객체로 spread하면 키가 충돌해 마지막 조건만 남는다.
-    // AND 배열로 합쳐 orgScope(보안)·조직 필터·직위 필터가 모두 적용되도록 한다.
-    const and: Record<string, unknown>[] = []
-    if (orgScope) {
-      and.push({ organizations: { some: { organizationId: { in: orgScope } } } })
-    }
-    const orgIds = organizationIds?.length ? organizationIds : organizationId ? [organizationId] : null
-    if (orgIds) {
-      and.push({ organizations: { some: { organizationId: { in: orgIds } } } })
-    }
-    const posIds = positionIds?.length ? positionIds : positionId ? [positionId] : null
-    if (posIds) {
-      and.push({ positions: { some: { positionId: { in: posIds } } } })
-    }
-
-    const where: Record<string, unknown> = {
-      companyId,
-      ...(isActive !== undefined && { isActive }),
-      // 인사관리 목록 전용: 최고관리자 제외 (별도 관계 키와 충돌 없어 직접 지정)
-      ...(excludeSuperAdmin && { accessLevel: { not: AccessLevel.SUPER_ADMIN } }),
-      ...(and.length > 0 && { AND: and }),
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { phone: { contains: search } },
-          { employeeNumber: { contains: search } },
-        ],
-      }),
-    }
-
-    const [items, total] = await Promise.all([
-      this.prisma.employee.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          user: { select: { email: true } },
-          organizations: {
-            include: { organization: { select: { id: true, name: true } } },
-          },
-          positions: {
-            include: { position: { select: { id: true, name: true, color: true } } },
-          },
-        },
-      }),
-      this.prisma.employee.count({ where }),
-    ])
-
-    return { items, total, page, limit }
-  }
-
-  // ── 단일 조회 ───────────────────────────────────────────────────────────────
-
-  async findOne(companyId: string, id: string, requester: JwtPayload) {
-    const employee = await this.prisma.employee.findFirst({
-      where: { id, companyId },
-      include: {
-        user: { select: { email: true } },
-        organizations: {
-          include: { organization: { select: { id: true, name: true } } },
-        },
-        positions: {
-          include: { position: { select: { id: true, name: true, color: true } } },
-        },
-        wageInfos: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
-      },
-    })
-
-    if (!employee) {
-      throw new NotFoundException({
-        code: 'EMPLOYEE_NOT_FOUND',
-        message: '직원을 찾을 수 없습니다.',
-      })
-    }
-
-    await this.guardOrgScope(requester, employee)
-    return employee
-  }
-
-  // ── 직원 등록 ───────────────────────────────────────────────────────────────
 
   async create(companyId: string, dto: CreateEmployeeDto, requester?: JwtPayload) {
     const { email, initialPassword, organizationIds, primaryOrganizationId, positionIds, joinedAt, ...rest } =
       dto
 
     // 조직이 같은 회사 소속인지 확인
-    await this.validateOrganizationsBelongToCompany(companyId, organizationIds)
+    await this.permission.validateOrganizationsBelongToCompany(companyId, organizationIds)
 
     // 같은 회사에 같은 이메일(계정)의 직원이 이미 있으면:
     //  - 재직 중: 중복 등록 차단
@@ -437,13 +381,13 @@ export class EmployeesService {
   // ── 직원 수정 ───────────────────────────────────────────────────────────────
 
   async update(companyId: string, id: string, dto: UpdateEmployeeDto, requester: JwtPayload) {
-    const existing = await this.assertEmployee(companyId, id)
-    await this.guardOrgScope(requester, existing)
-    this.guardUpdatePermission(requester, id, dto, existing.accessLevel)
+    const existing = await this.permission.assertEmployee(companyId, id)
+    await this.permission.guardOrgScope(requester, existing)
+    this.permission.guardUpdatePermission(requester, id, dto, existing.accessLevel)
 
     // 본인 수정(이름/전화번호)은 권한 설정의 영향을 받지 않는다
     if (requester.employeeId !== id) {
-      await this.guardOrgAdminManagePermission(requester)
+      await this.permission.guardOrgAdminManagePermission(requester)
     }
 
     const { organizationIds, primaryOrganizationId, positionIds, joinedAt, resignedAt, ...rest } = dto
@@ -473,7 +417,7 @@ export class EmployeesService {
       }
 
       if (organizationIds) {
-        await this.validateOrganizationsBelongToCompany(companyId, organizationIds)
+        await this.permission.validateOrganizationsBelongToCompany(companyId, organizationIds)
         await tx.employeeOrganization.deleteMany({ where: { employeeId: id } })
         await tx.employeeOrganization.createMany({
           data: organizationIds.map((orgId) => ({
@@ -505,9 +449,9 @@ export class EmployeesService {
     resignedAt: string | undefined,
     requester: JwtPayload,
   ) {
-    const existing = await this.assertEmployee(companyId, id)
-    await this.guardOrgScope(requester, existing)
-    await this.guardOrgAdminManagePermission(requester)
+    const existing = await this.permission.assertEmployee(companyId, id)
+    await this.permission.guardOrgScope(requester, existing)
+    await this.permission.guardOrgAdminManagePermission(requester)
 
     if (!existing.isActive) {
       throw new BadRequestException({
@@ -559,9 +503,9 @@ export class EmployeesService {
   // ── 재활성화 ────────────────────────────────────────────────────────────────
 
   async activate(companyId: string, id: string, requester: JwtPayload) {
-    const existing = await this.assertEmployee(companyId, id)
-    await this.guardOrgScope(requester, existing)
-    await this.guardOrgAdminManagePermission(requester)
+    const existing = await this.permission.assertEmployee(companyId, id)
+    await this.permission.guardOrgScope(requester, existing)
+    await this.permission.guardOrgAdminManagePermission(requester)
 
     if (existing.isActive) {
       throw new BadRequestException({
@@ -587,8 +531,8 @@ export class EmployeesService {
    * 부속 관계(조직·직위·커스텀필드·휴가잔액·근로정보)는 함께 정리한다.
    */
   async remove(companyId: string, id: string, requester: JwtPayload, force = false) {
-    const existing = await this.assertEmployee(companyId, id)
-    await this.guardOrgScope(requester, existing)
+    const existing = await this.permission.assertEmployee(companyId, id)
+    await this.permission.guardOrgScope(requester, existing)
 
     if (force) {
       // 이력까지 모두 삭제 (강제). 트랜잭션이므로 중간 실패 시 전체 롤백되어 데이터가 손상되지 않는다.
@@ -728,8 +672,8 @@ export class EmployeesService {
   // ── 기기 초기화 ─────────────────────────────────────────────────────────────
 
   async resetDevice(companyId: string, id: string, requester: JwtPayload) {
-    const existing = await this.assertEmployee(companyId, id)
-    await this.guardOrgScope(requester, existing)
+    const existing = await this.permission.assertEmployee(companyId, id)
+    await this.permission.guardOrgScope(requester, existing)
 
     return this.prisma.employee.update({
       where: { id },
@@ -745,9 +689,9 @@ export class EmployeesService {
    * 권한: GENERAL_ADMIN 이상은 무조건, ORG_ADMIN은 조직 스코프 + 관리 권한 설정이 켜진 경우.
    */
   async resetPassword(companyId: string, id: string, newPassword: string, requester: JwtPayload) {
-    const existing = await this.assertEmployee(companyId, id)
-    await this.guardOrgScope(requester, existing)
-    await this.guardOrgAdminManagePermission(requester)
+    const existing = await this.permission.assertEmployee(companyId, id)
+    await this.permission.guardOrgScope(requester, existing)
+    await this.permission.guardOrgAdminManagePermission(requester)
 
     if (!existing.userId) {
       throw new BadRequestException({
@@ -765,263 +709,4 @@ export class EmployeesService {
     return { success: true }
   }
 
-  // ── 근로정보 이력 ───────────────────────────────────────────────────────────
-
-  async findWageInfos(companyId: string, employeeId: string, requester: JwtPayload) {
-    const existing = await this.assertEmployee(companyId, employeeId)
-    await this.guardOrgScope(requester, existing)
-
-    return this.prisma.wageInfo.findMany({
-      where: { employeeId },
-      orderBy: { effectiveFrom: 'desc' },
-    })
-  }
-
-  // ── 근로정보 등록 ───────────────────────────────────────────────────────────
-
-  async createWageInfo(
-    companyId: string,
-    employeeId: string,
-    dto: CreateWageInfoDto,
-    requester: JwtPayload,
-  ) {
-    const existing = await this.assertEmployee(companyId, employeeId)
-    await this.guardOrgScope(requester, existing)
-
-    return this.prisma.wageInfo.create({
-      data: {
-        employeeId,
-        hourlyWage: dto.hourlyWage,
-        contractedWorkDays: dto.contractedWorkDays,
-        contractedHoursPerWeek: dto.contractedHoursPerWeek,
-        weeklyPaidHolidayDay: dto.weeklyPaidHolidayDay ?? null,
-        maxHoursPerWeek: dto.maxHoursPerWeek ?? 52,
-        effectiveFrom: new Date(dto.effectiveFrom),
-      },
-    })
-  }
-
-  // ── 근로정보 수정/삭제 ──────────────────────────────────────────────────────
-
-  private async assertWageInfo(employeeId: string, wageId: string) {
-    const wage = await this.prisma.wageInfo.findFirst({ where: { id: wageId, employeeId } })
-    if (!wage) {
-      throw new NotFoundException({
-        code: 'WAGE_INFO_NOT_FOUND',
-        message: '근로정보를 찾을 수 없습니다.',
-      })
-    }
-    return wage
-  }
-
-  async updateWageInfo(
-    companyId: string,
-    employeeId: string,
-    wageId: string,
-    dto: CreateWageInfoDto,
-    requester: JwtPayload,
-  ) {
-    const existing = await this.assertEmployee(companyId, employeeId)
-    await this.guardOrgScope(requester, existing)
-    await this.assertWageInfo(employeeId, wageId)
-
-    return this.prisma.wageInfo.update({
-      where: { id: wageId },
-      data: {
-        hourlyWage: dto.hourlyWage,
-        contractedWorkDays: dto.contractedWorkDays,
-        contractedHoursPerWeek: dto.contractedHoursPerWeek,
-        weeklyPaidHolidayDay: dto.weeklyPaidHolidayDay ?? null,
-        maxHoursPerWeek: dto.maxHoursPerWeek ?? 52,
-        effectiveFrom: new Date(dto.effectiveFrom),
-      },
-    })
-  }
-
-  async deleteWageInfo(
-    companyId: string,
-    employeeId: string,
-    wageId: string,
-    requester: JwtPayload,
-  ) {
-    const existing = await this.assertEmployee(companyId, employeeId)
-    await this.guardOrgScope(requester, existing)
-    await this.assertWageInfo(employeeId, wageId)
-
-    await this.prisma.wageInfo.delete({ where: { id: wageId } })
-    return { success: true }
-  }
-
-  // ── 내부 헬퍼 ───────────────────────────────────────────────────────────────
-
-  /**
-   * 직원 수정 권한 검증 (보안):
-   * - 본인: 이름/전화번호만 수정 가능
-   * - 타인: ORG_ADMIN 이상만 수정 가능
-   * - accessLevel 변경: GENERAL_ADMIN 이상 + 본인 권한 변경 금지 + 자신과 같거나 높은 권한 부여 금지
-   */
-  private guardUpdatePermission(
-    requester: JwtPayload,
-    targetId: string,
-    dto: UpdateEmployeeDto,
-    currentAccessLevel?: string,
-  ) {
-    const requesterLevel = ACCESS_LEVEL_HIERARCHY[requester.accessLevel]
-    const isSelf = requester.employeeId === targetId
-
-    if (isSelf) {
-      // 본인 권한(accessLevel)을 현재와 다른 값으로 바꾸려는 시도는 권한 셀프 상승 위험 — 항상 금지
-      if (dto.accessLevel !== undefined && dto.accessLevel !== currentAccessLevel) {
-        throw new ForbiddenException({
-          code: 'EMPLOYEE_SELF_LEVEL_FORBIDDEN',
-          message: '본인의 권한(액세스 레벨)은 변경할 수 없습니다.',
-        })
-      }
-      // 관리자(ORG_ADMIN 이상)는 본인의 관리 정보(조직·직위·고용형태 등)도 수정 가능.
-      // 일반 직원은 셀프서비스로 이름/전화번호만 수정 가능.
-      if (requesterLevel < ACCESS_LEVEL_HIERARCHY[AccessLevel.ORG_ADMIN]) {
-        const SELF_EDITABLE_FIELDS = new Set(['name', 'phone'])
-        const forbidden = Object.entries(dto)
-          .filter(([key, value]) => value !== undefined && !SELF_EDITABLE_FIELDS.has(key))
-          .map(([key]) => key)
-        if (forbidden.length > 0) {
-          throw new ForbiddenException({
-            code: 'EMPLOYEE_SELF_UPDATE_FORBIDDEN',
-            message: `본인은 이름/전화번호만 수정할 수 있습니다. (불가 필드: ${forbidden.join(', ')})`,
-          })
-        }
-      }
-      return
-    }
-
-    if (requesterLevel < ACCESS_LEVEL_HIERARCHY[AccessLevel.ORG_ADMIN]) {
-      throw new ForbiddenException({
-        code: 'EMPLOYEE_UPDATE_FORBIDDEN',
-        message: '직원 정보 수정 권한이 없습니다.',
-      })
-    }
-
-    if (dto.accessLevel !== undefined) {
-      if (requesterLevel < ACCESS_LEVEL_HIERARCHY[AccessLevel.GENERAL_ADMIN]) {
-        throw new ForbiddenException({
-          code: 'EMPLOYEE_ACCESS_LEVEL_FORBIDDEN',
-          message: '권한 변경은 GENERAL_ADMIN 이상만 가능합니다.',
-        })
-      }
-      if (ACCESS_LEVEL_HIERARCHY[dto.accessLevel] >= requesterLevel) {
-        throw new ForbiddenException({
-          code: 'EMPLOYEE_ACCESS_LEVEL_ESCALATION',
-          message: '자신과 같거나 높은 권한은 부여할 수 없습니다.',
-        })
-      }
-    }
-  }
-
-  /**
-   * 권한 설정(permission.org_admin_can_manage_employees, 기본 true)이 꺼져 있으면
-   * ORG_ADMIN의 직원 추가/수정/퇴사 처리를 차단한다.
-   */
-  private async guardOrgAdminManagePermission(requester: JwtPayload) {
-    if (requester.accessLevel !== AccessLevel.ORG_ADMIN) return
-
-    const canManage = await this.settingsService.get<boolean>(
-      requester.companyId,
-      'permission',
-      'org_admin_can_manage_employees',
-      true,
-    )
-
-    if (canManage === false) {
-      throw new ForbiddenException({
-        code: 'EMPLOYEE_MANAGE_PERMISSION_DENIED',
-        message: '조직관리자의 직원 관리 권한이 비활성화되어 있습니다.',
-      })
-    }
-  }
-
-  private async assertEmployee(companyId: string, id: string) {
-    const employee = await this.prisma.employee.findFirst({
-      where: { id, companyId },
-      include: {
-        organizations: { select: { organizationId: true } },
-      },
-    })
-    if (!employee) {
-      throw new NotFoundException({
-        code: 'EMPLOYEE_NOT_FOUND',
-        message: '직원을 찾을 수 없습니다.',
-      })
-    }
-    return employee
-  }
-
-  /**
-   * SUPER_ADMIN / GENERAL_ADMIN은 전체 접근 허용.
-   * ORG_ADMIN은 자신의 조직에 속한 직원만 접근 가능하다.
-   * EMPLOYEE는 본인 레코드만 접근 가능하다(동료 PII/임금 열람 차단).
-   */
-  async guardOrgScope(
-    requester: JwtPayload,
-    employee: { id: string; organizations: { organizationId: string }[] },
-  ) {
-    if (
-      requester.accessLevel === AccessLevel.SUPER_ADMIN ||
-      requester.accessLevel === AccessLevel.GENERAL_ADMIN
-    ) {
-      return
-    }
-
-    if (requester.accessLevel === AccessLevel.EMPLOYEE) {
-      if (requester.employeeId !== employee.id) {
-        throw new ForbiddenException('해당 직원에 대한 접근 권한이 없습니다.')
-      }
-      return
-    }
-
-    const requesterOrgs = await this.prisma.employeeOrganization.findMany({
-      where: { employeeId: requester.employeeId },
-      select: { organizationId: true },
-    })
-
-    const requesterOrgIds = new Set(
-      requesterOrgs.map((o: { organizationId: string }) => o.organizationId),
-    )
-    const targetOrgIds = employee.organizations.map((o) => o.organizationId)
-
-    const hasOverlap = targetOrgIds.some((orgId) => requesterOrgIds.has(orgId))
-    if (!hasOverlap) {
-      throw new ForbiddenException('해당 직원에 대한 접근 권한이 없습니다.')
-    }
-  }
-
-  /**
-   * ORG_ADMIN의 경우 소속 조직 ID 목록 반환, 그 외 null 반환.
-   */
-  private async resolveOrgScope(requester: JwtPayload): Promise<string[] | null> {
-    if (
-      requester.accessLevel === AccessLevel.SUPER_ADMIN ||
-      requester.accessLevel === AccessLevel.GENERAL_ADMIN
-    ) {
-      return null
-    }
-
-    const orgs = await this.prisma.employeeOrganization.findMany({
-      where: { employeeId: requester.employeeId },
-      select: { organizationId: true },
-    })
-
-    return orgs.map((o: { organizationId: string }) => o.organizationId)
-  }
-
-  private async validateOrganizationsBelongToCompany(companyId: string, orgIds: string[]) {
-    const count = await this.prisma.organization.count({
-      where: { id: { in: orgIds }, companyId },
-    })
-    if (count !== orgIds.length) {
-      throw new BadRequestException({
-        code: 'INVALID_ORGANIZATION',
-        message: '유효하지 않은 조직이 포함되어 있습니다.',
-      })
-    }
-  }
 }
