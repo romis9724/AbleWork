@@ -38,7 +38,7 @@ interface ShiftFormModalProps {
 }
 
 /**
- * 근무일정 추가/수정 모달 (god file 분할 · 항목 24).
+ * 근무일정 추가/수정 모달 (god file 분할 · 항목 25).
  * 상태·핸들러는 부모(ShiftsPage)가 소유하고 이 컴포넌트는 프레젠테이션만 담당한다.
  */
 export default function ShiftFormModal({

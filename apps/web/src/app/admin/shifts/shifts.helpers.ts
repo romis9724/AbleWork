@@ -1,4 +1,4 @@
-// 근무일정 화면 순수 날짜 유틸·상수·폼 타입 (god file 분할 · 항목 24).
+// 근무일정 화면 순수 날짜 유틸·상수·폼 타입 (god file 분할 · 항목 25).
 import type { ShiftType } from '@/lib/query/shifts'
 import type { Employee } from '@/lib/query/employees'
 import type { Organization } from '@/lib/query/organizations'

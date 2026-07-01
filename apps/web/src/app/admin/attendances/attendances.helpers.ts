@@ -1,4 +1,4 @@
-// 근태 관리 화면 순수 헬퍼·상수·타입 (god file 분할 · 항목 24).
+// 근태 관리 화면 순수 헬퍼·상수·타입 (god file 분할 · 항목 25).
 import type { BadgeKind } from '@/components/ab/atoms'
 import type { Attendance } from '@/lib/query/attendances'
 

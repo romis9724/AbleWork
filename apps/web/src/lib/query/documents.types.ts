@@ -1,4 +1,4 @@
-// 전자결재 도메인 타입 정의 (god file 분할 · 항목 24) — 쿼리 훅은 documents.ts 에서 소비.
+// 전자결재 도메인 타입 정의 (god file 분할 · 항목 25) — 쿼리 훅은 documents.ts 에서 소비.
 import type { DocumentFieldDef } from '@ablework/shared-constants'
 
 export type { DocumentFieldDef }
