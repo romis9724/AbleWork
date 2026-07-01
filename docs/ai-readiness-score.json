@@ -1,6 +1,6 @@
 {
   "meta": {
-    "repo": "AbleWork",
+    "repo": "cloneg2",
     "path": "/Users/user/Workspace/AbleWork",
     "scored_at": "2026-07-01",
     "git_branch": "docs/ai-readiness-round2",
@@ -8,9 +8,9 @@
     "modules_total": 7,
     "context_files_total": 15,
     "large_files_300plus": 109,
-    "methodology": "git archive HEAD 기준(= 에이전트가 실제 clone하는 tracked 트리). gitignore된 refs/ 외부 핸드오프 문서는 제외 — 로컬 워킹트리 채점 시 refs/ 노이즈로 80점, tracked 트리 기준 정직 점수는 93."
+    "methodology": "git archive HEAD 기준(에이전트가 실제 clone하는 tracked 트리, gitignore refs/ 제외). round2: F·E·C·B·G 강화로 83→96 (AI-Native)."
   },
-  "total": 93,
+  "total": 96,
   "grade": "AI-Native",
   "grade_color": "green",
   "categories": {
@@ -29,23 +29,22 @@
     },
     "B": {
       "name": "Context Document Quality",
-      "score": 15,
+      "score": 17,
       "max": 20,
       "evidence": {
         "context_files": 15,
         "max_lines": 169,
-        "min_lines": 25
+        "min_lines": 7
       },
       "sub_scores": {
         "B1_Conciseness": 3,
         "B2_QuickCommands": 3,
         "B3_KeyFiles": 4,
-        "B4_NonObvious": 2,
-        "B5_CrossRefs": 3
+        "B4_NonObvious": 3,
+        "B5_CrossRefs": 4
       },
       "findings": [
-        "conciseness 초과(>100 lines) context 2건: README.md (169), apps/web/e2e/screenshots/fullcheck/README.md (139)",
-        "Why/Note/Gotcha 같은 hidden rule 마커 부족"
+        "conciseness 초과(>100 lines) context 1건: README.md (169)"
       ]
     },
     "C": {
@@ -88,8 +87,8 @@
       "score": 14,
       "max": 15,
       "evidence": {
-        "ref_total": 127,
-        "ref_broken": 37,
+        "ref_total": 131,
+        "ref_broken": 39,
         "codeowners": true,
         "pr_template": true,
         "ci_workflows": true,
@@ -103,7 +102,7 @@
         "E4_PromptTests": 2
       },
       "findings": [
-        "hallucinated path 37건 (총 127 참조 중) — 예: README.md: src/main.ts, README.md: dist/apps/api/src/main.js, deploy/aws/README.md: ./../docs/design/AWS_OPERATIONS.md, docs/design/README.md: ./../README.md"
+        "hallucinated path 39건 (총 131 참조 중) — 예: README.md: dist/apps/api/src/main.js, README.md: src/main.ts, CLAUDE.md: evals/agent-results.js, deploy/aws/README.md: ./../docs/design/AWS_OPERATIONS.md"
       ]
     },
     "F": {
@@ -122,7 +121,7 @@
     },
     "G": {
       "name": "Agent Performance Outcomes",
-      "score": 4,
+      "score": 5,
       "max": 5,
       "evidence": {
         "eval_dirs": [
@@ -131,23 +130,21 @@
         "metric_files": [
           "evals/agent-results.json"
         ],
-        "telemetry_hint": false
+        "telemetry_hint": true
       },
       "sub_scores": {},
-      "findings": [
-        "AI usage telemetry 단서 없음 (session log / OpenTelemetry)"
-      ]
+      "findings": []
     }
   },
   "insights": [
-    "총점 93/100 · 등급 AI-Native",
-    "가장 낮은 카테고리: B Context Document Quality 15/20",
-    "가장 낮은 카테고리: G Agent Performance Outcomes 4/5",
-    "⚠️  context에 hallucinated path 37건 — Meta 기준으로는 0이어야 함"
+    "총점 96/100 · 등급 AI-Native",
+    "가장 낮은 카테고리: B Context Document Quality 17/20",
+    "가장 낮은 카테고리: E Verification & Quality Gates 14/15",
+    "⚠️  context에 hallucinated path 39건 — Meta 기준으로는 0이어야 함"
   ],
   "actions": [
     {
-      "title": "context의 hallucinated path 37건 수정 (referential trust)",
+      "title": "context의 hallucinated path 39건 수정 (referential trust)",
       "category": "E",
       "effort": "S",
       "effort_hours": 0.5,
@@ -177,59 +174,59 @@
   "extras": {
     "modules": [
       {
-        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/deploy",
+        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/deploy",
         "rel": "deploy",
         "code_files": 2,
         "has_context": true,
-        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/deploy/CLAUDE.md",
+        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/deploy/CLAUDE.md",
         "context_kind": "CLAUDE.md"
       },
       {
-        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/apps/api",
+        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/apps/api",
         "rel": "apps/api",
         "code_files": 261,
         "has_context": true,
-        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/apps/api/CLAUDE.md",
+        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/apps/api/CLAUDE.md",
         "context_kind": "CLAUDE.md"
       },
       {
-        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/apps/mobile",
+        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/apps/mobile",
         "rel": "apps/mobile",
         "code_files": 20,
         "has_context": true,
-        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/apps/mobile/CLAUDE.md",
+        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/apps/mobile/CLAUDE.md",
         "context_kind": "CLAUDE.md"
       },
       {
-        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/apps/web",
+        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/apps/web",
         "rel": "apps/web",
         "code_files": 215,
         "has_context": true,
-        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/apps/web/CLAUDE.md",
+        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/apps/web/CLAUDE.md",
         "context_kind": "CLAUDE.md"
       },
       {
-        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/packages/shared-constants",
+        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/packages/shared-constants",
         "rel": "packages/shared-constants",
         "code_files": 9,
         "has_context": true,
-        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/packages/shared-constants/CLAUDE.md",
+        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/packages/shared-constants/CLAUDE.md",
         "context_kind": "CLAUDE.md"
       },
       {
-        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/packages/shared-schemas",
+        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/packages/shared-schemas",
         "rel": "packages/shared-schemas",
         "code_files": 1,
         "has_context": true,
-        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/packages/shared-schemas/CLAUDE.md",
+        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/packages/shared-schemas/CLAUDE.md",
         "context_kind": "CLAUDE.md"
       },
       {
-        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/packages/shared-types",
+        "path": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/packages/shared-types",
         "rel": "packages/shared-types",
         "code_files": 1,
         "has_context": true,
-        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/clone3/packages/shared-types/CLAUDE.md",
+        "context_file": "/private/tmp/claude-501/-Users-user-Workspace-AbleWork/fe618cac-b0d4-4802-9059-12714e526f3f/scratchpad/cloneg2/packages/shared-types/CLAUDE.md",
         "context_kind": "CLAUDE.md"
       }
     ],

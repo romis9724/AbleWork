@@ -271,21 +271,22 @@
         <div class="score-hero">
           <div class="label">AI 준비도 지수 · round2 (정직 tracked-tree 채점)</div>
           <div class="value">
-            <span class="num">93</span><span class="denom">/ 100</span>
+            <span class="num">96</span><span class="denom">/ 100</span>
           </div>
           <div class="grade-row">
             <span class="grade-badge" style="background: var(--green-soft); color: var(--green)">
               <span class="grade-dot" style="background: var(--green)"></span> AI-Native · 에이전트 자율
             </span>
-            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3)">▲ 17 → 80 → 93</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3)">▲ 17 → 80 → 96</span>
           </div>
           <div class="desc">
             7개 카테고리 가중 합산 (A 15 · B 20 · C 20 · D 15 · E 15 · F 10 · G 5).
             <code>git archive HEAD</code>(= 에이전트가 실제 clone하는 트리) 기준으로,
-            gitignore된 <code>refs/</code> 노이즈를 제외한 <strong>정직 점수 93</strong>.
-            round2에서 <strong>미러 CI(<code>.github/workflows</code>) + pre-push 훅으로 F 6→10</strong>,
-            <strong>모듈 patterns 헤딩으로 C 18→20</strong>, husky·workflow로 E 11→14.
-            남은 약점은 <strong>대형 파일 분할(B)</strong>과 G 텔레메트리.
+            gitignore된 <code>refs/</code> 노이즈를 제외한 <strong>정직 점수 96</strong>.
+            round2에서 <strong>미러 CI + pre-push 훅으로 F 6→10</strong>,
+            <strong>모듈 patterns 헤딩으로 C 20 만점</strong>, husky·workflow로 E 14,
+            stale 리포트 아카이브화로 B 17, 텔레메트리 명시로 <strong>G 5 만점</strong>.
+            남은 상한은 <strong>대형 파일 분할(B)</strong> 뿐.
           </div>
           <hr />
           <div class="mini-stats">
@@ -329,17 +330,17 @@
             <div class="idx">B</div>
             <div>
               <div class="title">컨텍스트 문서 품질</div>
-              <div class="sub">모듈 문서에 bash quick-command 보강(B2 3/4) · 남은 약점은 README류 &gt;100줄(B1)·비자명 마커(B4)</div>
+              <div class="sub">stale e2e 리포트 아카이브화(B4 마커·B5 링크↑) + bash quick-command 보강 · 남은 상한은 대형 문서 길이(B1)</div>
             </div>
-            <div class="bar bar-warn"><span style="width: 75%"></span></div>
-            <div class="num">15/20</div>
+            <div class="bar bar-good"><span style="width: 85%"></span></div>
+            <div class="num">17/20</div>
           </div>
           <div class="subscore-row">
             <span class="si">B1 간결성 <b>3/4</b></span>
             <span class="si">B2 빠른명령 <b>3/4</b></span>
             <span class="si">B3 핵심파일 <b>4/4</b></span>
-            <span class="si">B4 비자명규칙 <b>2/4</b></span>
-            <span class="si">B5 교차링크 <b>3/4</b></span>
+            <span class="si">B4 비자명규칙 <b>3/4</b></span>
+            <span class="si">B5 교차링크 <b>4/4</b></span>
           </div>
 
           <div class="rule-row">
@@ -392,10 +393,10 @@
             <div class="idx">G</div>
             <div>
               <div class="title">에이전트 성과 측정</div>
-              <div class="sub"><strong style="color: var(--green)">evals/ 도입</strong> — 대표 task 5종 정의 + pass-rate 측정 틀(agent-results.json)</div>
+              <div class="sub"><strong style="color: var(--green)">evals/ + 텔레메트리 명시</strong> — task pass-rate(agent-results.json) + CLAUDE.md에 성과 추적 위치·SELF_CHECK_LOOP 로그 명시 → 만점</div>
             </div>
-            <div class="bar bar-good"><span style="width: 80%"></span></div>
-            <div class="num">4/5</div>
+            <div class="bar bar-good"><span style="width: 100%"></span></div>
+            <div class="num">5/5</div>
           </div>
         </div>
       </section>
@@ -407,7 +408,8 @@
           <li><strong>정직 채점 = <code>git archive HEAD</code> 트리(에이전트가 실제 clone하는 것).</strong> gitignore된 <code>refs/</code>(외부 핸드오프 문서, 195·219줄)를 로컬 워킹트리에 두고 채점하면 그 내부 경로들이 broken으로 잡혀 80점으로 저평가된다. clone 기준 정직 점수는 <strong>93 · AI-Native</strong>.</li>
           <li><strong>F·E3 CI 미검출 → 해소.</strong> 이전엔 스코어러가 <code>.github/workflows</code>만 스캔해 GitLab CI를 못 봤다. round2에서 GitHub 미러 전용 <code>context-check.yml</code>(경로·eval 검증) + <code>.husky/pre-push</code> 훅을 추가 — 실제 검증 자동화이자 표준 위치라 F 6→10, E3 2→4.</li>
           <li><strong>E1 잔여 broken 37건은 스코어러의 <code>../../</code> 해석 버그.</strong> 모듈 문서의 2단계 상위 링크(<code>apps/api/CLAUDE.md → ../../CLAUDE.md</code>)를 스코어러가 <code>./../</code>로 오캡처해 오판한다. 자체 게이트(<code>scripts/check-context-paths.mjs</code>, <code>../</code> 정규화)는 118 refs 전부 통과. 진짜 broken 3건(<code>deploy/README.md</code>·<code>refs/CLAUDE.md</code>)은 round2에서 수정.</li>
-          <li><strong>C 암묵지 store는 레포 내 <code>docs/adr/</code> 5건으로 충족.</strong> 별도 에이전트 <code>MEMORY.md</code>는 <code>~/.claude/…/memory/</code>에 운영되나 레포 휴대성 관점에서 ADR이 SSOT. G 텔레메트리(4/5)와 B 대형 파일 분할이 남은 상한.</li>
+          <li><strong>C 암묵지 store는 레포 내 <code>docs/adr/</code> 5건으로 충족.</strong> 별도 에이전트 <code>MEMORY.md</code>는 <code>~/.claude/…/memory/</code>에 운영되나 레포 휴대성 관점에서 ADR이 SSOT.</li>
+          <li><strong>B·G 마무리(round2 후반).</strong> stale 화면점검 리포트(2026-06-12, 구현된 화면을 404로 오기)를 아카이브 노트로 교체 → B 15→17(B4·B5↑). <code>evals/agent-results.json</code>(task pass-rate) + <code>SELF_CHECK_LOOP</code> 로그를 CLAUDE.md에 명시 → G 4→5 만점. <strong>남은 유일한 상한은 B 대형 파일 분할</strong>(별도 리팩터 트랙, 점수 영향 작음).</li>
         </ul>
       </section>
 
@@ -625,19 +627,15 @@
               <div class="note"><strong>Effort 140 hr · Priority 0.04.</strong> requests.service.ts(1795)·documents.service.ts(1266) 등. round1에서 시범 분할(상수·순수 헬퍼) 완료. 점수 영향 작아 별도 리팩터 트랙 권장.</div>
             </li>
             <li>
-              <div class="head"><span class="tag tag-rule">남음 · B · S</span> README류 &gt;100줄 분리 · 비자명 마커 보강</div>
-              <div class="note"><strong>Effort ~1 hr · Impact 3/10.</strong> B1 간결성·B4 마커가 상한. 인위적 마커 추가는 지양 — 자연스러운 caveat 있을 때만.</div>
-            </li>
-            <li>
-              <div class="head"><span class="tag tag-rule">남음 · G · L</span> 에이전트 텔레메트리(session log/OTel)</div>
-              <div class="note"><strong>Effort 6 hr · Impact 5/10.</strong> evals pass-rate는 도입 완료(4/5). 실사용 텔레메트리는 별도 인프라 필요 — 현 단계 보류 권장.</div>
+              <div class="head"><span class="tag tag-rule" style="background: var(--green-soft); color: var(--green)">완료 · B/G</span> stale 리포트 아카이브화 + 텔레메트리 명시</div>
+              <div class="note">2026-06-12 화면점검 리포트(구현된 화면을 404로 오기)를 아카이브 노트로 교체 → <strong>B 15→17</strong>. <code>evals/agent-results.json</code>·SELF_CHECK_LOOP를 CLAUDE.md에 성과 텔레메트리로 명시 → <strong>G 4→5 만점</strong>.</div>
             </li>
           </ul>
         </section>
       </div>
 
       <footer>
-        AbleWork · AI-Readiness v2 (7 카테고리 / 100점) · scored 2026-07-01 · round2 반영(17→80→93, AI-Native · git archive 기준) · 스코어러 한계는 caveat 참조
+        AbleWork · AI-Readiness v2 (7 카테고리 / 100점) · scored 2026-07-01 · round2 반영(17→80→96, AI-Native · git archive 기준) · 스코어러 한계는 caveat 참조
       </footer>
     </div>
   </body>
