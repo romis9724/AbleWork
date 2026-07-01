@@ -9,6 +9,7 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "check:context-paths": "node scripts/check-context-paths.mjs",
+    "check:evals": "node scripts/check-evals.mjs",
     "format": "turbo format",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",

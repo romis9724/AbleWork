@@ -271,20 +271,20 @@
         <div class="score-hero">
           <div class="label">AI 준비도 지수 · 후속 전체 반영</div>
           <div class="value">
-            <span class="num">76</span><span class="denom">/ 100</span>
+            <span class="num">80</span><span class="denom">/ 100</span>
           </div>
           <div class="grade-row">
             <span class="grade-badge" style="background: var(--green-soft); color: var(--green)">
               <span class="grade-dot" style="background: var(--green)"></span> AI-Ready · 에이전트 친화
             </span>
-            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3)">▲ 17 → 76 (+59)</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3)">▲ 17 → 80 (+63)</span>
           </div>
           <div class="desc">
             7개 카테고리 가중 합산 (A 15 · B 20 · C 20 · D 15 · E 15 · F 10 · G 5).
-            <strong>Quick wins(E1·F·A) + 후속(C·D·B·G)</strong> 전체 반영 후 17→76,
-            <strong>Meta AI-Ready 기준(75+) 도달</strong>. 모듈 CLAUDE.md 8/8(A 만점),
-            ADR 5건으로 C 18, ARCHITECTURE+mermaid로 D 13. 남은 약점은
-            <strong>E 검증(6/15 — CODEOWNERS/eval 자동화)</strong>과 대형 파일 분할(B).
+            <strong>Quick wins(E1·F·A) + 후속(C·D·B·G) + E 강화</strong> 반영 후 17→80.
+            모듈 CLAUDE.md 8/8(A 만점), ADR 5건(C 18), ARCHITECTURE+mermaid(D 13),
+            CODEOWNERS·MR 템플릿·eval CI로 E 6→10. 남은 약점은
+            <strong>대형 파일 분할(B, god file 56개)</strong>과 F 자동화 여지.
           </div>
           <hr />
           <div class="mini-stats">
@@ -294,7 +294,7 @@
             </div>
             <div class="mini-stat">
               <div class="k">ADR · CI 게이트</div>
-              <div class="v" style="color: var(--green)">5 · ON</div>
+              <div class="v" style="color: var(--green)">5 · 2</div>
             </div>
             <div class="mini-stat">
               <div class="k">300줄 초과 파일</div>
@@ -365,16 +365,16 @@
             <div class="idx">E</div>
             <div>
               <div class="title">검증 & 품질 게이트</div>
-              <div class="sub">CI 경로 검증 게이트 + 경로 정정 반영 · CODEOWNERS/eval 자동화는 후속</div>
+              <div class="sub"><strong style="color: var(--green)">CODEOWNERS + MR/PR 템플릿 + eval CI</strong> · 경로/eval 검증 게이트 · 남은 것은 CI 커버리지</div>
             </div>
-            <div class="bar bar-warn"><span style="width: 40%"></span></div>
-            <div class="num">6/15</div>
+            <div class="bar bar-warn"><span style="width: 67%"></span></div>
+            <div class="num">10/15</div>
           </div>
           <div class="subscore-row">
-            <span class="si">E1 참조정확도 <b>↑</b></span>
-            <span class="si">E2 비평인프라 <b>0/3</b></span>
-            <span class="si">E3 검증명령 <b>2/3</b></span>
-            <span class="si">E4 프롬프트테스트 <b>evals/ 도입</b></span>
+            <span class="si">E1 참조정확도 <b>게이트 clean</b></span>
+            <span class="si">E2 비평인프라 <b>4/4</b></span>
+            <span class="si">E3 검증명령 <b>2/4</b></span>
+            <span class="si">E4 프롬프트테스트 <b>evals+CI</b></span>
           </div>
 
           <div class="rule-row">
@@ -403,7 +403,7 @@
       <section class="caveat">
         <h3>전체 후속 반영본 · 스코어러 한계 (표본 검증 결과 — 점수 해석 시 보정)</h3>
         <ul>
-          <li><strong>이 지도는 Quick wins(E1·F·A) + 후속(C·D·B·G) 전체 적용 후 상태(76점, AI-Ready).</strong> 경로 정정 + <code>scripts/check-context-paths.mjs</code> CI 게이트 + 모듈 CLAUDE.md 8/8 + ADR 5건 + <code>docs/ARCHITECTURE.md</code>(mermaid) + 루트 압축 + <code>evals/</code>를 반영. 남은 E(CODEOWNERS/eval 자동화)와 대형 파일 분할(B)은 다음 단계.</li>
+          <li><strong>이 지도는 전체 개선(E1·F·A·C·D·B·G) + E 강화 적용 후 상태(80점, AI-Ready).</strong> 경로/eval CI 게이트(<code>scripts/check-context-paths.mjs</code>·<code>scripts/check-evals.mjs</code>) + 모듈 CLAUDE.md 8/8 + ADR 5건 + <code>docs/ARCHITECTURE.md</code>(mermaid) + 루트 압축 + <code>evals/</code> + CODEOWNERS·MR/PR 템플릿을 반영. 남은 것은 대형 파일 분할(B)과 CI 커버리지(E/F).</li>
           <li><strong>E1 경로 참조 163건의 상당수는 false positive.</strong>
             루트 <code>CLAUDE.md</code>가 모노레포 하위(예: <code>apps/api</code>) 기준 상대경로로 표기 — <code>src/events/domain-events.ts</code>는 실제로 <code>apps/api/src/events/domain-events.ts</code>로 <strong>존재</strong>한다. 스코어러는 레포 루트 기준으로만 검증해 깨진 것으로 오판. 진짜 액션은 "경로를 레포 루트 기준 절대표기로 통일"이며, 실제 깨진 링크는 런타임 생성물(<code>docs/loop/STATE.md</code> 등) 소수.</li>
           <li><strong>E3/F의 CI 미검출.</strong> 스코어러는 <code>.github/workflows</code>만 스캔하지만, 이 레포는 GitLab로 이전돼 <code>.gitlab-ci.yml</code>에 typecheck·unit·integration 게이트가 실재한다. E3·F는 실제로 표시값보다 높게 봐야 한다.</li>
@@ -645,7 +645,7 @@
       </div>
 
       <footer>
-        AbleWork · AI-Readiness v2 (7 카테고리 / 100점) · scored 2026-07-01 · Quick wins + 후속 반영(17→76, AI-Ready) · *표시 항목은 스코어러 한계로 보정 필요
+        AbleWork · AI-Readiness v2 (7 카테고리 / 100점) · scored 2026-07-01 · 전체 개선 + E 강화 반영(17→80, AI-Ready) · *표시 항목은 스코어러 한계로 보정 필요
       </footer>
     </div>
   </body>

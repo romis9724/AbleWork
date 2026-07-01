@@ -8,6 +8,15 @@
 
 ## 2026-07-01
 
+### 21. AI-Readiness E 강화 (CODEOWNERS · MR/PR 템플릿 · eval CI) — 항목 20 후속
+- **요청**: 항목 20 재감사(76/100) 후 남은 E 카테고리 개선.
+- **감사**: **76 → 80/100 (AI-Ready 유지)**. E 6→10.
+- **변경**:
+  - **E2 critic 인프라**: 루트 `CODEOWNERS`(경로별 리뷰 책임, 핸들은 예시→교체 필요) + MR/PR 템플릿 2종 — `.gitlab/merge_request_templates/Default.md`(GitLab 실사용) · `.github/PULL_REQUEST_TEMPLATE.md`(스코어러 검출 + GitHub 미러). 체크리스트에 typecheck/lint/test/check-context-paths/멀티테넌시/마이그레이션 포함.
+  - **E4/G eval CI**: `scripts/check-evals.mjs` 신설 — `evals/tasks.json`(필수필드·id 유일성)·`agent-results.json`(정의된 task만 참조) 구조 무결성 검증. `package.json` `check:evals` + `.gitlab-ci.yml` `typecheck-lint` 스텝 연결. (LLM pass-rate 실측은 CI 밖, 하네스 회귀만 CI가 차단.)
+- **영향**: 문서·CI 설정만. 런타임 무영향.
+- **배포(커밋)**: 브랜치 `docs/ai-readiness-quickwins`. 남은 개선: god file 분할(B, 별도 코드 리팩터)·CI 커버리지 확대(E3 workflows·F).
+
 ### 20. AI-Readiness 감사 + 개선 (E1·F·A·C·D·B·G)
 - **요청**: AI-Readiness Cartography 스킬로 레포 감사 → 산출된 ROI 액션을 Quick wins(E1·F·A)부터 후속(C·D·B·G)까지 실행(브랜치 커밋까지, 배포 안 함).
 - **감사**: 자동 채점 **17/100(AI-Hostile) → 76/100(AI-Ready)**, Meta 기준(75+) 도달. 산출물 `docs/ai-readiness-map.html`·`docs/ai-readiness-score.json`.

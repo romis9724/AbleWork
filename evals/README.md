@@ -23,6 +23,13 @@
    - 대부분 `pnpm typecheck`·`pnpm test`·`pnpm check:context-paths`로 기계 검증 가능.
 3. 결과를 `agent-results.json`에 append하고 pass-rate를 갱신한다.
 
+### CI 자동 검증 (하네스 무결성)
+
+LLM 실행은 CI 밖에서 하되, **eval 하네스 구조**는 CI가 지킨다. `.gitlab-ci.yml`의
+`typecheck-lint`에서 `pnpm check:evals`([`scripts/check-evals.mjs`](../scripts/check-evals.mjs))가
+`tasks.json`의 필수 필드·id 유일성과 `agent-results.json`이 정의된 task만 참조하는지
+검증한다 → task 정의/결과 스키마가 깨지는 회귀를 머지 시점에 차단.
+
 ## Baseline
 
 최초 baseline은 AI-Readiness Quick wins + 후속(ADR·ARCHITECTURE·모듈 CLAUDE.md) 반영
