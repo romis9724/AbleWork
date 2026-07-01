@@ -8,6 +8,17 @@
 
 ## 2026-07-01
 
+### 23. 웹 프런트 god file 5개 분해 (컴포넌트/헬퍼 분리 — 별도 트랙)
+- **요청**: 백엔드 god file 분할(별도 브랜치)에 이어, 웹 프런트 >800줄 파일 5개를 컴포넌트/헬퍼로 분해. 동작 불변.
+- **변경**(동작·public 계약 불변, 순수 추출):
+  - `apps/web/src/app/admin/employees/[id]/page.tsx` 985→697 — 근로정보 탭을 자체 상태·mutation·다이얼로그 포함 `WageInfoTab.tsx`(325줄, `onNotify` 콜백으로 스낵 위임)로 추출.
+  - `apps/web/src/lib/query/documents.ts` 801→589 — 타입/인터페이스 정의를 `documents.types.ts`(232줄)로 분리, `export *` 재수출로 공개 API 유지.
+  - `apps/web/src/app/admin/attendances/page.tsx` 836→768 — 순수 헬퍼/상수/타입을 `attendances.helpers.ts`(87줄)로 추출.
+  - `apps/web/src/app/admin/leave/types/LeaveTypesPanel.tsx` 816→736 — 폼 상태/상수/검증을 `leave-types.helpers.ts`(91줄)로 추출.
+  - `apps/web/src/app/admin/shifts/page.tsx` 904→594 — 날짜 유틸/상수/폼타입을 `shifts.helpers.ts`(90줄)로, 근무일정 폼 모달을 프레젠테이셔널 `ShiftFormModal.tsx`(329줄, 상태/핸들러는 부모 소유)로 추출.
+- **영향**: 웹 `src` 내 800줄 초과 `.ts(x)` **0개**. `tsc --noEmit`·`eslint` 통과(shifts의 `employees` useMemo warning 2건은 main 기존 pre-existing), `pnpm --filter web build` 성공. 마이그레이션·API·동작 변경 없음.
+- **배포(커밋)**: 브랜치 `refactor/web-component-split`(main 기준, 백엔드 분할 브랜치와 분리). 미배포.
+
 ### 22. requests.service god file 시범 분할 (AI-Readiness 코드 품질)
 - **요청**: AI-Readiness 감사에서 지적된 god file(>500줄 56개) 분할 시범 — 최대 파일 `requests.service.ts`(1883줄)부터.
 - **변경**: 순수 요소를 별도 파일로 추출(동작·시그니처 불변).
