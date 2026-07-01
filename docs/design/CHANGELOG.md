@@ -6,6 +6,21 @@
 
 ---
 
+## 2026-07-01
+
+### 20. AI-Readiness 감사 + Quick wins (E1·F·A)
+- **요청**: AI-Readiness Cartography 스킬로 레포 감사 → 산출된 ROI 액션 중 Quick wins 3종 실행(브랜치 커밋까지, 배포 안 함).
+- **감사**: 자동 채점 17/100(AI-Hostile) → Quick wins 후 **42/100(AI-Fragile)**. 산출물 `docs/ai-readiness-map.html`·`docs/ai-readiness-score.json`.
+  - 스코어러 한계 보정: E1 broken 163건 중 156건은 `refs/`(카카오워크 헬프 인덱스·디자인 핸드오프) 외부 자료 오탐, 실제 우리 컨텍스트 broken은 4건. CI 미검출은 `.github`만 스캔한 탓(실제 `.gitlab-ci.yml` 존재).
+- **변경**:
+  - **E1(경로 정정)**: 루트 `CLAUDE.md`의 `src/events/domain-events.ts` → `apps/api/src/events/domain-events.ts`, `docs/loop/STATE.md`(런타임 생성물) 표기 조정.
+  - **F(회귀 방지 게이트)**: `scripts/check-context-paths.mjs` 신설 — 컨텍스트 문서 산문 속 코드경로 존재 검증(`refs/`·코드펜스·빌드산출물 제외, `../` 상대링크 지원). `package.json` `check:context-paths` 스크립트 + `.gitlab-ci.yml` `typecheck-lint` 스텝 연결.
+  - **A(모듈 네비게이션)**: 모듈-로컬 `CLAUDE.md` 4개 신설 — `apps/api`·`apps/web`·`packages/shared-constants`·`apps/mobile`(Overview/Quick commands/Common patterns/Non-obvious/Dependencies 구성, docs/design/* 링크).
+- **영향**: 문서·CI 설정만. 앱 코드·API·마이그레이션 변경 없음 → 런타임 무영향.
+- **배포(커밋)**: 브랜치 `docs/ai-readiness-quickwins`. C(레포 내 MEMORY/ADR)·D(ARCHITECTURE+mermaid)·B(루트 압축)·G(evals)는 후속.
+
+---
+
 ## 2026-06-29
 
 ### 1. 무일정 출근 장소 모달 (직원 출근 UX + 검증 강화)
