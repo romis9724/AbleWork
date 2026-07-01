@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common'
 import { BullModule } from '@nestjs/bullmq'
 import { AttendancesController } from './attendances.controller'
 import { AttendancesService } from './attendances.service'
+import { AttendanceClockInService } from './attendance-clockin.service'
+import { AttendanceQueryService } from './attendance-query.service'
 import { AttendanceAbsentScheduler } from './attendance-absent.scheduler'
 import { AttendanceNotificationListener } from './attendance-notification.listener'
 import { AttendanceReminderScheduler } from './attendance-reminder.scheduler'
@@ -20,6 +22,8 @@ import { IntegrationsModule } from '../integrations/integrations.module'
   controllers: [AttendancesController],
   providers: [
     AttendancesService,
+    AttendanceClockInService,
+    AttendanceQueryService,
     AttendanceAbsentScheduler,
     AttendanceNotificationListener,
     AttendanceReminderScheduler,

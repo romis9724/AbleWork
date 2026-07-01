@@ -17,8 +17,11 @@
   - `request-effects.service.ts`(휴가/근무/근태 승인 효과 적용 + 사전 검증, 733줄), `request-approval.service.ts`(승인/거절/강제/일괄 + M-of-N 라운드, 399줄), `approval-rules.service.ts`(승인 규칙 CRUD, 105줄) 신설.
   - 공유 검증 헬퍼(`assertRequestPending`·`loadRequestInCompany`·`getEmployeeOrgIds`)를 `requests.helpers.ts`로 이동(prisma 인자화 — main·approval 공용).
   - main은 목록/취소/수정/생성 + 부서 승인자 해석 유지, 결재·규칙은 위임(facade).
+- **attendances.service.ts (1093 → 692)**:
+  - `attendance-clockin.service.ts`(출근 판정·출퇴근 장소 지오/채널·무일정 정책 검증, 330줄), `attendance-query.service.ts`(목록·오늘 내 출퇴근, 127줄) 신설.
+  - main은 clockIn/clockOut/createManual/update/휴게/확정 등 유지, 조회·판정·지오 검증은 위임(findAll/getMyToday/determineStatus facade).
 - **영향**: 순수 구조 리팩터(로직·시그니처·엔드포인트 불변). **api 단위테스트 874 전부 통과**, typecheck·lint 통과. 마이그레이션·동작 변경 없음. 각 서브서비스는 module·spec providers에 등록(동일 mock으로 위임).
-- **배포(커밋)**: 브랜치 `refactor/god-file-split-round3`. 나머지 god file(attendances·employees·leaves 서비스, 웹 페이지 등)은 이 패턴으로 점진 적용 대상.
+- **배포(커밋)**: 브랜치 `refactor/god-file-split-round3`. 나머지 god file(employees·leaves·approval-actions 서비스, 웹 페이지 등)은 이 패턴으로 점진 적용 대상.
 
 ### 22. requests.service god file 시범 분할 (AI-Readiness 코드 품질)
 - **요청**: AI-Readiness 감사에서 지적된 god file(>500줄 56개) 분할 시범 — 최대 파일 `requests.service.ts`(1883줄)부터.
