@@ -20,6 +20,9 @@
 - **attendances.service.ts (1093 → 692)**:
   - `attendance-clockin.service.ts`(출근 판정·출퇴근 장소 지오/채널·무일정 정책 검증, 330줄), `attendance-query.service.ts`(목록·오늘 내 출퇴근, 127줄) 신설.
   - main은 clockIn/clockOut/createManual/update/휴게/확정 등 유지, 조회·판정·지오 검증은 위임(findAll/getMyToday/determineStatus facade).
+- **employees.service.ts (1027 → 713)**:
+  - `employee-permission.service.ts`(수정 권한·ORG_ADMIN 관리 권한·조직 경계 가드, 194줄), `employee-wage.service.ts`(근로정보 이력 CRUD, 102줄), `employee-query.service.ts`(목록·상세, 118줄) 신설.
+  - main은 create/update/재입사/deactivate/activate/remove/디바이스·비번 초기화 유지, 조회·근로정보·권한 스코프는 위임(findAll/findOne/wage/guardOrgScope facade).
 - **영향**: 순수 구조 리팩터(로직·시그니처·엔드포인트 불변). **api 단위테스트 874 전부 통과**, typecheck·lint 통과. 마이그레이션·동작 변경 없음. 각 서브서비스는 module·spec providers에 등록(동일 mock으로 위임).
 - **배포(커밋)**: 브랜치 `refactor/god-file-split-round3`. 나머지 god file(employees·leaves·approval-actions 서비스, 웹 페이지 등)은 이 패턴으로 점진 적용 대상.
 
