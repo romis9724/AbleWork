@@ -33,21 +33,28 @@ const EXTS = 'py|ts|tsx|js|jsx|md|sql|json|yaml|yml|toml|html|css|sh|go|rs|java|
 // 경로 추출 규칙 두 갈래(앞이 단어/점/슬래시면 제외 → 경로 중간 진입 방지):
 //  - 상대 프리픽스(../ 또는 ./)로 시작하는 경로 — markdown 상대링크 [..](../web/CLAUDE.md) 포함
 //  - 디렉터리 세그먼트(word/)로 시작하는 경로 — src/main.ts, apps/web/CLAUDE.md
-const RE_REL = new RegExp(String.raw`(?<![\w./-])((?:\.\.?\/)+[\w./-]+\.(?:${EXTS}))`, 'g')
-const RE_DIR = new RegExp(String.raw`(?<![\w./-])((?:[\w-]+\/)+[\w.-]+\.(?:${EXTS}))`, 'g')
+// 확장자 뒤 word-boundary 필수 — 없으면 대체 순서상 `.json`이 `.js`로, `.tsx`가 `.ts`로 잘린다.
+const RE_REL = new RegExp(String.raw`(?<![\w./-])((?:\.\.?\/)+[\w./-]+\.(?:${EXTS})(?![\w]))`, 'g')
+const RE_DIR = new RegExp(String.raw`(?<![\w./-])((?:[\w-]+\/)+[\w.-]+\.(?:${EXTS})(?![\w]))`, 'g')
 
 /** 코드펜스(``` … ```) 블록을 제거해 산문만 남긴다. */
 function stripCodeFences(text) {
   return text.replace(/```[\s\S]*?```/g, '')
 }
 
-/** 컨텍스트 문서 수집: 루트 + apps/* + packages/* (refs 등 제외). */
+// 워크스페이스 외 단일 모듈/문서 디렉터리(각 하나의 컨텍스트 문서를 가짐).
+const EXTRA_MODULE_DIRS = ['deploy', 'docs/adr', 'docs/design', 'docs/testing', 'evals']
+
+/** 컨텍스트 문서 수집: 루트 + apps/* + packages/* + deploy·docs·evals (refs 등 제외). */
 function collectContextFiles() {
   const files = []
-  for (const name of CONTEXT_FILENAMES) {
-    const p = join(REPO_ROOT, name)
-    if (existsSync(p)) files.push(p)
+  const pushDocs = (dir) => {
+    for (const name of CONTEXT_FILENAMES) {
+      const p = join(dir, name)
+      if (existsSync(p)) files.push(p)
+    }
   }
+  pushDocs(REPO_ROOT)
   for (const group of ['apps', 'packages']) {
     const groupDir = join(REPO_ROOT, group)
     if (!existsSync(groupDir)) continue
@@ -55,11 +62,12 @@ function collectContextFiles() {
       if (EXCLUDED_DIRS.has(entry)) continue
       const modDir = join(groupDir, entry)
       if (!statSync(modDir).isDirectory()) continue
-      for (const name of CONTEXT_FILENAMES) {
-        const p = join(modDir, name)
-        if (existsSync(p)) files.push(p)
-      }
+      pushDocs(modDir)
     }
+  }
+  for (const rel of EXTRA_MODULE_DIRS) {
+    const dir = join(REPO_ROOT, rel)
+    if (existsSync(dir)) pushDocs(dir)
   }
   return files
 }

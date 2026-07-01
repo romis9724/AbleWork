@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+# AI-Readiness F/E1: push 전에 context 문서 경로 참조 + eval 하네스 무결성 검증.
+# husky 패키지 없이 동작 — 루트 package.json "prepare"가 core.hooksPath=.husky 설정.
+# 우회가 필요하면 `git push --no-verify`.
+
+echo "[pre-push] context-paths & evals 검증..."
+node scripts/check-context-paths.mjs || exit 1
+node scripts/check-evals.mjs || exit 1

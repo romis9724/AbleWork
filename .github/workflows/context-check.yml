@@ -1,0 +1,24 @@
+# Context & docs integrity — GitHub 미러 전용 경량 검증.
+# 배포/전체 테스트는 GitLab CI(.gitlab-ci.yml)가 authoritative. 여기서는
+# context 문서(CLAUDE.md/README/ADR)의 경로 참조와 eval 하네스 무결성만 빠르게 검증해
+# stale/hallucinated reference를 미러 push·PR 시점에 catch한다(AI-Readiness E1·F·G).
+name: context-check
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  docs-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # 두 검증 스크립트는 순수 Node(외부 의존 없음) — 설치 없이 즉시 실행.
+      - name: Validate context path references
+        run: node scripts/check-context-paths.mjs
+      - name: Validate eval harness integrity
+        run: node scripts/check-evals.mjs

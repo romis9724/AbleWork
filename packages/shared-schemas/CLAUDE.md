@@ -11,6 +11,17 @@
 
 - [`packages/shared-schemas/src/index.ts`](src/index.ts) — 배럴 export.
 
+## Quick commands
+
+```bash
+pnpm --filter @ablework/shared-schemas build   # 스키마 빌드
+pnpm typecheck                                  # 소비처(api·web) 파급 타입체크
+```
+
+## Common changes — 자주 하는 변경 (how to)
+
+- **스키마 추가/변경**: `src/`에 Zod 스키마 정의 → `src/index.ts` 배럴 export → 소비처(`apps/api` DTO, `apps/web` 폼) 타입체크로 파급 확인.
+
 ## Non-obvious rules
 
 - **Note:** 스키마 변경은 소비처(`apps/api` DTO, `apps/web` 폼)에 즉시 파급된다. 변경 후 양쪽 타입체크 필수.
