@@ -8,6 +8,18 @@
 
 ## 2026-07-01
 
+### 24. god file 본격 분할 — documents·requests 서비스 (deep-interview 확정)
+- **요청**: AI-Readiness에서 지적된 god file(>500줄) 분할을 인터뷰로 스코프 확정 후 진행. **목표=유지보수성·편집 정확도(점수 무관)**, 범위=최대 2개(`requests`·`documents`), 방식=**서비스 합성**(ADR-0001 준수, Repository 미도입), 완료기준=각 파일 <800줄·public API 불변·기존 단위테스트 통과.
+- **documents.service.ts (1266 → 557)**:
+  - `documents.helpers.ts`(순수 헬퍼·공유 타입·상태 상수), `document-query.service.ts`(문서함 목록·상세·box where), `document-steps.service.ts`(결재선 구성·상신 트랜잭션·문서번호 채번) 신설.
+  - main은 CRUD·상신·회수·공람·의견 public 유지, 조회/스텝은 위임(findAll/findOne facade).
+- **requests.service.ts (1795 → 627)**:
+  - `request-effects.service.ts`(휴가/근무/근태 승인 효과 적용 + 사전 검증, 733줄), `request-approval.service.ts`(승인/거절/강제/일괄 + M-of-N 라운드, 399줄), `approval-rules.service.ts`(승인 규칙 CRUD, 105줄) 신설.
+  - 공유 검증 헬퍼(`assertRequestPending`·`loadRequestInCompany`·`getEmployeeOrgIds`)를 `requests.helpers.ts`로 이동(prisma 인자화 — main·approval 공용).
+  - main은 목록/취소/수정/생성 + 부서 승인자 해석 유지, 결재·규칙은 위임(facade).
+- **영향**: 순수 구조 리팩터(로직·시그니처·엔드포인트 불변). **api 단위테스트 874 전부 통과**, typecheck·lint 통과. 마이그레이션·동작 변경 없음. 각 서브서비스는 module·spec providers에 등록(동일 mock으로 위임).
+- **배포(커밋)**: 브랜치 `refactor/god-file-split-round3`. 나머지 god file(attendances·employees·leaves 서비스, 웹 페이지 등)은 이 패턴으로 점진 적용 대상.
+
 ### 22. requests.service god file 시범 분할 (AI-Readiness 코드 품질)
 - **요청**: AI-Readiness 감사에서 지적된 god file(>500줄 56개) 분할 시범 — 최대 파일 `requests.service.ts`(1883줄)부터.
 - **변경**: 순수 요소를 별도 파일로 추출(동작·시그니처 불변).

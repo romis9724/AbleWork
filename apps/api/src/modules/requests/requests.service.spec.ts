@@ -6,6 +6,9 @@ import {
 } from '@nestjs/common'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { RequestsService } from './requests.service'
+import { RequestEffectsService } from './request-effects.service'
+import { ApprovalRulesService } from './approval-rules.service'
+import { RequestApprovalService } from './request-approval.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { LeavesService } from '../leaves/leaves.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
@@ -162,6 +165,9 @@ describe('RequestsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RequestsService,
+        RequestEffectsService,
+        ApprovalRulesService,
+        RequestApprovalService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
         { provide: LeavesService, useValue: mockLeavesService },
