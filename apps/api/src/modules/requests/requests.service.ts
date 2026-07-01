@@ -8,7 +8,6 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import { PrismaService } from '../../prisma/prisma.service'
 import { JwtPayload } from '../../common/types/jwt-payload.type'
 import { AccessLevel, ACCESS_LEVEL_HIERARCHY, ShiftStatus } from '@ablework/shared-constants'
-import { EVENTS } from '../../events/domain-events'
 import { LeavesService } from '../leaves/leaves.service'
 import {
   CreateRequestDto,
@@ -18,75 +17,20 @@ import {
   BulkApproveDto,
   RequestFilterDto,
 } from './dto/create-request.dto'
-
-// request type → document_forms.category 매핑
-const REQUEST_TYPE_CATEGORY_MAP: Record<string, string> = {
-  LEAVE_CREATE: 'leave_request',
-  LEAVE_MODIFY: 'leave_request',
-  LEAVE_DELETE: 'leave_request',
-  SHIFT_CREATE: 'shift_change_request',
-  SHIFT_MODIFY: 'shift_change_request',
-  SHIFT_DELETE: 'shift_change_request',
-  ATTENDANCE_EDIT: 'attendance_correction_request',
-  ATTENDANCE_CREATE: 'attendance_correction_request',
-  ATTENDANCE_DELETE: 'attendance_correction_request',
-  DEVICE_CHANGE: 'device_change_request',
-  OFFSITE_WORK: 'offsite_work_request',
-  CUSTOM: 'custom_request',
-}
-
-// 상신 시 emit할 이벤트 매핑 (NotificationListener 구독 이름과 일치해야 함)
-const REQUEST_TYPE_REQUESTED_EVENT: Record<string, string> = {
-  LEAVE_CREATE: EVENTS.LEAVE_REQUESTED,
-  LEAVE_MODIFY: EVENTS.LEAVE_REQUESTED,
-  LEAVE_DELETE: EVENTS.LEAVE_REQUESTED,
-  SHIFT_CREATE: EVENTS.SHIFT_REQUESTED,
-  SHIFT_MODIFY: EVENTS.SHIFT_REQUESTED,
-  SHIFT_DELETE: EVENTS.SHIFT_REQUESTED,
-  ATTENDANCE_EDIT: EVENTS.ATTENDANCE_REQUESTED,
-  ATTENDANCE_CREATE: EVENTS.ATTENDANCE_REQUESTED,
-  ATTENDANCE_DELETE: EVENTS.ATTENDANCE_REQUESTED,
-  DEVICE_CHANGE: EVENTS.DEVICE_CHANGE_REQUESTED,
-  OFFSITE_WORK: EVENTS.OFFSITE_WORK_REQUESTED,
-  CUSTOM: EVENTS.CUSTOM_REQUESTED,
-}
-
-// 승인 완료 후 emit할 이벤트 매핑
-const REQUEST_TYPE_APPROVED_EVENT: Record<string, string> = {
-  LEAVE_CREATE: EVENTS.LEAVE_APPROVED,
-  LEAVE_MODIFY: EVENTS.LEAVE_APPROVED,
-  LEAVE_DELETE: EVENTS.LEAVE_APPROVED,
-  SHIFT_CREATE: EVENTS.SHIFT_APPROVED,
-  SHIFT_MODIFY: EVENTS.SHIFT_APPROVED,
-  SHIFT_DELETE: EVENTS.SHIFT_APPROVED,
-  ATTENDANCE_EDIT: EVENTS.ATTENDANCE_APPROVED,
-  ATTENDANCE_CREATE: EVENTS.ATTENDANCE_APPROVED,
-  ATTENDANCE_DELETE: EVENTS.ATTENDANCE_APPROVED,
-  DEVICE_CHANGE: EVENTS.DEVICE_CHANGE_APPROVED,
-  OFFSITE_WORK: EVENTS.OFFSITE_WORK_APPROVED,
-  CUSTOM: EVENTS.CUSTOM_APPROVED,
-}
-
-const REQUEST_TYPE_REJECTED_EVENT: Record<string, string> = {
-  LEAVE_CREATE: EVENTS.LEAVE_REJECTED,
-  LEAVE_MODIFY: EVENTS.LEAVE_REJECTED,
-  LEAVE_DELETE: EVENTS.LEAVE_REJECTED,
-  SHIFT_CREATE: EVENTS.SHIFT_REJECTED,
-  SHIFT_MODIFY: EVENTS.SHIFT_REJECTED,
-  SHIFT_DELETE: EVENTS.SHIFT_REJECTED,
-  ATTENDANCE_EDIT: EVENTS.ATTENDANCE_REJECTED,
-  ATTENDANCE_CREATE: EVENTS.ATTENDANCE_REJECTED,
-  ATTENDANCE_DELETE: EVENTS.ATTENDANCE_REJECTED,
-  DEVICE_CHANGE: EVENTS.DEVICE_CHANGE_REJECTED,
-  OFFSITE_WORK: EVENTS.OFFSITE_WORK_REJECTED,
-  CUSTOM: EVENTS.CUSTOM_REJECTED,
-}
-
-/** 결재 규칙(라운드별 필수 승인 수 details 포함) — 다결재자/병렬(M-of-N) 판정용 */
-type RuleWithDetails = {
-  maxApprovalRounds?: number
-  details?: Array<{ round: number; requiredCount: number }>
-} | null
+import {
+  REQUEST_TYPE_CATEGORY_MAP,
+  REQUEST_TYPE_REQUESTED_EVENT,
+  REQUEST_TYPE_APPROVED_EVENT,
+  REQUEST_TYPE_REJECTED_EVENT,
+  type RuleWithDetails,
+} from './requests.constants'
+import {
+  parseTimeToDate,
+  hoursBetween,
+  combineDateAndTime,
+  roundRequiredCount,
+  getMaxRounds,
+} from './requests.helpers'
 
 @Injectable()
 export class RequestsService {
@@ -730,7 +674,7 @@ export class RequestsService {
       // 현재 round의 필수 승인 수(requiredCount) 충족 여부 확인
       const isRoundComplete = await this.isRoundComplete(tx, requestId, currentRound, rule)
 
-      const maxRounds = this.getMaxRounds(rule)
+      const maxRounds = getMaxRounds(rule)
       const isLastRound = currentRound >= maxRounds
 
       if (isRoundComplete && isLastRound) {
@@ -1177,20 +1121,6 @@ export class RequestsService {
   }
 
   /** 'HH:MM' → 1970-01-01 기준 UTC Date (@db.Time 저장용). 형식 오류면 null. */
-  private parseTimeToDate(time?: string | null): Date | null {
-    if (!time || !/^\d{1,2}:\d{2}$/.test(time)) return null
-    return new Date(`1970-01-01T${time.padStart(5, '0')}:00.000Z`)
-  }
-
-  /** 'HH:MM' 두 값의 시간 차이(시간 단위). 음수/오류면 0. */
-  private hoursBetween(start?: string | null, end?: string | null): number {
-    if (!start || !end) return 0
-    const [sh, sm] = start.split(':').map(Number)
-    const [eh, em] = end.split(':').map(Number)
-    if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return 0
-    return (eh * 60 + em - (sh * 60 + sm)) / 60
-  }
-
   /**
    * 휴가 차감 일수 — 유형 단위(timeOption)에 따라 분기.
    * - hourly(시간 단위): 당일(시작=종료) 시작/종료 시간으로 시간 산정, **8시간=1일** 환산(소수 2자리).
@@ -1208,7 +1138,7 @@ export class RequestsService {
   ): Promise<number> {
     const HOURS_PER_DAY = 8
     if (leaveType.timeOption === 'hourly') {
-      const hours = this.hoursBetween(startTime, endTime)
+      const hours = hoursBetween(startTime, endTime)
       if (hours <= 0) {
         throw new BadRequestException({
           code: 'LEAVE_TIME_INVALID',
@@ -1367,8 +1297,8 @@ export class RequestsService {
         leaveTypeId,
         startDate: new Date(startDate),
         endDate: new Date(effectiveEndDate),
-        startTime: isHourly ? this.parseTimeToDate(startTime) : null,
-        endTime: isHourly ? this.parseTimeToDate(endTime) : null,
+        startTime: isHourly ? parseTimeToDate(startTime) : null,
+        endTime: isHourly ? parseTimeToDate(endTime) : null,
         daysUsed,
         status: 'APPROVED',
         reason: (reason as string) ?? null,
@@ -1431,8 +1361,8 @@ export class RequestsService {
         startDate: new Date(newStart),
         endDate: new Date(newEnd),
         ...(isHourly && {
-          startTime: this.parseTimeToDate(startTime),
-          endTime: this.parseTimeToDate(endTime),
+          startTime: parseTimeToDate(startTime),
+          endTime: parseTimeToDate(endTime),
         }),
         daysUsed: newDaysUsed,
         ...(reason !== undefined && { reason }),
@@ -1531,8 +1461,8 @@ export class RequestsService {
       }
       shiftTypeId = template.shiftTypeId
       resolvedTemplateId = template.id
-      startAt = this.combineDateAndTime(date, template.startTime)
-      endAt = this.combineDateAndTime(date, template.endTime)
+      startAt = combineDateAndTime(date, template.startTime)
+      endAt = combineDateAndTime(date, template.endTime)
     } else {
       const defaultType = await tx.shiftType.findFirst({
         where: { companyId, isActive: true },
@@ -1735,12 +1665,6 @@ export class RequestsService {
   }
 
   /** Prisma @db.Time(1970-01-01 기준) 값과 날짜 문자열을 합성 */
-  private combineDateAndTime(date: string, time: Date): Date {
-    const hh = String(time.getUTCHours()).padStart(2, '0')
-    const mm = String(time.getUTCMinutes()).padStart(2, '0')
-    return new Date(`${date}T${hh}:${mm}:00`)
-  }
-
   // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
 
   private async assertRequestBelongsToCompany(companyId: string, requestId: string) {
@@ -1836,12 +1760,12 @@ export class RequestsService {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async getCurrentRound(tx: any, requestId: string, rule: RuleWithDetails): Promise<number> {
-    const maxRounds = this.getMaxRounds(rule)
+    const maxRounds = getMaxRounds(rule)
     for (let r = 1; r <= maxRounds; r++) {
       const approved = await tx.requestApproval.count({
         where: { requestId, round: r, status: 'APPROVED' },
       })
-      if (approved < this.roundRequiredCount(rule, r)) return r
+      if (approved < roundRequiredCount(rule, r)) return r
     }
     return maxRounds
   }
@@ -1856,18 +1780,6 @@ export class RequestsService {
   }
 
   /** 라운드 r의 필수 승인 수 (해당 라운드 details의 requiredCount 최대값, 기본 1) */
-  private roundRequiredCount(rule: RuleWithDetails, round: number): number {
-    const details = (rule?.details ?? []).filter((d) => d.round === round)
-    if (details.length === 0) return 1
-    return Math.max(1, ...details.map((d) => d.requiredCount ?? 1))
-  }
-
-  /** 총 결재 라운드 수 (rule.maxApprovalRounds와 details의 최대 round 중 큰 값) */
-  private getMaxRounds(rule: RuleWithDetails): number {
-    const detailMax = (rule?.details ?? []).reduce((m, d) => Math.max(m, d.round), 0)
-    return Math.max(1, rule?.maxApprovalRounds ?? 1, detailMax)
-  }
-
   private async isRoundComplete(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tx: any,
@@ -1878,6 +1790,6 @@ export class RequestsService {
     const approved = await tx.requestApproval.count({
       where: { requestId, round, status: 'APPROVED' },
     })
-    return approved >= this.roundRequiredCount(rule, round)
+    return approved >= roundRequiredCount(rule, round)
   }
 }

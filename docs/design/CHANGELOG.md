@@ -8,6 +8,16 @@
 
 ## 2026-07-01
 
+### 22. requests.service god file 시범 분할 (AI-Readiness 코드 품질)
+- **요청**: AI-Readiness 감사에서 지적된 god file(>500줄 56개) 분할 시범 — 최대 파일 `requests.service.ts`(1883줄)부터.
+- **변경**: 순수 요소를 별도 파일로 추출(동작·시그니처 불변).
+  - `apps/api/src/modules/requests/requests.constants.ts` 신설 — request type→category 매핑·상신/승인/거절 이벤트 매핑 4벌·`RuleWithDetails` 타입.
+  - `apps/api/src/modules/requests/requests.helpers.ts` 신설 — 순수 계산 헬퍼 5개(`parseTimeToDate`·`hoursBetween`·`combineDateAndTime`·`roundRequiredCount`·`getMaxRounds`, `this`/DI 없음).
+  - `requests.service.ts`: 위 정의 제거 + import 전환, `this.헬퍼()` → 함수 호출. 미사용 `EVENTS` import 제거. 1883→1796줄.
+- **영향**: 순수 리팩터(로직 불변). api 단위테스트 **874 전부 통과**, typecheck·lint 통과. 마이그레이션·API·동작 변경 없음.
+- **비고**: AI-Readiness 점수와는 무관(B는 문서 길이 기준). 나머지 god file 55개는 이 패턴(상수/순수헬퍼 우선 추출) 확립 후 점진 적용 대상.
+- **배포(커밋)**: 브랜치 `refactor/requests-service-split`(문서 개선 브랜치와 분리).
+
 ### 21. AI-Readiness E 강화 (CODEOWNERS · MR/PR 템플릿 · eval CI) — 항목 20 후속
 - **요청**: 항목 20 재감사(76/100) 후 남은 E 카테고리 개선.
 - **감사**: **76 → 80/100 (AI-Ready 유지)**. E 6→10.
