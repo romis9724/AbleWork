@@ -7,6 +7,7 @@ import {
 import { AccessLevel } from '@ablework/shared-constants'
 import { EventEmitter2 } from '@nestjs/event-emitter'
 import { LeavesService } from './leaves.service'
+import { LeaveAccrualService } from './leave-accrual.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
 
@@ -118,6 +119,7 @@ describe('LeavesService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LeavesService,
+        LeaveAccrualService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: mockEvents },
         { provide: AuditService, useValue: { record: jest.fn() } },
