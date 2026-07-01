@@ -26,6 +26,10 @@
 - **leaves.service.ts (879 → 609)**:
   - `leave-accrual.service.ts`(연차 발생 엔진 — 규칙 실행·근속/월할/유효기간 계산·대상 직원별 부여, 292줄) 신설.
   - main은 그룹/유형/규칙 CRUD·잔액·수동발생·휴가 생성·검증 유지, 발생 규칙 실행은 위임(runAccrualRule facade).
+- **approval-actions.service.ts (833 → 703)**:
+  - `approval-support.service.ts`(결재 처리 지원층 — 대상 로드·대리인 해석·상태/역할 검증 + 공유 타입 StepRecord/DocumentRecord/ActorContext, 157줄) 신설.
+  - main은 승인/반려/전결/전단계반려/결재취소/협조/확인/수신 액션 유지, 로드·검증은 위임.
+- **결과**: 6개 god file 분할로 **>800줄 도메인 서비스 0개** 달성(최대였던 requests 1795·documents 1266 포함 전부 <800). 신규 서브서비스 14개, 전 과정 단위테스트 874 불변.
 - **영향**: 순수 구조 리팩터(로직·시그니처·엔드포인트 불변). **api 단위테스트 874 전부 통과**, typecheck·lint 통과. 마이그레이션·동작 변경 없음. 각 서브서비스는 module·spec providers에 등록(동일 mock으로 위임).
 - **배포(커밋)**: 브랜치 `refactor/god-file-split-round3`. 나머지 god file(employees·leaves·approval-actions 서비스, 웹 페이지 등)은 이 패턴으로 점진 적용 대상.
 
